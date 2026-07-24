@@ -1,0 +1,4 @@
+[env]
+# audiopus_sys vendors an older upstream Opus CMake project. CMake 4 requires
+# this compatibility floor explicitly; it does not affect the linked runtime.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

@@ -1,0 +1,67 @@
+[package]
+name = "nota"
+version = "0.1.0"
+description = "A private, local-first Windows meeting recorder"
+authors = ["Nota Contributors"]
+license = "MIT"
+repository = ""
+edition = "2024"
+rust-version = "1.91"
+
+[lib]
+name = "nota_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+anyhow = "1.0"
+arboard = "3.6"
+chrono = { version = "0.4", features = ["serde"] }
+crossbeam-channel = "0.5"
+dirs = "6.0"
+fs2 = "0.4"
+log = { version = "0.4", features = ["std"] }
+ogg = "0.9.2"
+opus = "0.3.1"
+parking_lot = "0.12"
+rand = "0.9"
+rusqlite = { version = "0.40.1", features = ["bundled", "chrono"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sonora = "0.1.0"
+tauri = { version = "2.11.5", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-dialog = "2.7.2"
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-single-instance = "2.4.3"
+thiserror = "2.0"
+trash = "5.2"
+uuid = { version = "1.18", features = ["v4", "serde"] }
+windows = { version = "0.62.2", features = [
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_Media_KernelStreaming",
+  "Win32_Media_Multimedia",
+  "Win32_Security",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_System_Variant",
+  "Win32_UI_WindowsAndMessaging"
+] }
+windows-core = "0.62.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+panic = "abort"
+strip = "symbols"
