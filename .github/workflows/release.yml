@@ -33,6 +33,9 @@ jobs:
       - name: Show Rust toolchain
         run: rustc --version
 
+      - name: Use pinned npm
+        run: npm install --global npm@11.6.1
+
       - name: Install frontend dependencies
         run: npm ci
 

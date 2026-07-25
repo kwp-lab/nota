@@ -9,6 +9,7 @@ $workspace = Split-Path -Parent $PSScriptRoot
 $packagePath = Join-Path $workspace "package.json"
 $packageLockPath = Join-Path $workspace "package-lock.json"
 $cargoPath = Join-Path $workspace "src-tauri\Cargo.toml"
+$cargoLockPath = Join-Path $workspace "src-tauri\Cargo.lock"
 $tauriConfigPath = Join-Path $workspace "src-tauri\tauri.conf.json"
 $readmePath = Join-Path $workspace "README.md"
 $chineseReadmePath = Join-Path $workspace "README.zh-CN.md"
@@ -16,6 +17,7 @@ $chineseReadmePath = Join-Path $workspace "README.zh-CN.md"
 $package = [System.IO.File]::ReadAllText($packagePath) | ConvertFrom-Json
 $tauriConfig = [System.IO.File]::ReadAllText($tauriConfigPath) | ConvertFrom-Json
 $cargoText = [System.IO.File]::ReadAllText($cargoPath)
+$cargoLockText = [System.IO.File]::ReadAllText($cargoLockPath)
 
 $versionJsonScript = Join-Path $PSScriptRoot "version-json.mjs"
 $lockVersionsJson = & node $versionJsonScript "read-lock" $packageLockPath
@@ -45,6 +47,13 @@ $cargoMatch = [regex]::Match(
 if (-not $cargoMatch.Success) {
     throw "Could not read the package version from src-tauri/Cargo.toml."
 }
+$cargoLockMatch = [regex]::Match(
+    $cargoLockText,
+    '(?ms)^\[\[package\]\]\s*^name\s*=\s*"nota"\s*^version\s*=\s*"([^"]+)"'
+)
+if (-not $cargoLockMatch.Success) {
+    throw "Could not read the Nota package version from src-tauri/Cargo.lock."
+}
 
 if (-not $lockVersions.rootPackageVersion) {
     throw "Could not read the root package version from package-lock.json."
@@ -55,6 +64,7 @@ $versions = [ordered]@{
     "package-lock.json" = [string]$lockVersions.documentVersion
     "package-lock.json root package" = [string]$lockVersions.rootPackageVersion
     "src-tauri/Cargo.toml" = [string]$cargoMatch.Groups[1].Value
+    "src-tauri/Cargo.lock" = [string]$cargoLockMatch.Groups[1].Value
     "src-tauri/tauri.conf.json" = [string]$tauriConfig.version
     "README.md badge" = [string]$readmeVersionMatch.Groups[1].Value
     "README.zh-CN.md badge" = [string]$chineseReadmeVersionMatch.Groups[1].Value

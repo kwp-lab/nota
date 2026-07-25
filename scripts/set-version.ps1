@@ -12,6 +12,7 @@ $packagePath = Join-Path $workspace "package.json"
 $packageLockPath = Join-Path $workspace "package-lock.json"
 $tauriConfigPath = Join-Path $workspace "src-tauri\tauri.conf.json"
 $cargoPath = Join-Path $workspace "src-tauri\Cargo.toml"
+$cargoLockPath = Join-Path $workspace "src-tauri\Cargo.lock"
 $readmePaths = @(
     (Join-Path $workspace "README.md"),
     (Join-Path $workspace "README.zh-CN.md")
@@ -58,6 +59,24 @@ try {
     [System.IO.File]::WriteAllText(
         $cargoPath,
         $updatedCargoText,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $cargoLockText = [System.IO.File]::ReadAllText($cargoLockPath)
+    $cargoLockVersionPattern = '(?ms)(^\[\[package\]\]\s*^name\s*=\s*"nota"\s*^version\s*=\s*")[^"]+(")'
+    $cargoLockVersionMatch = [regex]::Match($cargoLockText, $cargoLockVersionPattern)
+    if (-not $cargoLockVersionMatch.Success) {
+        throw "Could not update the Nota package version in src-tauri/Cargo.lock."
+    }
+    $updatedCargoLockText = [regex]::Replace(
+        $cargoLockText,
+        $cargoLockVersionPattern,
+        $cargoReplacement,
+        1
+    )
+    [System.IO.File]::WriteAllText(
+        $cargoLockPath,
+        $updatedCargoLockText,
         [System.Text.UTF8Encoding]::new($false)
     )
 
