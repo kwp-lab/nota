@@ -23,6 +23,7 @@
   <img alt="状态：早期预览" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
   <img alt="隐私：仅本地" src="https://img.shields.io/badge/privacy-local%20only-2F7D71?style=flat-square">
   <img alt="遥测：无" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
+  <a href="../../actions/workflows/ci.yml"><img alt="CI 状态" src="../../actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 <p align="center">
@@ -204,6 +205,8 @@ cargo test --locked
 ```
 
 发布脚本会执行前端与 Rust 测试、生成第三方依赖许可证清单、构建 NSIS 安装包，并制作便携 ZIP。Cargo 与 npm 依赖版本均已锁定在仓库中。
+
+维护者可以按照[发布指南](docs/releasing.md)同步版本、创建发布标签，并由 GitHub Actions 生成待审核的草稿 Release。
 
 ## 项目结构
 

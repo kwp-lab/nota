@@ -23,6 +23,7 @@
   <img alt="Status: early preview" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
   <img alt="Privacy: local only" src="https://img.shields.io/badge/privacy-local%20only-2F7D71?style=flat-square">
   <img alt="Telemetry: none" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
+  <a href="../../actions/workflows/ci.yml"><img alt="CI status" src="../../actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 <p align="center">
@@ -204,6 +205,8 @@ cargo test --locked
 ```
 
 The release script runs frontend and Rust tests, generates the third-party license report, builds the NSIS installer, and creates the portable ZIP. Cargo and npm dependency versions are locked in the repository.
+
+Maintainers can follow the [release guide](docs/releasing.md) to synchronize the version, create a release tag, and let GitHub Actions prepare a reviewed draft Release.
 
 ## Project structure
 

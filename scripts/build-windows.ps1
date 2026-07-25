@@ -2,21 +2,38 @@ $ErrorActionPreference = "Stop"
 
 $workspace = Split-Path -Parent $PSScriptRoot
 $tauriRoot = Join-Path $workspace "src-tauri"
-$vcvars = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-$cmakeBin = "C:\Program Files\CMake\bin"
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+$vcvars = $null
 
-if (-not (Test-Path -LiteralPath $vcvars)) {
+if (Test-Path -LiteralPath $vswhere) {
+    $vcvars = & $vswhere `
+        -latest `
+        -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -find "VC\Auxiliary\Build\vcvars64.bat" |
+        Select-Object -First 1
+}
+if (-not $vcvars) {
+    $fallbackVcvars = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+    if (Test-Path -LiteralPath $fallbackVcvars) {
+        $vcvars = $fallbackVcvars
+    }
+}
+
+if (-not $vcvars -or -not (Test-Path -LiteralPath $vcvars)) {
     throw "Visual Studio 2022 C++ Build Tools were not found."
 }
-if (-not (Test-Path -LiteralPath (Join-Path $cmakeBin "cmake.exe"))) {
+
+$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue
+if (-not $cmake) {
     throw "CMake was not found."
 }
 
-$env:Path = "$cmakeBin;$env:Path"
 $env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"
 
 Push-Location $workspace
 try {
+    & ".\scripts\verify-version.ps1"
     & cmd.exe /d /s /c "npm ci"
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed." }
     & cmd.exe /d /s /c "npm run build"
@@ -26,31 +43,11 @@ try {
     & node ".\scripts\generate-license-report.mjs"
     if ($LASTEXITCODE -ne 0) { throw "Generating the license report failed." }
 
-    $cargoCommand = "call `"$vcvars`" && cd /d `"$tauriRoot`" && cargo test --locked && cd /d `"$workspace`" && npx tauri build"
+    $cargoCommand = "call `"$vcvars`" && cd /d `"$tauriRoot`" && cargo test --locked && cd /d `"$workspace`" && npm run tauri -- build"
     & cmd.exe /d /s /c $cargoCommand
     if ($LASTEXITCODE -ne 0) { throw "The Windows release build failed." }
 
-    $releaseDir = Join-Path $workspace "release"
-    $portableDir = Join-Path $releaseDir "Nota-0.1.0-windows-x64-portable"
-    if (Test-Path -LiteralPath $portableDir) {
-        Remove-Item -LiteralPath $portableDir -Recurse -Force
-    }
-    New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-    Copy-Item -LiteralPath (Join-Path $tauriRoot "target\release\nota.exe") -Destination $portableDir -Force
-    Copy-Item -LiteralPath (Join-Path $workspace "README.md") -Destination $portableDir -Force
-    Copy-Item -LiteralPath (Join-Path $workspace "THIRD_PARTY_LICENSES.md") -Destination $portableDir -Force
-    $portableZip = Join-Path $releaseDir "Nota-0.1.0-windows-x64-portable.zip"
-    if (Test-Path -LiteralPath $portableZip) {
-        Remove-Item -LiteralPath $portableZip
-    }
-    Compress-Archive -Path (Join-Path $portableDir "*") -DestinationPath $portableZip -CompressionLevel Optimal
-
-    $nsis = Get-ChildItem -LiteralPath (Join-Path $tauriRoot "target\release\bundle\nsis") -Filter "Nota_*.exe" |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if (-not $nsis) { throw "The NSIS installer was not found." }
-    Copy-Item -LiteralPath $nsis.FullName -Destination $releaseDir -Force
-    Write-Host "Release artifacts are available in $releaseDir"
+    & ".\scripts\package-windows-release.ps1"
 }
 finally {
     Pop-Location
