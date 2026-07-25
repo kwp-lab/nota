@@ -65,6 +65,9 @@ const formatElapsed = (milliseconds: number) => {
 const isActive = (state: RecordingSnapshot["state"]) =>
   ["preparing", "recording", "paused", "interrupted", "finalizing"].includes(state);
 
+const followDefaultDeviceLabel = (device?: AudioDevice) =>
+  `跟随默认通信设备（${device?.name ?? "当前不可用"}）`;
+
 export default function App() {
   const [targets, setTargets] = useState<CaptureTarget[]>([]);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -139,9 +142,29 @@ export default function App() {
     if (snapshot.state === "completed") void refreshLibrary();
   }, [snapshot.state, refreshLibrary]);
 
+  useEffect(() => {
+    const refreshDevices = () => {
+      void api.listAudioDevices().then(setDevices).catch(() => undefined);
+    };
+    const timer = window.setInterval(refreshDevices, 5_000);
+    window.addEventListener("focus", refreshDevices);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshDevices);
+    };
+  }, []);
+
   const selectedTarget = targets.find((target) => target.id === targetId);
   const renderDevices = devices.filter((device) => device.direction === "render");
   const micDevices = devices.filter((device) => device.direction === "capture");
+  const defaultRenderDevice = renderDevices.find(
+    (device) => device.isDefaultCommunications,
+  );
+  const defaultMicDevice = micDevices.find(
+    (device) => device.isDefaultCommunications,
+  );
+  const defaultRenderLabel = followDefaultDeviceLabel(defaultRenderDevice);
+  const defaultMicLabel = followDefaultDeviceLabel(defaultMicDevice);
 
   const capture = useMemo<CaptureSelection>(() => {
     if (captureMode === "process") return { kind: "process", targetId };
@@ -158,7 +181,7 @@ export default function App() {
     captureMode === "process"
       ? selectedTarget?.displayName ?? "未选择应用"
       : renderDeviceId === "default"
-        ? "全部系统声音 · 跟随默认通信设备"
+        ? `全部系统声音 · ${defaultRenderLabel}`
         : `全部系统声音 · ${renderDevices.find((device) => device.id === renderDeviceId)?.name ?? ""}`;
 
   const start = async (noticeAcknowledged: boolean) => {
@@ -340,7 +363,7 @@ export default function App() {
                       </select>
                     ) : (
                       <select value={renderDeviceId} onChange={(e) => setRenderDeviceId(e.target.value)}>
-                        <option value="default">跟随默认通信设备</option>
+                        <option value="default">{defaultRenderLabel}</option>
                         {renderDevices.map((device) => (
                           <option key={device.id} value={device.id}>{device.name}</option>
                         ))}
@@ -362,7 +385,7 @@ export default function App() {
                         if (enabled) setMicDeviceId(e.target.value);
                       }}
                     >
-                      <option value="default">跟随默认通信设备</option>
+                      <option value="default">{defaultMicLabel}</option>
                       {micDevices.map((device) => (
                         <option key={device.id} value={device.id}>{device.name}</option>
                       ))}

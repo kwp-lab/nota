@@ -7,6 +7,14 @@ import type { RecordingSnapshot } from "./types";
 const testState = vi.hoisted(() => ({
   snapshot: {} as RecordingSnapshot,
   devicesError: false,
+  devices: [] as Array<{
+    id: string;
+    name: string;
+    direction: "render" | "capture";
+    isDefaultCommunications: boolean;
+    formFactor: string;
+    active: boolean;
+  }>,
   recoverable: [] as Array<Record<string, unknown>>,
   noticeAcknowledged: true,
   requestStart: null as (() => void) | null,
@@ -27,7 +35,7 @@ vi.mock("./api", () => ({
     ]),
     listAudioDevices: vi.fn(async () => {
       if (testState.devicesError) throw new Error("麦克风权限已关闭");
-      return [];
+      return testState.devices;
     }),
     getSettings: vi.fn(async () => ({
       outputDirectory: "C:\\Recordings",
@@ -72,6 +80,7 @@ describe("Nota UI states", () => {
   beforeEach(() => {
     testState.snapshot = snapshot("idle");
     testState.devicesError = false;
+    testState.devices = [];
     testState.recoverable = [];
     testState.noticeAcknowledged = true;
     testState.requestStart = null;
@@ -96,6 +105,41 @@ describe("Nota UI states", () => {
     testState.devicesError = true;
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("麦克风权限已关闭");
+  });
+
+  it("shows the current default device names in follow-default options", async () => {
+    testState.devices = [
+      {
+        id: "render:default",
+        name: "扬声器 (Realtek(R) Audio)",
+        direction: "render",
+        isDefaultCommunications: true,
+        formFactor: "Speakers",
+        active: true,
+      },
+      {
+        id: "capture:default",
+        name: "麦克风阵列 (Realtek(R) Audio)",
+        direction: "capture",
+        isDefaultCommunications: true,
+        formFactor: "Microphone",
+        active: true,
+      },
+    ];
+    render(<App />);
+
+    expect(
+      await screen.findByRole("option", {
+        name: "跟随默认通信设备（麦克风阵列 (Realtek(R) Audio)）",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "全部系统声音" }));
+    expect(
+      screen.getByRole("option", {
+        name: "跟随默认通信设备（扬声器 (Realtek(R) Audio)）",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("offers crash recovery", async () => {

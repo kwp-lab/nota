@@ -625,6 +625,8 @@
 | @rolldown/binding-linux-x64-musl | 1.1.5 | MIT |
 | @rolldown/binding-openharmony-arm64 | 1.1.5 | MIT |
 | @rolldown/binding-wasm32-wasi | 1.1.5 | MIT |
+| @rolldown/binding-wasm32-wasi/node_modules/@emnapi/core | 1.11.1 | MIT |
+| @rolldown/binding-wasm32-wasi/node_modules/@emnapi/runtime | 1.11.1 | MIT |
 | @rolldown/binding-win32-arm64-msvc | 1.1.5 | MIT |
 | @rolldown/binding-win32-x64-msvc | 1.1.5 | MIT |
 | @rolldown/pluginutils | 1.0.0-rc.3 | MIT |

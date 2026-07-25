@@ -1,51 +1,278 @@
-# Nota
+<p align="center">
+  <img src="assets/app-icon.svg" width="96" height="96" alt="Nota logo">
+</p>
 
-Nota 是一个仅面向 Windows 11 x64 的本地会议录音客户端。它使用 Windows Core Audio 直接采集指定应用进程树或输出设备，同时采集麦克风，在本机完成回声消除、混音和 Ogg Opus 编码。
+<h1 align="center">Nota</h1>
 
-## 隐私与边界
+<p align="center">
+  <strong>Record every meeting. Keep every word local.</strong>
+</p>
 
-- 不需要账号，不含遥测、云服务或自动更新；运行时不主动建立网络连接。
-- 不包含转写、摘要、说话人识别、视频录制。
-- 指定 Chrome 或 Edge 时会录制该浏览器根进程树的全部声音，不能精确到标签页。
-- 首次录音时会显示隐私与告知提示，确认后不再重复打断。使用者仍应遵守所在地法律、会议规则及组织政策。
-- 首版未做代码签名，Windows SmartScreen 可能显示“未知发布者”提示。
+<p align="center">
+  A privacy-first Windows recorder for meeting apps and browser calls.<br>
+  No bots. No cloud upload. No virtual audio device.
+</p>
 
-## 输出与恢复
+<p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-- 输出：48 kHz、单声道、Ogg Opus、默认 64 kbps，通常约 30 MB/小时。
-- 默认目录：`文档\Nota\Recordings`。
-- 录制中先写入 `%LOCALAPPDATA%\Nota\Recovery`；正常停止后写入 EOS、持久化并移至目标目录。
-- 从旧版升级时会迁移 `%LOCALAPPDATA%\Meeting Note` 和旧默认录音目录；用户自定义的保存目录不会改变。
-- 崩溃后可恢复至最后一个校验通过的完整 Ogg 页。
-- 设置和录音索引保存在本地 SQLite WAL 数据库；技术日志最多 3 × 10 MB，不记录音频内容。
+<p align="center">
+  <img alt="Platform: Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
+  <img alt="Version: 0.1.0" src="https://img.shields.io/badge/version-0.1.0-56615D?style=flat-square">
+  <img alt="Status: early preview" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
+  <img alt="Privacy: local only" src="https://img.shields.io/badge/privacy-local%20only-2F7D71?style=flat-square">
+  <img alt="Telemetry: none" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
+</p>
 
-## 开发与构建
+<p align="center">
+  <a href="#get-nota"><strong>Get Nota</strong></a>
+  ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#build-from-source">Build from source</a>
+</p>
 
-需要 Rust stable、Node.js 22、Visual Studio 2022 Build Tools（Desktop development with C++）、Windows 11 SDK 和 CMake。仓库已锁定 Cargo 与 npm 依赖。
+<p align="center">
+  <img src="docs/assets/nota-overview.jpg" width="900" alt="Nota recording Chrome and a microphone on Windows 11">
+</p>
+
+## Why Nota?
+
+Meeting audio is scattered across native clients, browser tabs, microphones, and output devices. Built-in recording is inconsistent, screen recording creates unnecessarily large video files, and many meeting assistants require a bot or upload private conversations to the cloud.
+
+Nota gives Windows one focused recording workflow:
+
+- capture a selected meeting application's process tree;
+- fall back to a selected system output when application capture is not suitable;
+- combine remote audio and microphone into one compact file;
+- keep capture, processing, recovery, and storage on your computer.
+
+## Highlights
+
+| | |
+|---|---|
+| **Focused application capture** | Record Zoom, Teams, Feishu/Lark, Tencent Meeting, Chrome, Edge, or another selected application without silently widening the scope. |
+| **Universal system mode** | Capture everything playing through a selected Windows output device when you need broader coverage. |
+| **Microphone + remote audio** | Align independent device clocks, apply local echo cancellation, and deliver a single mixed recording. |
+| **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
+| **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
+| **Offline by design** | No account, telemetry, cloud service, automatic upload, or runtime network connection. |
+
+## Works with the meetings you already use
+
+| Application | Recommended mode | Notes |
+|---|---|---|
+| Zoom | Selected application | Captures the Zoom process tree |
+| Microsoft Teams | Selected application | Captures the desktop client |
+| Feishu / Lark | Selected application | Captures the desktop client |
+| Tencent Meeting | Selected application | Captures the desktop client |
+| Google Meet in Chrome or Edge | Selected application | Captures all audio from the selected browser process tree |
+| Other audio applications | Selected application or system audio | System mode captures the selected output device |
+
+> [!IMPORTANT]
+> Browser capture is process-based, not tab-based. Selecting Chrome or Edge records all audio produced by that browser, not only the current meeting tab.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Meeting app<br>or Windows output"] --> B["WASAPI loopback"]
+    C["Microphone"] --> D["WASAPI capture"]
+    B --> E["QPC alignment<br>and drift correction"]
+    D --> F["Sonora AEC3"]
+    B --> F
+    E --> G["Mix and<br>-1 dBFS limiter"]
+    F --> G
+    G --> H["48 kHz mono<br>Ogg Opus"]
+```
+
+Nota uses Windows Core Audio directly. Selected-application mode uses Windows process-loopback capture with the target process tree; system mode uses endpoint loopback for a selected output device. Microphone audio is captured independently, aligned with QPC timestamps, resampled to correct clock drift, processed locally, and mixed before Opus encoding.
+
+There is no FFmpeg runtime, virtual sound card, or cloud processing service.
+
+## Get Nota
+
+Nota is currently an early preview. Public binaries have not been published yet.
+
+The first GitHub release is planned to include:
+
+- a per-user NSIS installer that does not require administrator access;
+- a portable ZIP that keeps settings and recovery data in LocalAppData.
+
+Future binaries will appear on the [GitHub Releases page](../../releases). Until then, developers can [build Nota from source](#build-from-source).
+
+> [!NOTE]
+> The current preview is unsigned. Windows SmartScreen may show an “Unknown publisher” warning.
+
+## Quick start
+
+1. Open Nota and choose **Selected application** or **All system audio**.
+2. Select the meeting application or Windows output device.
+3. Choose a microphone, or disable microphone recording.
+4. Confirm the destination and start recording.
+5. Stop and save from the window, tray menu, or keyboard shortcut.
+6. Play the result from **Recent recordings** or open its containing folder.
+
+Default shortcuts:
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Alt+F9` | Start, pause, or resume |
+| `Ctrl+Alt+F10` | Stop and save |
+
+Shortcuts can be changed or disabled in Settings. Closing the main window keeps Nota available in the system tray.
+
+## Privacy by design
+
+**Your meeting audio never needs to leave your computer.**
+
+- No account or sign-in
+- No telemetry or analytics
+- No cloud upload or remote processing
+- No automatic meeting detection
+- No automatic recording
+- No audio content in technical logs
+- No runtime network connection
+
+Nota shows a participant-notification reminder before the first recording. Users remain responsible for complying with applicable laws, meeting rules, and organizational policies.
+
+## Reliability and recovery
+
+Recording begins in `%LOCALAPPDATA%\Nota\Recovery` before the result is moved to the selected destination.
+
+- Complete Ogg pages are flushed regularly.
+- Normal stop writes an EOS marker before finalization.
+- Interrupted files can be repaired to the last complete, validated Ogg page.
+- Cross-volume saves use copy, verification, persistence, and only then recovery-file removal.
+- Output and microphone streams recover independently after device interruptions.
+- Low disk space triggers a warning below 200 MB and a safe stop below 50 MB.
+- Paused time and system sleep are excluded from the final recording.
+
+The default output directory is `Documents\Nota\Recordings`. Settings and the recording index are stored locally in SQLite WAL mode; rotating technical logs are limited to 3 × 10 MB.
+
+## Current limitations
+
+- Windows 11 x64 only
+- Simplified Chinese interface in the current preview
+- Browser capture cannot be restricted to one tab
+- One mixed output file; no separate microphone/system tracks
+- Audio recording only—no video, transcription, summarization, or speaker identification
+- Echo-cancellation quality depends on the microphone, speakers, room, and device mode
+- The preview is not code-signed
+
+## Roadmap
+
+- [ ] Publish reproducible GitHub releases
+- [ ] Add Windows code signing
+- [ ] Expand the tested device and meeting-client matrix
+- [ ] Add an English interface and improve accessibility
+- [ ] Add Windows on ARM64 support
+
+The roadmap intentionally stays focused on reliable local recording. Feature proposals are welcome in [Issues](../../issues).
+
+## Build from source
+
+### Prerequisites
+
+- Windows 11 x64
+- Rust stable
+- Node.js 22
+- Visual Studio 2022 Build Tools with **Desktop development with C++**
+- Windows 11 SDK
+- CMake
+
+### Development
 
 ```powershell
 npm ci
-npm run build
+npm run tauri dev
+```
+
+### Tests
+
+```powershell
 npm test
+cd src-tauri
+cargo test --locked
+```
+
+### Release package
+
+```powershell
 .\scripts\build-windows.ps1
 ```
 
-构建脚本会执行前端测试、Rust 测试、生成依赖许可证清单、构建按用户安装的 NSIS 安装包，并制作便携 ZIP。便携版仍将设置和恢复文件写入 LocalAppData。
+The release script runs frontend and Rust tests, generates the third-party license report, builds the NSIS installer, and creates the portable ZIP. Cargo and npm dependency versions are locked in the repository.
 
-## 快捷键和托盘
+## Project structure
 
-- `Ctrl+Alt+F9`：从空闲状态开始录音，或暂停/继续当前录音；首次使用时会显示一次提示。
-- `Ctrl+Alt+F10`：停止并保存。
-- 快捷键可在设置中修改或关闭；冲突时保存会失败，不覆盖其他应用。
-- 关闭窗口会隐藏到托盘。录音中选择退出会要求停止并保存或取消。
+```text
+src/                               React and TypeScript interface
+src-tauri/src/audio/wasapi.rs      Windows capture and device recovery
+src-tauri/src/audio/dsp.rs         Alignment, resampling, AEC, mixing, limiting
+src-tauri/src/audio/encoder.rs     Opus encoding and Ogg container
+src-tauri/src/audio/recovery.rs    Validation, repair, and safe finalization
+src-tauri/src/controller.rs        Recording state, IPC, tray, and file actions
+```
 
-## 代码结构
+The frontend only receives state, health, fault, and level events. Raw PCM remains in the Rust audio pipeline.
 
-- `src/`：React/TypeScript 界面，不接触 PCM。
-- `src-tauri/src/audio/wasapi.rs`：WASAPI 端点回环、进程树回环、麦克风、设备通知和重连。
-- `src-tauri/src/audio/dsp.rs`：QPC 缺包校正、异步重采样、Sonora AEC3、混音和限制器。
-- `src-tauri/src/audio/encoder.rs`：静态 libopus 与 Ogg 封装。
-- `src-tauri/src/audio/recovery.rs`：Ogg 页校验、截断、EOS 恢复和跨磁盘安全移动。
-- `src-tauri/src/controller.rs`：录音状态、Tauri IPC、托盘、快捷键和文件管理。
+## Contributing
 
-原有竞品调研文档已保留在仓库根目录。
+Nota is preparing for a public open-source release. Contributions will be especially valuable in:
+
+- Windows audio-device compatibility testing;
+- meeting-client capture testing;
+- Rust audio reliability and recovery;
+- UI accessibility and localization;
+- documentation and reproducible builds.
+
+For now, please use [Issues](../../issues) for reproducible bug reports and focused feature proposals. A dedicated contribution guide will be added before the public launch.
+
+## FAQ
+
+<details>
+<summary><strong>Does Nota join the meeting as a bot?</strong></summary>
+
+No. Nota records Windows audio locally and never joins a call as a participant.
+</details>
+
+<details>
+<summary><strong>Can Nota record Google Meet?</strong></summary>
+
+Yes. Select Chrome or Edge as the capture target. Nota will capture the browser process tree, which means other audio from the same browser may also be included.
+</details>
+
+<details>
+<summary><strong>Why Ogg Opus?</strong></summary>
+
+Opus provides clear speech at a small file size. The default 64 kbps mono configuration is typically around 30 MB per hour and is supported by WebView2, VLC, and many modern players.
+</details>
+
+<details>
+<summary><strong>What happens if Nota or Windows crashes?</strong></summary>
+
+On the next launch, Nota scans recovery files, removes incomplete trailing data, writes a valid ending where possible, and lets the user recover or discard the session.
+</details>
+
+<details>
+<summary><strong>Does Nota send any data over the internet?</strong></summary>
+
+No. The application is designed to operate without external network connections. The badges and links in this README are served by GitHub and Shields.io, not by the Nota application.
+</details>
+
+## Acknowledgements
+
+Nota is built with [Tauri](https://tauri.app/), [Rust](https://www.rust-lang.org/), [React](https://react.dev/), Windows Core Audio, [Sonora](https://github.com/dignifiedquire/sonora), and [Opus](https://opus-codec.org/). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency notices.
+
+## License
+
+An open-source license will be selected and added before the repository is made public. Until then, no license is granted for copying, modifying, or redistributing the source.
+
+---
+
+<p align="center">
+  If Nota is the kind of private, dependable meeting recorder you want to see,<br>
+  consider giving the project a ⭐ when it goes public.
+</p>
