@@ -17,22 +17,24 @@ const testState = vi.hoisted(() => ({
   }>,
   recoverable: [] as Array<Record<string, unknown>>,
   noticeAcknowledged: true,
-  requestStart: null as (() => void) | null,
+  targets: [] as Array<{
+    id: string;
+    kind: "process";
+    displayName: string;
+    processId: number;
+    executablePath: string;
+    browser: boolean;
+    priority: number;
+  }>,
+  requestStart: null as
+    | ((mode?: "process" | "system" | "current") => void)
+    | null,
 }));
 
 vi.mock("./api", () => ({
   api: {
-    listCaptureTargets: vi.fn(async () => [
-      {
-        id: "process:42",
-        kind: "process",
-        displayName: "Zoom",
-        processId: 42,
-        executablePath: "C:\\Zoom.exe",
-        browser: false,
-        priority: 100,
-      },
-    ]),
+    getAppVersion: vi.fn(async () => "0.1.1"),
+    listCaptureTargets: vi.fn(async () => testState.targets),
     listAudioDevices: vi.fn(async () => {
       if (testState.devicesError) throw new Error("麦克风权限已关闭");
       return testState.devices;
@@ -55,10 +57,14 @@ vi.mock("./api", () => ({
     onLevels: vi.fn(async () => () => undefined),
     saveSettings: vi.fn(async () => undefined),
     startRecording: vi.fn(async () => snapshot("recording")),
-    onRequestStart: vi.fn(async (handler: () => void) => {
+    onRequestStart: vi.fn(
+      async (
+        handler: (mode?: "process" | "system" | "current") => void,
+      ) => {
       testState.requestStart = handler;
       return () => undefined;
-    }),
+      },
+    ),
     onRequestExit: vi.fn(async () => () => undefined),
   },
 }));
@@ -83,6 +89,17 @@ describe("Nota UI states", () => {
     testState.devices = [];
     testState.recoverable = [];
     testState.noticeAcknowledged = true;
+    testState.targets = [
+      {
+        id: "process:42",
+        kind: "process",
+        displayName: "Zoom",
+        processId: 42,
+        executablePath: "C:\\Zoom.exe",
+        browser: false,
+        priority: 100,
+      },
+    ];
     testState.requestStart = null;
     vi.clearAllMocks();
   });
@@ -142,6 +159,13 @@ describe("Nota UI states", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the application version in settings", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    expect(await screen.findByText("关于此应用")).toBeInTheDocument();
+    expect(screen.getByText("v0.1.1")).toBeInTheDocument();
+  });
+
   it("offers crash recovery", async () => {
     testState.recoverable = [
       {
@@ -173,13 +197,68 @@ describe("Nota UI states", () => {
   it("starts directly from the tray after acknowledgement", async () => {
     render(<App />);
     await waitFor(() => expect(testState.requestStart).not.toBeNull());
-    act(() => testState.requestStart?.());
+    act(() => testState.requestStart?.("current"));
     await waitFor(() =>
       expect(vi.mocked(api.startRecording)).toHaveBeenCalledWith(
         expect.objectContaining({ consentConfirmed: true }),
       ),
     );
     expect(screen.queryByText("首次录音提示")).not.toBeInTheDocument();
+  });
+
+  it("starts system audio from the dedicated tray action", async () => {
+    render(<App />);
+    await waitFor(() => expect(testState.requestStart).not.toBeNull());
+    act(() => testState.requestStart?.("system"));
+    await waitFor(() =>
+      expect(vi.mocked(api.startRecording)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capture: expect.objectContaining({ kind: "system" }),
+        }),
+      ),
+    );
+  });
+
+  it("refreshes applications when the window regains focus", async () => {
+    render(<App />);
+    expect(await screen.findByRole("option", { name: "Zoom" })).toBeInTheDocument();
+    testState.targets = [
+      {
+        id: "process:77",
+        kind: "process",
+        displayName: "腾讯会议",
+        processId: 77,
+        executablePath: "C:\\Program Files\\Tencent\\wemeetapp.exe",
+        browser: false,
+        priority: 90,
+      },
+      ...testState.targets,
+    ];
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(
+      await screen.findByRole("option", { name: "腾讯会议" }),
+    ).toBeInTheDocument();
+  });
+
+  it("rebinds the selected application after its process id changes", async () => {
+    render(<App />);
+    const source = await screen.findByRole("combobox", { name: "录音来源" });
+    expect(source).toHaveValue("process:42");
+    testState.targets = [
+      {
+        id: "process:84",
+        kind: "process",
+        displayName: "Zoom Meeting",
+        processId: 84,
+        executablePath: "c:\\zoom.exe",
+        browser: false,
+        priority: 100,
+      },
+    ];
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(source).toHaveValue("process:84"));
   });
 
   it("shows and persists the notice only before the first recording", async () => {

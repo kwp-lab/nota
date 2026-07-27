@@ -229,6 +229,7 @@
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 |
+| num-integer | 0.1.46 | MIT OR Apache-2.0 |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 |
 | objc2 | 0.6.4 | MIT |
 | objc2-app-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
@@ -300,6 +301,7 @@
 | reqwest | 0.13.4 | MIT OR Apache-2.0 |
 | rfd | 0.16.0 | MIT |
 | rsqlite-vfs | 0.1.1 | MIT |
+| rubato | 0.16.2 | MIT |
 | rusqlite | 0.40.1 | MIT |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |

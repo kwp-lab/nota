@@ -28,20 +28,18 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::PCWSTR;
 
+const MAX_PACKETS_PER_TICK: usize = 64;
+
 struct AppState {
     storage: Arc<Storage>,
     recorder: Arc<RecordingController>,
-    tray_menu: Mutex<Option<TrayMenuItems>>,
-}
-
-struct TrayMenuItems {
-    toggle: MenuItem<tauri::Wry>,
-    stop: MenuItem<tauri::Wry>,
+    tray_state: Mutex<Option<RecordingState>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TrayControls {
-    toggle_label: &'static str,
+    start_enabled: bool,
+    toggle_label: Option<&'static str>,
     toggle_enabled: bool,
     stop_enabled: bool,
 }
@@ -56,12 +54,14 @@ struct RecordingRuntime {
     system_health: Arc<Mutex<Arc<AtomicBool>>>,
     microphone_health: Arc<Mutex<Arc<AtomicBool>>>,
     microphone_enabled: Arc<AtomicBool>,
+    capture_selection: CaptureSelection,
     worker: Option<JoinHandle<()>>,
 }
 
 struct RecordingController {
     snapshot: Arc<Mutex<RecordingSnapshot>>,
     runtime: Mutex<Option<RecordingRuntime>>,
+    finalizer: Mutex<Option<JoinHandle<()>>>,
     storage: Arc<Storage>,
 }
 
@@ -70,6 +70,7 @@ impl RecordingController {
         Self {
             snapshot: Arc::new(Mutex::new(RecordingSnapshot::default())),
             runtime: Mutex::new(None),
+            finalizer: Mutex::new(None),
             storage,
         }
     }
@@ -78,11 +79,52 @@ impl RecordingController {
         self.snapshot.lock().clone()
     }
 
+    fn reap_finalizer(&self) -> Result<()> {
+        let finished = self
+            .finalizer
+            .lock()
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished);
+        if finished {
+            self.wait_for_finalizer()?;
+        }
+        Ok(())
+    }
+
+    fn wait_for_finalizer(&self) -> Result<()> {
+        let finalizer = self.finalizer.lock().take();
+        if let Some(finalizer) = finalizer {
+            finalizer
+                .join()
+                .map_err(|_| anyhow!("录音收尾线程异常结束"))?;
+        }
+        Ok(())
+    }
+
+    fn is_active(&self) -> bool {
+        self.runtime.lock().is_some()
+            || self
+                .finalizer
+                .lock()
+                .as_ref()
+                .is_some_and(|finalizer| !finalizer.is_finished())
+            || matches!(
+                self.snapshot.lock().state,
+                RecordingState::Preparing
+                    | RecordingState::Recording
+                    | RecordingState::Paused
+                    | RecordingState::Interrupted
+                    | RecordingState::Finalizing
+                    | RecordingState::Recovering
+            )
+    }
+
     fn start(&self, app: AppHandle, request: StartRecordingRequest) -> Result<RecordingSnapshot> {
+        self.reap_finalizer()?;
         if !request.consent_confirmed {
             bail!("开始录音前必须确认已告知参会者");
         }
-        if self.runtime.lock().is_some() {
+        if self.is_active() {
             return Ok(self.snapshot());
         }
         let output_directory = PathBuf::from(request.output_directory.trim());
@@ -148,20 +190,31 @@ impl RecordingController {
             }
         };
 
+        let process_capture = matches!(request.capture, CaptureSelection::Process { .. });
+        let (microphone_tx, microphone_rx) = unbounded::<AudioPacket>();
         let (system_tx, system_rx) = unbounded::<AudioPacket>();
         let system_source = capture_source_from_selection(&request.capture)?;
-        let system_capture = match start_capture(system_source, system_tx.clone()) {
-            Ok(handle) => handle,
-            Err(error) => {
-                drop(writer);
-                let _ = std::fs::remove_file(&partial_path);
-                self.set_error(&app, "system", "CAPTURE_START_FAILED", &error);
-                bail!("无法启动所选录音来源：{error:#}。可切换到“全部系统声音”后重试")
-            }
+        // Attach process loopback before opening a Bluetooth microphone.
+        // Switching a headset from A2DP to HFP can make a meeting client move
+        // its render stream to a replacement process/session. Endpoint
+        // loopback needs the opposite order so it binds to the post-switch HFP
+        // endpoint instead of the now-silent A2DP endpoint.
+        let mut system_capture = if process_capture {
+            Some(
+                match start_capture(system_source.clone(), system_tx.clone()) {
+                    Ok(handle) => handle,
+                    Err(error) => {
+                        drop(writer);
+                        let _ = std::fs::remove_file(&partial_path);
+                        self.set_error(&app, "system", "CAPTURE_START_FAILED", &error);
+                        bail!("无法启动所选录音来源：{error:#}。可切换到“全部系统声音”后重试")
+                    }
+                },
+            )
+        } else {
+            None
         };
-
-        let (microphone_tx, microphone_rx) = unbounded::<AudioPacket>();
-        let (microphone_capture, microphone_error) = match request.microphone.clone() {
+        let (mut microphone_capture, microphone_error) = match request.microphone.clone() {
             Some(selection) => {
                 match start_capture(CaptureSource::Microphone(selection), microphone_tx.clone()) {
                     Ok(handle) => (Some(handle), None),
@@ -170,6 +223,29 @@ impl RecordingController {
             }
             None => (None, None),
         };
+        // Opening a Bluetooth microphone switches a unified Windows 11
+        // endpoint from A2DP to HFP. Establish that mode before creating an
+        // endpoint-loopback client, otherwise the loopback can remain attached
+        // to the now-silent A2DP render path.
+        if !process_capture && microphone_capture.is_some() {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+
+        if system_capture.is_none() {
+            system_capture = Some(match start_capture(system_source, system_tx.clone()) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    if let Some(capture) = microphone_capture.take() {
+                        capture.stop();
+                    }
+                    drop(writer);
+                    let _ = std::fs::remove_file(&partial_path);
+                    self.set_error(&app, "system", "CAPTURE_START_FAILED", &error);
+                    bail!("无法启动所选录音来源：{error:#}。可切换到“全部系统声音”后重试")
+                }
+            });
+        }
+        let system_capture = system_capture.expect("capture source was initialized");
         let microphone_expected = request.microphone.is_some();
         let auto_should_enable_aec = auto_should_enable_aec(&request.capture);
         let aec_enabled = microphone_capture.is_some()
@@ -258,6 +334,7 @@ impl RecordingController {
             system_health,
             microphone_health,
             microphone_enabled,
+            capture_selection: request.capture,
             worker: Some(worker),
         });
         Ok(self.snapshot())
@@ -320,6 +397,10 @@ impl RecordingController {
     }
 
     fn stop(&self, app: &AppHandle) -> Result<RecordingSnapshot> {
+        self.reap_finalizer()?;
+        if self.finalizer.lock().is_some() {
+            return Ok(self.snapshot());
+        }
         let mut runtime = match self.runtime.lock().take() {
             Some(runtime) => runtime,
             None => return Ok(self.snapshot()),
@@ -342,11 +423,40 @@ impl RecordingController {
             log::info!("microphone capture stopped");
         }
         if let Some(worker) = runtime.worker.take() {
-            log::info!("waiting for recording worker");
-            worker.join().map_err(|_| anyhow!("录音封装线程异常结束"))?;
-            log::info!("recording worker stopped");
+            let finalizer_app = app.clone();
+            let finalizer_snapshot = Arc::clone(&self.snapshot);
+            let finalizer = std::thread::Builder::new()
+                .name("nota-finalizer".into())
+                .spawn(move || {
+                    log::info!("waiting for recording worker");
+                    if worker.join().is_err() {
+                        {
+                            let mut value = finalizer_snapshot.lock();
+                            value.state = RecordingState::Error;
+                            value.fault = Some(RecordingFault {
+                                component: "encoder".into(),
+                                code: "FINALIZER_PANIC".into(),
+                                recoverable: true,
+                                user_message:
+                                    "录音收尾线程异常结束，恢复文件已保留，可在重启后恢复".into(),
+                                occurred_at: Utc::now().to_rfc3339(),
+                            });
+                        }
+                        emit_snapshot(&finalizer_app, &finalizer_snapshot);
+                        log::error!("recording worker panicked during finalization");
+                    } else {
+                        log::info!("recording worker stopped");
+                    }
+                })
+                .context("无法启动录音收尾线程")?;
+            *self.finalizer.lock() = Some(finalizer);
         }
-        emit_snapshot(app, &self.snapshot);
+        Ok(self.snapshot())
+    }
+
+    fn stop_and_wait(&self, app: &AppHandle) -> Result<RecordingSnapshot> {
+        self.stop(app)?;
+        self.wait_for_finalizer()?;
         Ok(self.snapshot())
     }
 
@@ -363,7 +473,8 @@ impl RecordingController {
         });
         let value = snapshot.clone();
         drop(snapshot);
-        let _ = app.emit("recording://snapshot", value);
+        let _ = app.emit("recording://snapshot", value.clone());
+        schedule_tray_update(app, value.state);
     }
 
     fn switch_capture(
@@ -382,6 +493,7 @@ impl RecordingController {
         if let Some(previous) = runtime.system_capture.replace(replacement) {
             previous.stop();
         }
+        runtime.capture_selection = selection.clone();
         let mut snapshot = self.snapshot.lock();
         snapshot.system = SourceStatus {
             healthy: true,
@@ -394,7 +506,7 @@ impl RecordingController {
         let value = snapshot.clone();
         drop(snapshot);
         let _ = app.emit("recording://snapshot", value.clone());
-        update_tray(app, value.state);
+        schedule_tray_update(app, value.state);
         Ok(value)
     }
 
@@ -438,9 +550,24 @@ impl RecordingController {
                 snapshot.aec_status = AecStatus::Disabled;
             }
         }
+        restart_system_loopback_after_device_mode_change(runtime)?;
         emit_snapshot(app, &self.snapshot);
         Ok(self.snapshot())
     }
+}
+
+fn restart_system_loopback_after_device_mode_change(runtime: &mut RecordingRuntime) -> Result<()> {
+    if !matches!(runtime.capture_selection, CaptureSelection::System { .. }) {
+        return Ok(());
+    }
+    std::thread::sleep(Duration::from_millis(250));
+    let source = capture_source_from_selection(&runtime.capture_selection)?;
+    let replacement = start_capture(source, runtime.system_sender.clone())?;
+    *runtime.system_health.lock() = replacement.health_flag();
+    if let Some(previous) = runtime.system_capture.replace(replacement) {
+        previous.stop();
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -573,12 +700,26 @@ fn recording_worker(
         }
     }
 
-    let stop_was_requested = stop.load(Ordering::Acquire);
-    log::info!("recording worker leaving mix loop");
+    let diagnostics = mixer.diagnostics();
+    log::info!(
+        "recording worker leaving mix loop; audio diagnostics system_underflows={} microphone_underflows={} system_discontinuities={} microphone_discontinuities={} system_concealed_gap_samples={} microphone_concealed_gap_samples={} system_packets={} microphone_packets={} system_non_silent_packets={} microphone_non_silent_packets={} system_input_rms_db={:.1} microphone_input_rms_db={:.1} system_input_peak_db={:.1} microphone_input_peak_db={:.1}",
+        diagnostics.system_underflows,
+        diagnostics.microphone_underflows,
+        diagnostics.system_discontinuities,
+        diagnostics.microphone_discontinuities,
+        diagnostics.system_concealed_gap_samples,
+        diagnostics.microphone_concealed_gap_samples,
+        diagnostics.system_packets,
+        diagnostics.microphone_packets,
+        diagnostics.system_non_silent_packets,
+        diagnostics.microphone_non_silent_packets,
+        amplitude_db(diagnostics.system_input_rms),
+        amplitude_db(diagnostics.microphone_input_rms),
+        amplitude_db(diagnostics.system_input_peak as f64),
+        amplitude_db(diagnostics.microphone_input_peak as f64)
+    );
     snapshot.lock().state = RecordingState::Finalizing;
-    if !stop_was_requested {
-        emit_snapshot(&app, &snapshot);
-    }
+    emit_snapshot(&app, &snapshot);
     log::info!("recording worker finishing Ogg stream");
     let finalization = writer.finish().and_then(|_| {
         log::info!("Ogg stream finished; moving recording to output");
@@ -639,19 +780,22 @@ fn recording_worker(
             log::error!("recording finalization failed: {error:#}");
         }
     }
-    if !stop_was_requested {
-        emit_snapshot(&app, &snapshot);
-    }
+    emit_snapshot(&app, &snapshot);
 }
 
 fn drain_packets(receiver: &Receiver<AudioPacket>, mut consume: impl FnMut(AudioPacket)) -> bool {
-    loop {
+    for _ in 0..MAX_PACKETS_PER_TICK {
         match receiver.try_recv() {
             Ok(packet) => consume(packet),
             Err(TryRecvError::Empty) => return true,
             Err(TryRecvError::Disconnected) => return false,
         }
     }
+    true
+}
+
+fn amplitude_db(value: f64) -> f64 {
+    20.0 * value.max(1.0e-12).log10()
 }
 
 fn unique_recording_path(directory: &Path) -> PathBuf {
@@ -716,11 +860,21 @@ fn auto_should_enable_aec(selection: &CaptureSelection) -> bool {
 fn emit_snapshot(app: &AppHandle, snapshot: &Arc<Mutex<RecordingSnapshot>>) {
     let value = snapshot.lock().clone();
     let _ = app.emit("recording://snapshot", value.clone());
-    update_tray(app, value.state);
+    schedule_tray_update(app, value.state);
 }
 
 fn command_result<T>(result: Result<T>) -> std::result::Result<T, String> {
     result.map_err(|error| format!("{error:#}"))
+}
+
+fn stop_in_background(app: &AppHandle, recorder: Arc<RecordingController>) {
+    let stop_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = recorder.stop(&stop_app) {
+            log::error!("background stop request failed: {error:#}");
+            recorder.set_error(&stop_app, "controller", "STOP_FAILED", &error);
+        }
+    });
 }
 
 #[tauri::command]
@@ -785,11 +939,15 @@ fn resume_recording(
 }
 
 #[tauri::command]
-fn stop_recording(
+async fn stop_recording(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> std::result::Result<RecordingSnapshot, String> {
-    command_result(state.recorder.stop(&app))
+    let recorder = Arc::clone(&state.recorder);
+    let result = tauri::async_runtime::spawn_blocking(move || recorder.stop(&app))
+        .await
+        .map_err(|error| format!("停止录音任务异常结束：{error}"))?;
+    command_result(result)
 }
 
 #[tauri::command]
@@ -812,7 +970,7 @@ fn set_microphone_enabled(
 
 impl AppState {
     fn runtime_active(&self) -> bool {
-        self.recorder.runtime.lock().is_some()
+        self.recorder.is_active()
     }
 }
 
@@ -1007,21 +1165,25 @@ fn delete_recoverable_recording(
 }
 
 #[tauri::command]
-fn quit_application(
+async fn quit_application(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     stop_and_save: bool,
 ) -> std::result::Result<(), String> {
-    command_result((|| {
-        if state.runtime_active() {
-            if !stop_and_save {
-                bail!("录音仍在进行");
-            }
-            state.recorder.stop(&app)?;
+    let recorder = Arc::clone(&state.recorder);
+    if recorder.is_active() {
+        if !stop_and_save {
+            return Err("录音仍在进行".into());
         }
-        app.exit(0);
-        Ok(())
-    })())
+        let stop_app = app.clone();
+        let result =
+            tauri::async_runtime::spawn_blocking(move || recorder.stop_and_wait(&stop_app))
+                .await
+                .map_err(|error| format!("退出前保存任务异常结束：{error}"))?;
+        command_result(result)?;
+    }
+    app.exit(0);
+    Ok(())
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -1051,26 +1213,89 @@ fn register_shortcuts(app: &AppHandle, settings: &AppSettings) -> Result<()> {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
-                let _ = app.emit("recording://request-start", ());
+                let _ = app.emit("recording://request-start", "current");
             }
         }
     })?;
     shortcuts.on_shortcut(settings.stop_shortcut.as_str(), |app, _, event| {
         if event.state == ShortcutState::Pressed {
             let state = app.state::<AppState>();
-            let _ = state.recorder.stop(app);
+            stop_in_background(app, Arc::clone(&state.recorder));
         }
     })?;
     Ok(())
 }
 
 fn create_tray(app: &tauri::App) -> Result<()> {
+    let menu = build_tray_menu(app.handle(), RecordingState::Idle)?;
+    TrayIconBuilder::with_id("main-tray")
+        .icon(status_icon(RecordingState::Idle))
+        .tooltip("Nota · 空闲")
+        .menu(&menu)
+        .on_menu_event(|app, event| {
+            let state = app.state::<AppState>();
+            match event.id().as_ref() {
+                "show" => show_main_window(app),
+                "start_process" => {
+                    show_main_window(app);
+                    let _ = app.emit("recording://request-start", "process");
+                }
+                "start_system" => {
+                    show_main_window(app);
+                    let _ = app.emit("recording://request-start", "system");
+                }
+                "toggle" => match state.recorder.snapshot().state {
+                    RecordingState::Recording | RecordingState::Interrupted => {
+                        let _ = state.recorder.pause(app);
+                    }
+                    RecordingState::Paused => {
+                        let _ = state.recorder.resume(app);
+                    }
+                    _ => {}
+                },
+                "stop" => {
+                    stop_in_background(app, Arc::clone(&state.recorder));
+                }
+                "quit" => {
+                    if state.runtime_active() {
+                        show_main_window(app);
+                        let _ = app.emit("recording://request-exit", ());
+                    } else {
+                        app.exit(0);
+                    }
+                }
+                _ => {}
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn build_tray_menu(app: &AppHandle, state: RecordingState) -> Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
-    let controls = tray_controls(RecordingState::Idle);
+    let controls = tray_controls(state);
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    if controls.start_enabled {
+        let process = MenuItem::with_id(app, "start_process", "开始应用录音", true, None::<&str>)?;
+        let system = MenuItem::with_id(app, "start_system", "开始系统录音", true, None::<&str>)?;
+        return Ok(Menu::with_items(
+            app,
+            &[&show, &process, &system, &separator, &quit],
+        )?);
+    }
+
     let toggle = MenuItem::with_id(
         app,
         "toggle",
-        controls.toggle_label,
+        controls.toggle_label.unwrap_or("录音处理中…"),
         controls.toggle_enabled,
         None::<&str>,
     )?;
@@ -1081,60 +1306,31 @@ fn create_tray(app: &tauri::App) -> Result<()> {
         controls.stop_enabled,
         None::<&str>,
     )?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &toggle, &stop, &separator, &quit])?;
-    TrayIconBuilder::with_id("main-tray")
-        .icon(status_icon(RecordingState::Idle))
-        .tooltip("Nota · 空闲")
-        .menu(&menu)
-        .on_menu_event(|app, event| {
-            let state = app.state::<AppState>();
-            match event.id().as_ref() {
-                "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
-                "toggle" => match state.recorder.snapshot().state {
-                    RecordingState::Recording | RecordingState::Interrupted => {
-                        let _ = state.recorder.pause(app);
-                    }
-                    RecordingState::Paused => {
-                        let _ = state.recorder.resume(app);
-                    }
-                    _ => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                        let _ = app.emit("recording://request-start", ());
-                    }
-                },
-                "stop" => {
-                    let _ = state.recorder.stop(app);
-                }
-                "quit" => {
-                    if state.runtime_active() {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                        let _ = app.emit("recording://request-exit", ());
-                    } else {
-                        app.exit(0);
-                    }
-                }
-                _ => {}
-            }
-        })
-        .build(app)?;
-    *app.state::<AppState>().tray_menu.lock() = Some(TrayMenuItems { toggle, stop });
-    Ok(())
+    Ok(Menu::with_items(
+        app,
+        &[&show, &toggle, &stop, &separator, &quit],
+    )?)
 }
 
-fn update_tray(app: &AppHandle, state: RecordingState) {
+fn schedule_tray_update(app: &AppHandle, state: RecordingState) {
+    {
+        let app_state = app.state::<AppState>();
+        let mut previous = app_state.tray_state.lock();
+        if *previous == Some(state) {
+            return;
+        }
+        *previous = Some(state);
+    }
+    let main_thread_app = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        update_tray_on_main_thread(&main_thread_app, state);
+    }) {
+        app.state::<AppState>().tray_state.lock().take();
+        log::warn!("unable to schedule tray update: {error}");
+    }
+}
+
+fn update_tray_on_main_thread(app: &AppHandle, state: RecordingState) {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return;
     };
@@ -1148,43 +1344,51 @@ fn update_tray(app: &AppHandle, state: RecordingState) {
     };
     let _ = tray.set_icon(Some(status_icon(state)));
     let _ = tray.set_tooltip(Some(label));
-    let controls = tray_controls(state);
-    if let Some(items) = app.state::<AppState>().tray_menu.lock().as_ref() {
-        let _ = items.toggle.set_text(controls.toggle_label);
-        let _ = items.toggle.set_enabled(controls.toggle_enabled);
-        let _ = items.stop.set_enabled(controls.stop_enabled);
+    match build_tray_menu(app, state) {
+        Ok(menu) => {
+            let _ = tray.set_menu(Some(menu));
+        }
+        Err(error) => {
+            log::warn!("unable to rebuild tray menu: {error:#}");
+        }
     }
 }
 
 fn tray_controls(state: RecordingState) -> TrayControls {
     match state {
         RecordingState::Idle | RecordingState::Completed | RecordingState::Error => TrayControls {
-            toggle_label: "开始录音…",
-            toggle_enabled: true,
+            start_enabled: true,
+            toggle_label: None,
+            toggle_enabled: false,
             stop_enabled: false,
         },
         RecordingState::Recording | RecordingState::Interrupted => TrayControls {
-            toggle_label: "暂停录音",
+            start_enabled: false,
+            toggle_label: Some("暂停录音"),
             toggle_enabled: true,
             stop_enabled: true,
         },
         RecordingState::Paused => TrayControls {
-            toggle_label: "继续录音",
+            start_enabled: false,
+            toggle_label: Some("继续录音"),
             toggle_enabled: true,
             stop_enabled: true,
         },
         RecordingState::Preparing => TrayControls {
-            toggle_label: "正在准备…",
+            start_enabled: false,
+            toggle_label: Some("正在准备…"),
             toggle_enabled: false,
             stop_enabled: false,
         },
         RecordingState::Finalizing => TrayControls {
-            toggle_label: "正在保存…",
+            start_enabled: false,
+            toggle_label: Some("正在保存…"),
             toggle_enabled: false,
             stop_enabled: false,
         },
         RecordingState::Recovering => TrayControls {
-            toggle_label: "正在恢复…",
+            start_enabled: false,
+            toggle_label: Some("正在恢复…"),
             toggle_enabled: false,
             stop_enabled: false,
         },
@@ -1232,7 +1436,7 @@ pub fn run_app() {
         .manage(AppState {
             storage,
             recorder,
-            tray_menu: Mutex::new(None),
+            tray_state: Mutex::new(Some(RecordingState::Idle)),
         })
         .setup(|app| {
             create_tray(app).map_err(|error| anyhow!(error))?;
@@ -1284,7 +1488,9 @@ pub fn run_app() {
     application.run(|app, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
             let state = app.state::<AppState>();
-            let _ = state.recorder.stop(app);
+            if let Err(error) = state.recorder.stop_and_wait(app) {
+                log::error!("best-effort shutdown finalization failed: {error:#}");
+            }
         }
     });
 }
@@ -1298,15 +1504,17 @@ mod tray_tests {
         assert_eq!(
             tray_controls(RecordingState::Idle),
             TrayControls {
-                toggle_label: "开始录音…",
-                toggle_enabled: true,
+                start_enabled: true,
+                toggle_label: None,
+                toggle_enabled: false,
                 stop_enabled: false,
             }
         );
         assert_eq!(
             tray_controls(RecordingState::Recording),
             TrayControls {
-                toggle_label: "暂停录音",
+                start_enabled: false,
+                toggle_label: Some("暂停录音"),
                 toggle_enabled: true,
                 stop_enabled: true,
             }
@@ -1314,12 +1522,34 @@ mod tray_tests {
         assert_eq!(
             tray_controls(RecordingState::Paused),
             TrayControls {
-                toggle_label: "继续录音",
+                start_enabled: false,
+                toggle_label: Some("继续录音"),
                 toggle_enabled: true,
                 stop_enabled: true,
             }
         );
         assert!(!tray_controls(RecordingState::Finalizing).toggle_enabled);
-        assert!(!tray_controls(RecordingState::Completed).stop_enabled);
+        assert!(tray_controls(RecordingState::Completed).start_enabled);
+    }
+
+    #[test]
+    fn packet_drain_has_a_per_tick_budget() {
+        let (sender, receiver) = unbounded();
+        for timestamp in 0..(MAX_PACKETS_PER_TICK + 10) {
+            sender
+                .send(AudioPacket {
+                    samples: vec![0.0],
+                    sample_rate: 48_000,
+                    timestamp_100ns: timestamp as u64,
+                    device_position: Some(timestamp as u64),
+                    discontinuity: false,
+                })
+                .unwrap();
+        }
+
+        let mut drained = 0;
+        assert!(drain_packets(&receiver, |_| drained += 1));
+        assert_eq!(drained, MAX_PACKETS_PER_TICK);
+        assert_eq!(receiver.len(), 10);
     }
 }

@@ -8,11 +8,17 @@ import {
   Mic,
   Pause,
   Radio,
+  RefreshCw,
   Settings,
   Square,
   Volume2,
 } from "lucide-react";
 import { api, type UnlistenFn } from "./api";
+import {
+  preferenceForTarget,
+  resolveCaptureTarget,
+  type CaptureTargetPreference,
+} from "./captureTargets";
 import { ConsentDialog } from "./components/ConsentDialog";
 import { LevelMeter } from "./components/LevelMeter";
 import { RecordingList } from "./components/RecordingList";
@@ -68,12 +74,16 @@ const isActive = (state: RecordingSnapshot["state"]) =>
 const followDefaultDeviceLabel = (device?: AudioDevice) =>
   `跟随默认通信设备（${device?.name ?? "当前不可用"}）`;
 
+type CaptureMode = "process" | "system";
+type StartRequestMode = CaptureMode | "current";
+
 export default function App() {
   const [targets, setTargets] = useState<CaptureTarget[]>([]);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [settings, setSettings] = useState(defaultSettings);
-  const [captureMode, setCaptureMode] = useState<"process" | "system">("process");
+  const [captureMode, setCaptureMode] = useState<CaptureMode>("process");
   const [targetId, setTargetId] = useState("");
+  const [targetsRefreshing, setTargetsRefreshing] = useState(false);
   const [renderDeviceId, setRenderDeviceId] = useState("default");
   const [micDeviceId, setMicDeviceId] = useState("default");
   const [snapshot, setSnapshot] = useState(defaultSnapshot);
@@ -84,8 +94,14 @@ export default function App() {
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("…");
   const [draftSettings, setDraftSettings] = useState(defaultSettings);
-  const requestStartRef = useRef<() => void>(() => undefined);
+  const [pendingCapture, setPendingCapture] = useState<CaptureSelection | null>(null);
+  const [pendingSourceDescription, setPendingSourceDescription] = useState("");
+  const targetIdRef = useRef("");
+  const targetPreferenceRef = useRef<CaptureTargetPreference | null>(null);
+  const refreshTargetsPromiseRef = useRef<Promise<CaptureTarget[]> | null>(null);
+  const requestStartRef = useRef<(mode?: StartRequestMode) => void>(() => undefined);
 
   const refreshLibrary = useCallback(async () => {
     const [items, recoverableItems] = await Promise.all([
@@ -96,6 +112,47 @@ export default function App() {
     setRecoverable(recoverableItems);
   }, []);
 
+  const applyCaptureTargets = useCallback((nextTargets: CaptureTarget[]) => {
+    const selected = resolveCaptureTarget(
+      nextTargets,
+      targetIdRef.current,
+      targetPreferenceRef.current,
+    );
+    setTargets(nextTargets);
+    targetIdRef.current = selected?.id ?? "";
+    setTargetId(selected?.id ?? "");
+    if (selected) {
+      targetPreferenceRef.current = preferenceForTarget(selected);
+    }
+    return selected;
+  }, []);
+
+  const refreshTargets = useCallback(() => {
+    if (refreshTargetsPromiseRef.current) {
+      return refreshTargetsPromiseRef.current;
+    }
+    setTargetsRefreshing(true);
+    const request = api
+      .listCaptureTargets()
+      .then((nextTargets) => {
+        applyCaptureTargets(nextTargets);
+        return nextTargets;
+      })
+      .finally(() => {
+        refreshTargetsPromiseRef.current = null;
+        setTargetsRefreshing(false);
+      });
+    refreshTargetsPromiseRef.current = request;
+    return request;
+  }, [applyCaptureTargets]);
+
+  const refreshDevices = useCallback(() => {
+    return api.listAudioDevices().then((nextDevices) => {
+      setDevices(nextDevices);
+      return nextDevices;
+    });
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     let unlistenSnapshot: UnlistenFn | undefined;
@@ -103,25 +160,26 @@ export default function App() {
     let unlistenStart: UnlistenFn | undefined;
     let unlistenExit: UnlistenFn | undefined;
     void Promise.all([
-      api.listCaptureTargets(),
-      api.listAudioDevices(),
+      refreshTargets(),
+      refreshDevices(),
       api.getSettings(),
       api.getSnapshot(),
+      api.getAppVersion().catch(() => "未知"),
     ])
-      .then(async ([targetList, deviceList, savedSettings, current]) => {
+      .then(async ([targetList, deviceList, savedSettings, current, version]) => {
         if (!mounted) return;
-        setTargets(targetList);
+        applyCaptureTargets(targetList);
         setDevices(deviceList);
         setSettings(savedSettings);
         setDraftSettings(savedSettings);
         setSettingsOpen(!savedSettings.firstRunComplete);
         setSnapshot(current);
+        setAppVersion(version);
         if (current.fault) setNotice(current.fault.userMessage);
-        if (targetList[0]) setTargetId(targetList[0].id);
         await refreshLibrary();
         unlistenSnapshot = await api.onSnapshot(setSnapshot);
         unlistenLevels = await api.onLevels(setLevels);
-        unlistenStart = await api.onRequestStart(() => requestStartRef.current());
+        unlistenStart = await api.onRequestStart((mode) => requestStartRef.current(mode));
         unlistenExit = await api.onRequestExit(() => {
           if (confirm("录音仍在进行。停止并保存后退出应用？")) {
             void api.quitApplication(true);
@@ -136,23 +194,34 @@ export default function App() {
       unlistenStart?.();
       unlistenExit?.();
     };
-  }, [refreshLibrary]);
+  }, [applyCaptureTargets, refreshDevices, refreshLibrary, refreshTargets]);
 
   useEffect(() => {
     if (snapshot.state === "completed") void refreshLibrary();
   }, [snapshot.state, refreshLibrary]);
 
   useEffect(() => {
-    const refreshDevices = () => {
-      void api.listAudioDevices().then(setDevices).catch(() => undefined);
+    const refreshOnFocus = () => {
+      void refreshDevices().catch(() => undefined);
+      if (!isActive(snapshot.state)) {
+        void refreshTargets().catch(() => undefined);
+      }
     };
-    const timer = window.setInterval(refreshDevices, 5_000);
-    window.addEventListener("focus", refreshDevices);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshOnFocus();
+    };
+    const timer = window.setInterval(
+      () => void refreshDevices().catch(() => undefined),
+      5_000,
+    );
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("focus", refreshDevices);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, []);
+  }, [refreshDevices, refreshTargets, snapshot.state]);
 
   const selectedTarget = targets.find((target) => target.id === targetId);
   const renderDevices = devices.filter((device) => device.direction === "render");
@@ -166,16 +235,21 @@ export default function App() {
   const defaultRenderLabel = followDefaultDeviceLabel(defaultRenderDevice);
   const defaultMicLabel = followDefaultDeviceLabel(defaultMicDevice);
 
-  const capture = useMemo<CaptureSelection>(() => {
-    if (captureMode === "process") return { kind: "process", targetId };
-    return {
+  const systemCapture = useMemo<CaptureSelection>(
+    () => ({
       kind: "system",
       device:
         renderDeviceId === "default"
           ? { kind: "followDefaultCommunications" }
           : { kind: "fixed", endpointId: renderDeviceId },
-    };
-  }, [captureMode, targetId, renderDeviceId]);
+    }),
+    [renderDeviceId],
+  );
+
+  const capture = useMemo<CaptureSelection>(() => {
+    if (captureMode === "process") return { kind: "process", targetId };
+    return systemCapture;
+  }, [captureMode, systemCapture, targetId]);
 
   const sourceDescription =
     captureMode === "process"
@@ -184,10 +258,25 @@ export default function App() {
         ? `全部系统声音 · ${defaultRenderLabel}`
         : `全部系统声音 · ${renderDevices.find((device) => device.id === renderDeviceId)?.name ?? ""}`;
 
-  const start = async (noticeAcknowledged: boolean) => {
+  const selectTarget = (
+    nextTargetId: string,
+    knownTarget?: CaptureTarget,
+  ) => {
+    const target =
+      knownTarget ??
+      targets.find((candidate) => candidate.id === nextTargetId);
+    targetIdRef.current = nextTargetId;
+    targetPreferenceRef.current = target ? preferenceForTarget(target) : null;
+    setTargetId(nextTargetId);
+  };
+
+  const start = async (
+    requestedCapture: CaptureSelection,
+    noticeAcknowledged: boolean,
+  ) => {
     try {
       const next = await api.startRecording({
-        capture,
+        capture: requestedCapture,
         microphone: settings.microphoneEnabled
           ? micDeviceId === "default"
             ? { kind: "followDefaultCommunications" }
@@ -200,20 +289,57 @@ export default function App() {
       setSnapshot(next);
       setConsentOpen(false);
       setConsentConfirmed(false);
+      setPendingCapture(null);
+      setPendingSourceDescription("");
     } catch (error) {
       setNotice(String(error));
     }
   };
 
-  const requestStart = () => {
-    if (settings.recordingNoticeAcknowledged) {
-      void start(true);
-      return;
+  const requestStart = async (requestedMode: CaptureMode = captureMode) => {
+    try {
+      let requestedCapture: CaptureSelection;
+      let requestedDescription: string;
+      setCaptureMode(requestedMode);
+
+      if (requestedMode === "process") {
+        const refreshedTargets = await refreshTargets();
+        const target = resolveCaptureTarget(
+          refreshedTargets,
+          targetIdRef.current,
+          targetPreferenceRef.current,
+        );
+        if (!target) {
+          setNotice("没有找到可录制的应用。请启动会议应用后刷新并选择录音来源。");
+          return;
+        }
+        selectTarget(target.id, target);
+        requestedCapture = { kind: "process", targetId: target.id };
+        requestedDescription = target.displayName;
+      } else {
+        await refreshDevices();
+        requestedCapture = systemCapture;
+        requestedDescription =
+          renderDeviceId === "default"
+            ? `全部系统声音 · ${defaultRenderLabel}`
+            : `全部系统声音 · ${renderDevices.find((device) => device.id === renderDeviceId)?.name ?? ""}`;
+      }
+
+      setPendingCapture(requestedCapture);
+      setPendingSourceDescription(requestedDescription);
+      if (settings.recordingNoticeAcknowledged) {
+        await start(requestedCapture, true);
+        return;
+      }
+      setConsentConfirmed(false);
+      setConsentOpen(true);
+    } catch (error) {
+      setNotice(String(error));
     }
-    setConsentConfirmed(false);
-    setConsentOpen(true);
   };
-  requestStartRef.current = requestStart;
+  requestStartRef.current = (mode = "current") => {
+    void requestStart(mode === "current" ? captureMode : mode);
+  };
 
   const acknowledgeNoticeAndStart = async () => {
     if (!consentConfirmed) return;
@@ -225,7 +351,7 @@ export default function App() {
       await api.saveSettings(nextSettings);
       setSettings(nextSettings);
       setDraftSettings(nextSettings);
-      await start(true);
+      await start(pendingCapture ?? capture, true);
     } catch (error) {
       setNotice(String(error));
     }
@@ -339,7 +465,10 @@ export default function App() {
               <div className="source-tabs">
                 <button
                   className={captureMode === "process" ? "active" : ""}
-                  onClick={() => setCaptureMode("process")}
+                  onClick={() => {
+                    setCaptureMode("process");
+                    void refreshTargets().catch((error) => setNotice(String(error)));
+                  }}
                 >
                   指定应用
                 </button>
@@ -352,26 +481,60 @@ export default function App() {
               </div>
 
               <div className="source-grid">
-                <label className="field">
-                  <span><Volume2 size={16} />录音来源</span>
-                  <div className="select-wrap">
-                    {captureMode === "process" ? (
-                      <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+                <div className="field">
+                  <label htmlFor="recording-source"><Volume2 size={16} />录音来源</label>
+                  {captureMode === "process" ? (
+                    <div className="target-picker">
+                      <div className="select-wrap">
+                        <select
+                          id="recording-source"
+                          value={targetId}
+                          onFocus={() => void refreshTargets().catch(() => undefined)}
+                          onPointerDown={() => void refreshTargets().catch(() => undefined)}
+                          onChange={(event) => selectTarget(event.target.value)}
+                        >
+                          {!targetId && (
+                            <option value="">
+                              {targetPreferenceRef.current
+                                ? `${targetPreferenceRef.current.displayName}（未运行）`
+                                : "请选择要录制的应用"}
+                            </option>
+                          )}
                         {targets.map((target) => (
                           <option key={target.id} value={target.id}>{target.displayName}</option>
                         ))}
-                      </select>
-                    ) : (
-                      <select value={renderDeviceId} onChange={(e) => setRenderDeviceId(e.target.value)}>
+                        </select>
+                        <ChevronDown size={16} />
+                      </div>
+                      <button
+                        type="button"
+                        className="refresh-targets"
+                        aria-label="刷新应用列表"
+                        title="刷新应用列表"
+                        disabled={targetsRefreshing}
+                        onClick={() =>
+                          void refreshTargets().catch((error) => setNotice(String(error)))
+                        }
+                      >
+                        <RefreshCw size={16} className={targetsRefreshing ? "spinning" : ""} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="select-wrap">
+                      <select
+                        id="recording-source"
+                        value={renderDeviceId}
+                        onChange={(e) => setRenderDeviceId(e.target.value)}
+                      >
                         <option value="default">{defaultRenderLabel}</option>
                         {renderDevices.map((device) => (
                           <option key={device.id} value={device.id}>{device.name}</option>
                         ))}
                       </select>
-                    )}
-                    <ChevronDown size={16} />
-                  </div>
-                </label>
+                      <ChevronDown size={16} />
+                    </div>
+                  )}
+                </div>
                 <label className="field">
                   <span><Mic size={16} />我的麦克风</span>
                   <div className="select-wrap">
@@ -441,7 +604,7 @@ export default function App() {
               <button
                 className="record-button"
                 disabled={captureMode === "process" && !targetId}
-                onClick={requestStart}
+                onClick={() => void requestStart(captureMode)}
               >
                 <span className="record-dot" />开始录音
               </button>
@@ -507,7 +670,7 @@ export default function App() {
 
       <ConsentDialog
         open={consentOpen}
-        description={sourceDescription}
+        description={pendingSourceDescription || sourceDescription}
         outputDirectory={settings.outputDirectory}
         template={settings.consentTemplate}
         confirmed={consentConfirmed}
@@ -518,6 +681,8 @@ export default function App() {
         onCancel={() => {
           setConsentOpen(false);
           setConsentConfirmed(false);
+          setPendingCapture(null);
+          setPendingSourceDescription("");
         }}
         onStart={() => void acknowledgeNoticeAndStart()}
       />
@@ -526,6 +691,7 @@ export default function App() {
         firstRun={!settings.firstRunComplete}
         settings={draftSettings}
         microphoneCount={micDevices.length}
+        appVersion={appVersion}
         onChange={setDraftSettings}
         onChooseOutput={() => void chooseDraftOutput()}
         onOpenMicrophoneSettings={() => void api.openMicrophoneSettings()}

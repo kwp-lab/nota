@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import type {
   AppSettings,
   AudioDevice,
@@ -13,6 +14,7 @@ import type {
 } from "./types";
 
 export const api = {
+  getAppVersion: getVersion,
   listCaptureTargets: () => invoke<CaptureTarget[]>("list_capture_targets"),
   listAudioDevices: () => invoke<AudioDevice[]>("list_audio_devices"),
   getSettings: () => invoke<AppSettings>("get_settings"),
@@ -54,8 +56,13 @@ export const api = {
     listen<LevelEvent>("recording://levels", (event) =>
       handler(event.payload),
     ),
-  onRequestStart: (handler: () => void) =>
-    listen<void>("recording://request-start", handler),
+  onRequestStart: (
+    handler: (mode: "process" | "system" | "current") => void,
+  ) =>
+    listen<"process" | "system" | "current">(
+      "recording://request-start",
+      (event) => handler(event.payload),
+    ),
   onRequestExit: (handler: () => void) =>
     listen<void>("recording://request-exit", handler),
 };

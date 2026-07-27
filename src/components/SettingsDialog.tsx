@@ -1,4 +1,4 @@
-import { Folder, Keyboard, Mic, ShieldCheck, X } from "lucide-react";
+import { Folder, Info, Keyboard, Mic, ShieldCheck, X } from "lucide-react";
 import type { AppSettings } from "../types";
 
 interface SettingsDialogProps {
@@ -6,6 +6,7 @@ interface SettingsDialogProps {
   firstRun: boolean;
   settings: AppSettings;
   microphoneCount: number;
+  appVersion: string;
   onChange: (settings: AppSettings) => void;
   onChooseOutput: () => void;
   onOpenMicrophoneSettings: () => void;
@@ -126,6 +127,22 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </label>
             </div>
           )}
+        </div>
+
+        <div className="settings-group about-group">
+          <div className="settings-heading">
+            <Info size={17} />
+            <div>
+              <strong>关于此应用</strong>
+              <span>Nota · 本地优先的 Windows 会议录音工具</span>
+            </div>
+            <span className="version-badge">v{props.appVersion}</span>
+          </div>
+          <div className="about-details">
+            <span>Windows 11 x64</span>
+            <span>本地处理 · 无账号 · 无遥测</span>
+            <span>© 2026 Nota Contributors</span>
+          </div>
         </div>
 
         {props.firstRun && (

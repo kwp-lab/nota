@@ -23,9 +23,12 @@ use windows::Win32::System::Com::{
     BLOB, CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
     CoUninitialize, STGM_READ,
 };
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+};
 use windows::Win32::System::Threading::{
-    CreateEventW, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-    SetEvent, WaitForSingleObject,
+    AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, CreateEventW, OpenProcess,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, SetEvent, WaitForSingleObject,
 };
 use windows::Win32::System::Variant::VT_BLOB;
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
@@ -139,6 +142,7 @@ fn capture_thread(
     ready: &Sender<std::result::Result<(), String>>,
 ) -> Result<()> {
     let _com = initialize_com()?;
+    let _mmcss = MmcssGuard::new();
     let device_changed = Arc::new(AtomicBool::new(false));
 
     let mut first_attempt = true;
@@ -217,7 +221,12 @@ fn setup_source(source: &CaptureSource) -> Result<CaptureSetup> {
                     .map(|target| target.process_id)
                     .context("目标应用尚未重新出现")?,
             };
-            setup_process_loopback(pid)
+            let root_pid = root_process_with_same_executable(pid, executable_path).unwrap_or(pid);
+            log::info!(
+                "process loopback target selected_pid={pid} root_pid={root_pid} executable={}",
+                executable_path
+            );
+            setup_process_loopback(root_pid)
         }
         CaptureSource::System(selection) => setup_endpoint(selection.clone(), eRender, true),
         CaptureSource::Microphone(selection) => setup_endpoint(selection.clone(), eCapture, false),
@@ -234,6 +243,9 @@ fn capture_session(
 ) -> Result<()> {
     let mut running = true;
     let mut last_default_check = std::time::Instant::now();
+    let mut next_packet_timestamp_100ns = None;
+    let mut discontinuities = 0u64;
+    let mut timestamp_errors = 0u64;
     while !stop.load(Ordering::Acquire) {
         if device_changed.swap(false, Ordering::AcqRel) {
             bail!("Windows 报告音频设备配置已改变");
@@ -275,16 +287,45 @@ fn capture_session(
             let mut data = std::ptr::null_mut();
             let mut frames = 0u32;
             let mut flags = 0u32;
+            let mut device_position = 0u64;
             let mut qpc = 0u64;
             unsafe {
                 setup.capture.GetBuffer(
                     &mut data,
                     &mut frames,
                     &mut flags,
-                    None,
+                    Some(&mut device_position),
                     Some(&mut qpc),
                 )?;
             }
+            let discontinuity = flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0;
+            if discontinuity {
+                discontinuities += 1;
+                if discontinuities.is_power_of_two() {
+                    log::warn!(
+                        "{} reported capture discontinuity count={discontinuities}",
+                        capture_source_label(source)
+                    );
+                }
+            }
+            let timestamp_has_error = flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR.0 as u32 != 0;
+            if timestamp_has_error {
+                timestamp_errors += 1;
+                if timestamp_errors.is_power_of_two() {
+                    log::warn!(
+                        "{} reported timestamp error count={timestamp_errors}",
+                        capture_source_label(source)
+                    );
+                }
+            }
+            let timestamp_100ns = if timestamp_has_error {
+                next_packet_timestamp_100ns.unwrap_or(qpc)
+            } else {
+                qpc
+            };
+            let duration_100ns =
+                frames as u64 * 10_000_000 / setup.format.sample_rate.max(1) as u64;
+            next_packet_timestamp_100ns = Some(timestamp_100ns.saturating_add(duration_100ns));
             let samples = if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 || data.is_null() {
                 vec![0.0; frames as usize]
             } else {
@@ -295,7 +336,18 @@ fn capture_session(
                 .send(AudioPacket {
                     samples,
                     sample_rate: setup.format.sample_rate,
-                    timestamp_100ns: qpc,
+                    timestamp_100ns,
+                    // Loopback positions are not a reliable packet sequence:
+                    // the virtual process client and some Bluetooth render
+                    // endpoints repeat or move their device position while
+                    // continuing to deliver valid audio. Treating that as an
+                    // overlap deletes real render packets. QPC is shared by
+                    // all WASAPI clients and remains the alignment clock for
+                    // both loopback modes; retain device position only for
+                    // physical microphone capture.
+                    device_position: matches!(source, CaptureSource::Microphone(_))
+                        .then_some(device_position),
+                    discontinuity,
                 })
                 .is_err()
             {
@@ -443,6 +495,37 @@ struct CaptureSetup {
     process_id: Option<u32>,
 }
 
+struct MmcssGuard {
+    handle: Option<HANDLE>,
+}
+
+impl MmcssGuard {
+    fn new() -> Self {
+        let task_name = wide("Audio");
+        let mut task_index = 0u32;
+        match unsafe { AvSetMmThreadCharacteristicsW(PCWSTR(task_name.as_ptr()), &mut task_index) }
+        {
+            Ok(handle) => Self {
+                handle: Some(handle),
+            },
+            Err(error) => {
+                log::warn!("unable to enable MMCSS for audio capture thread: {error}");
+                Self { handle: None }
+            }
+        }
+    }
+}
+
+impl Drop for MmcssGuard {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            unsafe {
+                let _ = AvRevertMmThreadCharacteristics(handle);
+            }
+        }
+    }
+}
+
 impl Drop for CaptureSetup {
     fn drop(&mut self) {
         unsafe {
@@ -466,6 +549,8 @@ struct SampleFormat {
     sample_rate: u32,
     channels: usize,
     block_align: usize,
+    bits_per_sample: u16,
+    valid_bits_per_sample: u16,
     kind: SampleKind,
 }
 
@@ -514,11 +599,45 @@ fn setup_endpoint(
         unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)? };
     let device = endpoint_for_selection(&enumerator, &selection, flow)?;
     let client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None)? };
+    if flow.0 == eCapture.0 && !loopback {
+        match client.cast::<IAudioClient2>() {
+            Ok(communications_client) => {
+                let properties = AudioClientProperties {
+                    cbSize: size_of::<AudioClientProperties>() as u32,
+                    eCategory: AudioCategory_Communications,
+                    ..Default::default()
+                };
+                if let Err(error) =
+                    unsafe { communications_client.SetClientProperties(&properties) }
+                {
+                    log::warn!(
+                        "unable to categorize microphone as a communications stream: {error}"
+                    );
+                }
+            }
+            Err(error) => {
+                log::warn!("microphone audio client does not support IAudioClient2: {error}");
+            }
+        }
+    }
     let format_pointer = unsafe { client.GetMixFormat()? };
     if format_pointer.is_null() {
         bail!("音频设备没有返回共享模式格式");
     }
     let format = unsafe { parse_format(format_pointer)? };
+    log::info!(
+        "{} format rate={}Hz channels={} container_bits={} valid_bits={} block_align={}",
+        if loopback {
+            "system loopback"
+        } else {
+            "microphone"
+        },
+        format.sample_rate,
+        format.channels,
+        format.bits_per_sample,
+        format.valid_bits_per_sample,
+        format.block_align
+    );
     let stream_flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK
         | if loopback {
             AUDCLNT_STREAMFLAGS_LOOPBACK
@@ -576,6 +695,8 @@ fn setup_process_loopback(pid: u32) -> Result<CaptureSetup> {
         sample_rate: 48_000,
         channels: 2,
         block_align: 8,
+        bits_per_sample: 32,
+        valid_bits_per_sample: 32,
         kind: SampleKind::Float32,
     };
     let mut activation = AUDIOCLIENT_ACTIVATION_PARAMS {
@@ -638,7 +759,10 @@ fn setup_process_loopback(pid: u32) -> Result<CaptureSetup> {
     unsafe {
         client.Initialize(
             AUDCLNT_SHAREMODE_SHARED,
-            AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+            AUDCLNT_STREAMFLAGS_LOOPBACK
+                | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+                | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+                | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
             0,
             0,
             &format,
@@ -724,6 +848,7 @@ unsafe fn parse_format(pointer: *const WAVEFORMATEX) -> Result<SampleFormat> {
     if channels == 0 || block_align == 0 || sample_rate == 0 {
         bail!("音频设备返回了无效格式");
     }
+    let mut valid_bits_per_sample = bits_per_sample;
     let kind = if format_tag as u32 == WAVE_FORMAT_IEEE_FLOAT {
         SampleKind::Float32
     } else if format_tag as u32 == WAVE_FORMAT_PCM {
@@ -731,6 +856,9 @@ unsafe fn parse_format(pointer: *const WAVEFORMATEX) -> Result<SampleFormat> {
     } else if format_tag as u32 == WAVE_FORMAT_EXTENSIBLE {
         let extensible = pointer.cast::<WAVEFORMATEXTENSIBLE>();
         let sub_format = unsafe { std::ptr::addr_of!((*extensible).SubFormat).read_unaligned() };
+        valid_bits_per_sample = unsafe {
+            std::ptr::addr_of!((*extensible).Samples.wValidBitsPerSample).read_unaligned()
+        };
         if sub_format == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT {
             SampleKind::Float32
         } else if sub_format == KSDATAFORMAT_SUBTYPE_PCM {
@@ -745,6 +873,8 @@ unsafe fn parse_format(pointer: *const WAVEFORMATEX) -> Result<SampleFormat> {
         sample_rate,
         channels,
         block_align,
+        bits_per_sample,
+        valid_bits_per_sample,
         kind,
     })
 }
@@ -991,6 +1121,49 @@ fn process_path(pid: u32) -> Result<String> {
     Ok(String::from_utf16_lossy(&buffer[..capacity as usize]))
 }
 
+fn root_process_with_same_executable(pid: u32, executable_path: &str) -> Result<u32> {
+    let parents = process_parent_map()?;
+    let mut current = pid;
+    let mut visited = HashSet::new();
+    visited.insert(current);
+    while let Some(parent) = parents.get(&current).copied() {
+        if parent == 0 || !visited.insert(parent) {
+            break;
+        }
+        let Ok(parent_path) = process_path(parent) else {
+            break;
+        };
+        if !parent_path.eq_ignore_ascii_case(executable_path) {
+            break;
+        }
+        current = parent;
+    }
+    Ok(current)
+}
+
+fn process_parent_map() -> Result<HashMap<u32, u32>> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)? };
+    let result = (|| {
+        let mut entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut parents = HashMap::new();
+        unsafe { Process32FirstW(snapshot, &mut entry)? };
+        loop {
+            parents.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+            if unsafe { Process32NextW(snapshot, &mut entry) }.is_err() {
+                break;
+            }
+        }
+        Ok(parents)
+    })();
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
+    result
+}
+
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
@@ -1024,6 +1197,31 @@ fn initialize_com() -> Result<ComGuard> {
 mod tests {
     use super::*;
 
+    fn test_tone_wav() -> Vec<u8> {
+        let sample_rate = 48_000u32;
+        let sample_count = sample_rate / 2;
+        let data_size = sample_count * 2;
+        let mut wav = Vec::with_capacity((44 + data_size) as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_size).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_size.to_le_bytes());
+        for index in 0..sample_count {
+            let phase = index as f32 * 440.0 * std::f32::consts::TAU / sample_rate as f32;
+            let sample = (phase.sin() * 2_000.0).round() as i16;
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        wav
+    }
+
     #[test]
     fn downmixes_interleaved_stereo_float() {
         let input = [1.0f32, -1.0, 0.5, 0.5];
@@ -1031,6 +1229,8 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             block_align: 8,
+            bits_per_sample: 32,
+            valid_bits_per_sample: 32,
             kind: SampleKind::Float32,
         };
         let output = unsafe { decode_mono(input.as_ptr().cast(), 2, &format) };
@@ -1044,6 +1244,8 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             block_align: 4,
+            bits_per_sample: 16,
+            valid_bits_per_sample: 16,
             kind: SampleKind::Pcm16,
         };
         let output16 = unsafe { decode_mono(pcm16.as_ptr().cast(), 1, &format16) };
@@ -1054,6 +1256,8 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             block_align: 6,
+            bits_per_sample: 24,
+            valid_bits_per_sample: 24,
             kind: SampleKind::Pcm24,
         };
         let output24 = unsafe { decode_mono(pcm24.as_ptr(), 1, &format24) };
@@ -1088,6 +1292,58 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "plays a short local tone and requires Windows Core Audio"]
+    fn process_loopback_delivers_audible_audio_through_the_mixer() {
+        use crate::audio::AudioMixer;
+        use crate::models::AecMode;
+
+        let executable_path = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let capture = start_capture(
+            CaptureSource::Process {
+                process_id: std::process::id(),
+                executable_path,
+            },
+            sender,
+        )
+        .unwrap();
+        let tone = test_tone_wav();
+        assert!(
+            unsafe {
+                PlaySoundW(
+                    PCWSTR(tone.as_ptr().cast()),
+                    None,
+                    SND_MEMORY | SND_ASYNC | SND_NODEFAULT,
+                )
+            }
+            .as_bool()
+        );
+        let mut mixer = AudioMixer::new(AecMode::Off, false);
+        let mut audible_frames = 0usize;
+        for _ in 0..120 {
+            std::thread::sleep(Duration::from_millis(10));
+            while let Ok(packet) = receiver.try_recv() {
+                mixer.push_system(packet);
+            }
+            let (_, system_level, _) = mixer.next_frame(true, false);
+            if system_level > 0.005 {
+                audible_frames += 1;
+            }
+        }
+        unsafe {
+            let _ = PlaySoundW(PCWSTR::null(), None, SND_ASYNC);
+        }
+        capture.stop();
+        assert!(
+            audible_frames >= 20,
+            "captured tone was not preserved by process loopback and mixing: {audible_frames}"
+        );
+    }
+
+    #[test]
     #[ignore = "requires a Windows microphone endpoint"]
     fn microphone_activation_smoke_test() {
         let (sender, _receiver) = crossbeam_channel::unbounded();
@@ -1105,7 +1361,10 @@ mod tests {
     #[test]
     #[ignore = "requires Windows render and microphone endpoints"]
     fn system_loopback_and_microphone_stay_healthy_together() {
-        let (system_sender, _system_receiver) = crossbeam_channel::unbounded();
+        use crate::audio::AudioMixer;
+        use crate::models::AecMode;
+
+        let (system_sender, system_receiver) = crossbeam_channel::unbounded();
         let (microphone_sender, microphone_receiver) = crossbeam_channel::unbounded();
         let system_capture = start_capture(
             CaptureSource::System(DeviceSelection::FollowDefaultCommunications),
@@ -1118,15 +1377,81 @@ mod tests {
         )
         .unwrap();
 
-        for _ in 0..20 {
-            std::thread::sleep(Duration::from_millis(100));
+        let mut mixer = AudioMixer::new(AecMode::Off, false);
+        let tone = test_tone_wav();
+        assert!(
+            unsafe {
+                PlaySoundW(
+                    PCWSTR(tone.as_ptr().cast()),
+                    None,
+                    SND_MEMORY | SND_ASYNC | SND_NODEFAULT,
+                )
+            }
+            .as_bool()
+        );
+        let started = std::time::Instant::now();
+        let mut system_samples = 0usize;
+        let mut microphone_samples = 0usize;
+        let mut raw_system_audio = Vec::new();
+        let mut audible_system_frames = 0usize;
+        let mut consecutive_audible = 0usize;
+        let mut longest_audible_run = 0usize;
+        for _ in 0..300 {
+            std::thread::sleep(Duration::from_millis(10));
             assert!(system_capture.health_flag().load(Ordering::Acquire));
             assert!(microphone_capture.health_flag().load(Ordering::Acquire));
+            while let Ok(packet) = system_receiver.try_recv() {
+                system_samples += packet.samples.len();
+                raw_system_audio.extend_from_slice(&packet.samples);
+                mixer.push_system(packet);
+            }
+            while let Ok(packet) = microphone_receiver.try_recv() {
+                microphone_samples += packet.samples.len();
+                mixer.push_microphone(packet);
+            }
+            let (_, system_level, _) = mixer.next_frame(true, true);
+            if system_level > 0.001 {
+                audible_system_frames += 1;
+                consecutive_audible += 1;
+                longest_audible_run = longest_audible_run.max(consecutive_audible);
+            } else {
+                consecutive_audible = 0;
+            }
         }
-        let packet = microphone_receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("microphone should produce packets while system loopback is active");
-        assert!(!packet.samples.is_empty());
+        unsafe {
+            let _ = PlaySoundW(PCWSTR::null(), None, SND_ASYNC);
+        }
+        let mut raw_run = 0usize;
+        let mut raw_longest_run = 0usize;
+        for block in raw_system_audio.chunks(480) {
+            let level = (block.iter().map(|sample| sample * sample).sum::<f32>()
+                / block.len().max(1) as f32)
+                .sqrt();
+            if level > 0.001 {
+                raw_run += 1;
+                raw_longest_run = raw_longest_run.max(raw_run);
+            } else {
+                raw_run = 0;
+            }
+        }
+        let diagnostics = mixer.diagnostics();
+        eprintln!(
+            "hardware delivery system_samples={} microphone_samples={} raw_longest_run={} audible_system_frames={} longest_audible_run={} system_underflows={} microphone_underflows={} elapsed={:.3}s",
+            system_samples,
+            microphone_samples,
+            raw_longest_run,
+            audible_system_frames,
+            longest_audible_run,
+            diagnostics.system_underflows,
+            diagnostics.microphone_underflows,
+            started.elapsed().as_secs_f64()
+        );
+        assert!(system_samples > 0);
+        assert!(microphone_samples > 0);
+        assert!(
+            longest_audible_run >= 30,
+            "system loopback tone was pulsed or interrupted: {longest_audible_run}"
+        );
         microphone_capture.stop();
         system_capture.stop();
     }

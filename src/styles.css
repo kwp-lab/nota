@@ -38,7 +38,8 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .source-tabs button.active { background: #fff; color: #242726; box-shadow: 0 1px 4px rgba(0,0,0,.08); font-weight: 600; }
 .source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .field { display: grid; gap: 8px; }
-.field > span { display: flex; align-items: center; gap: 7px; font-size: 13px; color: #565c59; font-weight: 600; }
+.field > span, .field > label { display: flex; align-items: center; gap: 7px; font-size: 13px; color: #565c59; font-weight: 600; }
+.target-picker { display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 8px; }
 .select-wrap { position: relative; }
 .select-wrap select {
   appearance: none; width: 100%; border: 1px solid #d8d7d1; background: #fff;
@@ -46,6 +47,15 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 }
 .select-wrap select:focus { border-color: #4d7f77; box-shadow: 0 0 0 3px #dce9e6; }
 .select-wrap svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #737875; }
+.refresh-targets {
+  display: grid; place-items: center; border: 1px solid #d8d7d1; border-radius: 11px;
+  background: #fff; color: #60706c; cursor: pointer;
+}
+.refresh-targets:hover:not(:disabled) { border-color: #9eaaa6; background: #f7f9f8; }
+.refresh-targets:focus-visible { outline: 0; border-color: #4d7f77; box-shadow: 0 0 0 3px #dce9e6; }
+.refresh-targets:disabled { cursor: default; opacity: .6; }
+.spinning { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .inline-warning {
   display: flex; align-items: center; gap: 9px; margin-top: 16px; padding: 10px 12px;
   background: #f6f0e3; border-radius: 10px; color: #765d2e; font-size: 13px;
@@ -146,6 +156,16 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .shortcut-grid input { width: 100%; border: 1px solid #d8d7d1; border-radius: 8px; padding: 8px 9px; outline: none; }
 .shortcut-grid input:focus { border-color: #4d7f77; box-shadow: 0 0 0 3px #dce9e6; }
 .tray-note { margin-top: 16px; padding: 11px 13px; border-radius: 10px; background: #edf2ef; color: #52635f; font-size: 12px; line-height: 1.5; }
+.about-group { background: #f8faf8; }
+.version-badge {
+  flex: 0 0 auto; padding: 4px 8px; border-radius: 999px;
+  color: #37645d; background: #e2ece9; font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.about-details {
+  display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 11px; padding-top: 10px;
+  border-top: 1px solid #e7ebe8; color: #7a7f7c; font-size: 10px;
+}
 
 @media (max-width: 760px) {
   body { min-width: 560px; }
