@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { preferenceForTarget, resolveCaptureTarget } from "./captureTargets";
+import {
+  captureTargetLabel,
+  preferenceForTarget,
+  resolveCaptureTarget,
+} from "./captureTargets";
 import type { CaptureTarget } from "./types";
 
 const target = (
@@ -17,6 +21,18 @@ const target = (
 });
 
 describe("capture target reconciliation", () => {
+  it("prefixes the window title with its executable name", () => {
+    expect(
+      captureTargetLabel(
+        target("process:42", "C:\\Program Files\\Feishu\\Feishu.exe", "飞书"),
+      ),
+    ).toBe("[Feishu.exe]: 飞书");
+  });
+
+  it("keeps the title readable when no executable path is available", () => {
+    expect(captureTargetLabel(target("process:42", "", "飞书"))).toBe("飞书");
+  });
+
   it("follows the same executable when its process id changes", () => {
     const previous = target("process:42", "C:\\Apps\\Meeting.exe");
     const restarted = target("process:84", "c:/apps/meeting.exe");

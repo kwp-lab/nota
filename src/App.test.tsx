@@ -221,7 +221,9 @@ describe("Nota UI states", () => {
 
   it("refreshes applications when the window regains focus", async () => {
     render(<App />);
-    expect(await screen.findByRole("option", { name: "Zoom" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", { name: "[Zoom.exe]: Zoom" }),
+    ).toBeInTheDocument();
     testState.targets = [
       {
         id: "process:77",
@@ -237,7 +239,9 @@ describe("Nota UI states", () => {
 
     act(() => window.dispatchEvent(new Event("focus")));
     expect(
-      await screen.findByRole("option", { name: "腾讯会议" }),
+      await screen.findByRole("option", {
+        name: "[wemeetapp.exe]: 腾讯会议",
+      }),
     ).toBeInTheDocument();
   });
 

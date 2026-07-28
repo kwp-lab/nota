@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api, type UnlistenFn } from "./api";
 import {
+  captureTargetLabel,
   preferenceForTarget,
   resolveCaptureTarget,
   type CaptureTargetPreference,
@@ -496,12 +497,14 @@ export default function App() {
                           {!targetId && (
                             <option value="">
                               {targetPreferenceRef.current
-                                ? `${targetPreferenceRef.current.displayName}（未运行）`
+                                ? `${captureTargetLabel(targetPreferenceRef.current)}（未运行）`
                                 : "请选择要录制的应用"}
                             </option>
                           )}
                         {targets.map((target) => (
-                          <option key={target.id} value={target.id}>{target.displayName}</option>
+                          <option key={target.id} value={target.id}>
+                            {captureTargetLabel(target)}
+                          </option>
                         ))}
                         </select>
                         <ChevronDown size={16} />

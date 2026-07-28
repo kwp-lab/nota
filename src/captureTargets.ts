@@ -5,6 +5,18 @@ export interface CaptureTargetPreference {
   displayName: string;
 }
 
+export const captureTargetLabel = (
+  target: Pick<CaptureTarget, "displayName" | "executablePath">,
+) => {
+  const executableName = target.executablePath
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .at(-1);
+  return executableName
+    ? `[${executableName}]: ${target.displayName}`
+    : target.displayName;
+};
+
 const normalizeExecutablePath = (path: string) =>
   path.replaceAll("/", "\\").toLocaleLowerCase();
 
