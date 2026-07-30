@@ -3,6 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import type {
   AppSettings,
+  AsrConnectionTest,
+  AsrModel,
+  AsrProvider,
+  AsrProviderProbeRequest,
   AudioDevice,
   CaptureSelection,
   CaptureTarget,
@@ -11,6 +15,10 @@ import type {
   RecordingItem,
   RecordingSnapshot,
   StartRecordingRequest,
+  SaveAsrProviderRequest,
+  TranscriptDocument,
+  TranscriptionEvent,
+  TranscriptionSummary,
 } from "./types";
 
 export const api = {
@@ -48,6 +56,34 @@ export const api = {
     invoke<void>("copy_consent_template", { text }),
   quitApplication: (stopAndSave: boolean) =>
     invoke<void>("quit_application", { stopAndSave }),
+  listAsrProviders: () => invoke<AsrProvider[]>("list_asr_providers"),
+  saveAsrProvider: (request: SaveAsrProviderRequest) =>
+    invoke<AsrProvider>("save_asr_provider", { request }),
+  deleteAsrProvider: (id: string) =>
+    invoke<void>("delete_asr_provider", { id }),
+  setActiveAsrProvider: (id: string | null) =>
+    invoke<AppSettings>("set_active_asr_provider", { id }),
+  testAsrProvider: (request: AsrProviderProbeRequest) =>
+    invoke<AsrConnectionTest>("test_asr_provider", { request }),
+  listAsrModels: (request: AsrProviderProbeRequest) =>
+    invoke<AsrModel[]>("list_asr_models", { request }),
+  startTranscription: (recordingId: string, providerId?: string | null) =>
+    invoke<TranscriptionSummary>("start_transcription", {
+      recordingId,
+      providerId: providerId ?? null,
+    }),
+  cancelTranscription: (recordingId: string) =>
+    invoke<TranscriptionSummary>("cancel_transcription", { recordingId }),
+  resumeTranscription: (recordingId: string) =>
+    invoke<TranscriptionSummary>("resume_transcription", { recordingId }),
+  getTranscript: (recordingId: string) =>
+    invoke<TranscriptDocument>("get_transcript", { recordingId }),
+  copyTranscript: (recordingId: string) =>
+    invoke<void>("copy_transcript", { recordingId }),
+  exportTranscript: (recordingId: string, path: string) =>
+    invoke<void>("export_transcript", { recordingId, path }),
+  hasActiveTranscription: () =>
+    invoke<boolean>("has_active_transcription"),
   onSnapshot: (handler: (snapshot: RecordingSnapshot) => void) =>
     listen<RecordingSnapshot>("recording://snapshot", (event) =>
       handler(event.payload),
@@ -65,6 +101,10 @@ export const api = {
     ),
   onRequestExit: (handler: () => void) =>
     listen<void>("recording://request-exit", handler),
+  onAsrStatus: (handler: (event: TranscriptionEvent) => void) =>
+    listen<TranscriptionEvent>("asr://status", (event) =>
+      handler(event.payload),
+    ),
 };
 
 export type { UnlistenFn };

@@ -1,3 +1,4 @@
+mod asr;
 mod audio;
 mod controller;
 mod logging;

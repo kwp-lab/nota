@@ -49,7 +49,7 @@ pub fn list_recoverable_files(directory: &Path) -> Result<Vec<RecoverableFile>> 
             size_bytes: metadata.len(),
         });
     }
-    files.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    files.sort_by_key(|file| std::cmp::Reverse(file.created_at));
     Ok(files)
 }
 

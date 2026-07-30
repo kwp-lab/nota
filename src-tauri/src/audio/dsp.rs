@@ -181,9 +181,7 @@ impl AdaptiveStream {
                 Some(delta)
             }
         } else if let Some(delta) = timestamp_delta {
-            if delta > 20_000 && delta < 50_000_000 {
-                Some(delta * self.source_rate as i128 / 10_000_000)
-            } else if delta < -20_000 {
+            if (delta > 20_000 && delta < 50_000_000) || delta < -20_000 {
                 Some(delta * self.source_rate as i128 / 10_000_000)
             } else {
                 None

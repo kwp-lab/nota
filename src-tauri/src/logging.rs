@@ -26,10 +26,9 @@ impl Log for RollingLogger {
         if file
             .metadata()
             .is_ok_and(|metadata| metadata.len() >= MAX_LOG_BYTES)
+            && let Ok(replacement) = rotate(&self.directory)
         {
-            if let Ok(replacement) = rotate(&self.directory) {
-                *file = replacement;
-            }
+            *file = replacement;
         }
         let _ = writeln!(
             file,

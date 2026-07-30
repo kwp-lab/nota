@@ -81,6 +81,7 @@ export interface RecordingItem {
   durationMs: number;
   sizeBytes: number;
   recovered: boolean;
+  transcription?: TranscriptionSummary | null;
 }
 
 export interface LevelEvent {
@@ -98,4 +99,100 @@ export interface AppSettings {
   shortcutsEnabled: boolean;
   toggleShortcut: string;
   stopShortcut: string;
+  activeAsrProviderId: string | null;
+  autoTranscribe: boolean;
+}
+
+export type AsrProviderKind = "funAsr" | "openAiCompatible";
+
+export interface AsrProvider {
+  id: string;
+  name: string;
+  kind: AsrProviderKind;
+  baseUrl: string;
+  modelId: string;
+  hasApiKey: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AsrApiKeyUpdate =
+  | { kind: "keep" }
+  | { kind: "replace"; value: string }
+  | { kind: "clear" };
+
+export interface SaveAsrProviderRequest {
+  id: string | null;
+  name: string;
+  kind: AsrProviderKind;
+  baseUrl: string;
+  modelId: string;
+  apiKey: AsrApiKeyUpdate;
+}
+
+export interface AsrProviderProbeRequest {
+  id: string | null;
+  kind: AsrProviderKind;
+  baseUrl: string;
+  modelId: string;
+  apiKey: AsrApiKeyUpdate;
+}
+
+export interface AsrModel {
+  id: string;
+  ownedBy: string | null;
+  ready: boolean | null;
+}
+
+export interface AsrConnectionTest {
+  reachable: boolean;
+  level: "success" | "warning";
+  message: string;
+  models: AsrModel[];
+  device: string | null;
+}
+
+export type TranscriptionStatus =
+  | "queued"
+  | "preparing"
+  | "transcribing"
+  | "completed"
+  | "failed"
+  | "interrupted"
+  | "cancelled";
+
+export interface TranscriptionSummary {
+  status: TranscriptionStatus;
+  completedChunks: number;
+  totalChunks: number;
+  providerName: string;
+  modelId: string;
+  errorMessage: string | null;
+  hasText: boolean;
+}
+
+export interface TranscriptSegment {
+  startMs: number;
+  endMs: number;
+  text: string;
+  speaker: string | null;
+}
+
+export interface TranscriptDocument {
+  recordingId: string;
+  status: TranscriptionStatus;
+  providerName: string;
+  modelId: string;
+  language: string | null;
+  text: string;
+  segments: TranscriptSegment[];
+  completedChunks: number;
+  totalChunks: number;
+  errorMessage: string | null;
+  updatedAt: string;
+}
+
+export interface TranscriptionEvent {
+  recordingId: string;
+  summary: TranscriptionSummary;
 }

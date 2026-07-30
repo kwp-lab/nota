@@ -63,7 +63,7 @@ impl OpusOggWriter {
             if let Some(previous) = self.pending_packet.replace(encoded) {
                 self.granule_position += OPUS_FRAME_SAMPLES as u64;
                 self.packet_count += 1;
-                let end_info = if self.packet_count % 50 == 0 {
+                let end_info = if self.packet_count.is_multiple_of(50) {
                     PacketWriteEndInfo::EndPage
                 } else {
                     PacketWriteEndInfo::NormalPacket
@@ -74,10 +74,10 @@ impl OpusOggWriter {
                     end_info,
                     self.granule_position,
                 )?;
-                if self.packet_count % 50 == 0 {
+                if self.packet_count.is_multiple_of(50) {
                     self.packet_writer.inner_mut().flush()?;
                 }
-                if self.packet_count % 250 == 0 {
+                if self.packet_count.is_multiple_of(250) {
                     self.packet_writer.inner_mut().get_ref().sync_data()?;
                 }
             }

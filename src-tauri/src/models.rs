@@ -160,6 +160,8 @@ pub struct RecordingItem {
     pub duration_ms: u64,
     pub size_bytes: u64,
     pub recovered: bool,
+    #[serde(default)]
+    pub transcription: Option<TranscriptionSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +184,202 @@ pub struct AppSettings {
     pub shortcuts_enabled: bool,
     pub toggle_shortcut: String,
     pub stop_shortcut: String,
+    #[serde(default)]
+    pub active_asr_provider_id: Option<String>,
+    #[serde(default)]
+    pub auto_transcribe: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AsrProviderKind {
+    FunAsr,
+    OpenAiCompatible,
+}
+
+impl AsrProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FunAsr => "fun_asr",
+            Self::OpenAiCompatible => "open_ai_compatible",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "fun_asr" => Self::FunAsr,
+            _ => Self::OpenAiCompatible,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AsrProvider {
+    pub id: String,
+    pub name: String,
+    pub kind: AsrProviderKind,
+    pub base_url: String,
+    pub model_id: String,
+    pub has_api_key: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAsrProviderRequest {
+    pub id: Option<String>,
+    pub name: String,
+    pub kind: AsrProviderKind,
+    pub base_url: String,
+    pub model_id: String,
+    pub api_key: AsrApiKeyUpdate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AsrProviderProbeRequest {
+    pub id: Option<String>,
+    pub kind: AsrProviderKind,
+    pub base_url: String,
+    pub model_id: String,
+    pub api_key: AsrApiKeyUpdate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AsrApiKeyUpdate {
+    Keep,
+    Replace { value: String },
+    Clear,
+}
+
+#[derive(Debug, Clone)]
+pub struct AsrProviderCredentials {
+    pub provider: AsrProvider,
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AsrModel {
+    pub id: String,
+    pub owned_by: Option<String>,
+    pub ready: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AsrConnectionLevel {
+    Success,
+    Warning,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AsrConnectionTest {
+    pub reachable: bool,
+    pub level: AsrConnectionLevel,
+    pub message: String,
+    pub models: Vec<AsrModel>,
+    pub device: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TranscriptionStatus {
+    Queued,
+    Preparing,
+    Transcribing,
+    Completed,
+    Failed,
+    Interrupted,
+    Cancelled,
+}
+
+impl TranscriptionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Preparing => "preparing",
+            Self::Transcribing => "transcribing",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Interrupted => "interrupted",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "queued" => Self::Queued,
+            "preparing" => Self::Preparing,
+            "transcribing" => Self::Transcribing,
+            "completed" => Self::Completed,
+            "interrupted" => Self::Interrupted,
+            "cancelled" => Self::Cancelled,
+            _ => Self::Failed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionSummary {
+    pub status: TranscriptionStatus,
+    pub completed_chunks: u32,
+    pub total_chunks: u32,
+    pub provider_name: String,
+    pub model_id: String,
+    pub error_message: Option<String>,
+    pub has_text: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSegment {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+    pub speaker: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredTranscriptionChunk {
+    pub index: u32,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+    pub segments: Vec<TranscriptSegment>,
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptDocument {
+    pub recording_id: String,
+    pub status: TranscriptionStatus,
+    pub provider_name: String,
+    pub model_id: String,
+    pub language: Option<String>,
+    pub text: String,
+    pub segments: Vec<TranscriptSegment>,
+    pub completed_chunks: u32,
+    pub total_chunks: u32,
+    pub error_message: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionEvent {
+    pub recording_id: String,
+    pub summary: TranscriptionSummary,
 }
 
 #[cfg(test)]

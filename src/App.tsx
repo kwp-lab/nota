@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   AlertTriangle,
   ChevronDown,
   Folder,
   Headphones,
+  Library,
   Mic,
   Pause,
   Radio,
   RefreshCw,
+  RotateCcw,
   Settings,
   Square,
   Volume2,
@@ -22,17 +24,20 @@ import {
 } from "./captureTargets";
 import { ConsentDialog } from "./components/ConsentDialog";
 import { LevelMeter } from "./components/LevelMeter";
-import { RecordingList } from "./components/RecordingList";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
+import { SettingsWorkspace } from "./components/SettingsWorkspace";
 import type {
   AecMode,
   AppSettings,
+  AsrProvider,
+  AsrProviderProbeRequest,
   AudioDevice,
   CaptureSelection,
   CaptureTarget,
   LevelEvent,
   RecordingItem,
   RecordingSnapshot,
+  TranscriptDocument,
 } from "./types";
 
 const defaultSnapshot: RecordingSnapshot = {
@@ -59,6 +64,8 @@ const defaultSettings: AppSettings = {
   shortcutsEnabled: true,
   toggleShortcut: "Ctrl+Alt+F9",
   stopShortcut: "Ctrl+Alt+F10",
+  activeAsrProviderId: null,
+  autoTranscribe: false,
 };
 
 const formatElapsed = (milliseconds: number) => {
@@ -77,6 +84,7 @@ const followDefaultDeviceLabel = (device?: AudioDevice) =>
 
 type CaptureMode = "process" | "system";
 type StartRequestMode = CaptureMode | "current";
+type AppPage = "recorder" | "recordings" | "settings";
 
 export default function App() {
   const [targets, setTargets] = useState<CaptureTarget[]>([]);
@@ -91,10 +99,14 @@ export default function App() {
   const [levels, setLevels] = useState<LevelEvent>({ system: 0, microphone: 0 });
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [recoverable, setRecoverable] = useState<RecordingItem[]>([]);
+  const [providers, setProviders] = useState<AsrProvider[]>([]);
+  const [page, setPage] = useState<AppPage>("recorder");
+  const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<TranscriptDocument | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("…");
   const [draftSettings, setDraftSettings] = useState(defaultSettings);
   const [pendingCapture, setPendingCapture] = useState<CaptureSelection | null>(null);
@@ -103,6 +115,12 @@ export default function App() {
   const targetPreferenceRef = useRef<CaptureTargetPreference | null>(null);
   const refreshTargetsPromiseRef = useRef<Promise<CaptureTarget[]> | null>(null);
   const requestStartRef = useRef<(mode?: StartRequestMode) => void>(() => undefined);
+  const lastCompletedSessionRef = useRef<string | null>(null);
+  const selectedRecordingIdRef = useRef<string | null>(null);
+  const settingsDirty = useMemo(
+    () => JSON.stringify(draftSettings) !== JSON.stringify(settings),
+    [draftSettings, settings],
+  );
 
   const refreshLibrary = useCallback(async () => {
     const [items, recoverableItems] = await Promise.all([
@@ -111,6 +129,17 @@ export default function App() {
     ]);
     setRecordings(items);
     setRecoverable(recoverableItems);
+    setSelectedRecordingId((current) =>
+      current && items.some((item) => item.id === current)
+        ? current
+        : items[0]?.id ?? null,
+    );
+  }, []);
+
+  const refreshProviders = useCallback(async () => {
+    const next = await api.listAsrProviders();
+    setProviders(next);
+    return next;
   }, []);
 
   const applyCaptureTargets = useCallback((nextTargets: CaptureTarget[]) => {
@@ -160,30 +189,50 @@ export default function App() {
     let unlistenLevels: UnlistenFn | undefined;
     let unlistenStart: UnlistenFn | undefined;
     let unlistenExit: UnlistenFn | undefined;
+    let unlistenAsr: UnlistenFn | undefined;
     void Promise.all([
       refreshTargets(),
       refreshDevices(),
       api.getSettings(),
       api.getSnapshot(),
       api.getAppVersion().catch(() => "未知"),
+      api.listAsrProviders(),
     ])
-      .then(async ([targetList, deviceList, savedSettings, current, version]) => {
+      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders]) => {
         if (!mounted) return;
         applyCaptureTargets(targetList);
         setDevices(deviceList);
         setSettings(savedSettings);
         setDraftSettings(savedSettings);
-        setSettingsOpen(!savedSettings.firstRunComplete);
+        if (!savedSettings.firstRunComplete) {
+          setPage("settings");
+        }
+        if (current.state === "completed") {
+          lastCompletedSessionRef.current = current.sessionId;
+        }
         setSnapshot(current);
         setAppVersion(version);
+        setProviders(savedProviders);
         if (current.fault) setNotice(current.fault.userMessage);
         await refreshLibrary();
         unlistenSnapshot = await api.onSnapshot(setSnapshot);
         unlistenLevels = await api.onLevels(setLevels);
         unlistenStart = await api.onRequestStart((mode) => requestStartRef.current(mode));
         unlistenExit = await api.onRequestExit(() => {
-          if (confirm("录音仍在进行。停止并保存后退出应用？")) {
+          if (confirm("录音或语音转写任务仍在进行。中断任务（录音会先保存）后退出应用？")) {
             void api.quitApplication(true);
+          }
+        });
+        unlistenAsr = await api.onAsrStatus((event) => {
+          setRecordings((currentItems) =>
+            currentItems.map((item) =>
+              item.id === event.recordingId
+                ? { ...item, transcription: event.summary }
+                : item,
+            ),
+          );
+          if (event.recordingId === selectedRecordingIdRef.current && event.summary.status === "completed") {
+            void api.getTranscript(event.recordingId).then(setTranscript).catch(() => undefined);
           }
         });
       })
@@ -194,12 +243,51 @@ export default function App() {
       unlistenLevels?.();
       unlistenStart?.();
       unlistenExit?.();
+      unlistenAsr?.();
     };
   }, [applyCaptureTargets, refreshDevices, refreshLibrary, refreshTargets]);
 
   useEffect(() => {
-    if (snapshot.state === "completed") void refreshLibrary();
-  }, [snapshot.state, refreshLibrary]);
+    if (
+      snapshot.state !== "completed" ||
+      !snapshot.sessionId ||
+      lastCompletedSessionRef.current === snapshot.sessionId
+    ) {
+      return;
+    }
+    lastCompletedSessionRef.current = snapshot.sessionId;
+    const recordingId = snapshot.sessionId;
+    void refreshLibrary()
+      .then(async () => {
+        setNotice("录音已安全保存。可前往“录音记录”播放或开始转写。");
+        if (settings.autoTranscribe && settings.activeAsrProviderId) {
+          await api.startTranscription(recordingId, settings.activeAsrProviderId);
+          setNotice("录音已保存，并已加入语音转写队列。");
+        }
+      })
+      .catch((error) => setNotice(String(error)));
+  }, [
+    refreshLibrary,
+    settings.activeAsrProviderId,
+    settings.autoTranscribe,
+    snapshot.sessionId,
+    snapshot.state,
+  ]);
+
+  useEffect(() => {
+    selectedRecordingIdRef.current = selectedRecordingId;
+    const item = recordings.find((candidate) => candidate.id === selectedRecordingId);
+    if (!item?.transcription) {
+      setTranscript(null);
+      return;
+    }
+    setTranscriptLoading(true);
+    void api
+      .getTranscript(item.id)
+      .then(setTranscript)
+      .catch(() => setTranscript(null))
+      .finally(() => setTranscriptLoading(false));
+  }, [recordings, selectedRecordingId]);
 
   useEffect(() => {
     const refreshOnFocus = () => {
@@ -373,6 +461,24 @@ export default function App() {
     }
   };
 
+  const navigateTo = (nextPage: AppPage) => {
+    if (nextPage === page) return;
+    if (
+      page === "settings" &&
+      settingsDirty &&
+      !confirm("设置尚未保存。放弃这些更改并离开设置页吗？")
+    ) {
+      return;
+    }
+    if (page === "settings" && settingsDirty) {
+      setDraftSettings(settings);
+    }
+    if (nextPage === "settings") {
+      setDraftSettings(settings);
+    }
+    setPage(nextPage);
+  };
+
   const saveDraftSettings = async () => {
     const next = {
       ...draftSettings,
@@ -384,7 +490,105 @@ export default function App() {
       await api.saveSettings(next);
       setSettings(next);
       setDraftSettings(next);
-      setSettingsOpen(false);
+      setNotice("设置已保存");
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
+
+  const skipFirstRun = async () => {
+    const next = {
+      ...settings,
+      firstRunComplete: true,
+    };
+    try {
+      await api.saveSettings(next);
+      setSettings(next);
+      setDraftSettings(next);
+      setPage("recorder");
+      setNotice("已跳过首次设置，可以随时从侧边栏返回。");
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
+
+  const saveProvider = async (request: Parameters<typeof api.saveAsrProvider>[0]) => {
+    const saved = await api.saveAsrProvider(request);
+    await refreshProviders();
+    return saved;
+  };
+
+  const deleteProvider = async (id: string) => {
+    await api.deleteAsrProvider(id);
+    const [nextSettings] = await Promise.all([api.getSettings(), refreshProviders()]);
+    setSettings(nextSettings);
+    setDraftSettings((current) => ({
+      ...current,
+      activeAsrProviderId:
+        current.activeAsrProviderId === id
+          ? nextSettings.activeAsrProviderId
+          : current.activeAsrProviderId,
+      autoTranscribe:
+        current.activeAsrProviderId === id
+          ? nextSettings.autoTranscribe
+          : current.autoTranscribe,
+    }));
+  };
+
+  const updateTranscriptionSummary = (
+    recordingId: string,
+    summary: NonNullable<RecordingItem["transcription"]>,
+  ) => {
+    setRecordings((current) =>
+      current.map((item) =>
+        item.id === recordingId ? { ...item, transcription: summary } : item,
+      ),
+    );
+  };
+
+  const startTranscription = async (recordingId: string) => {
+    try {
+      const summary = await api.startTranscription(
+        recordingId,
+        settings.activeAsrProviderId,
+      );
+      updateTranscriptionSummary(recordingId, summary);
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
+
+  const resumeTranscription = async (recordingId: string) => {
+    try {
+      updateTranscriptionSummary(
+        recordingId,
+        await api.resumeTranscription(recordingId),
+      );
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
+
+  const cancelTranscription = async (recordingId: string) => {
+    try {
+      updateTranscriptionSummary(
+        recordingId,
+        await api.cancelTranscription(recordingId),
+      );
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
+
+  const exportTranscript = async (recordingId: string, title: string) => {
+    const path = await save({
+      defaultPath: `${title}.txt`,
+      filters: [{ name: "Text", extensions: ["txt"] }],
+    });
+    if (!path) return;
+    try {
+      await api.exportTranscript(recordingId, path);
+      setNotice("转写文字已导出");
     } catch (error) {
       setNotice(String(error));
     }
@@ -415,25 +619,52 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark"><Radio size={18} /></span>
-          <span>Nota</span>
-          <span className="local-pill">仅本地</span>
-        </div>
+      <aside className="app-sidebar">
+        <div className="sidebar-brand" title="Nota"><Radio size={20} /></div>
         <button
-          className="icon-button"
-          title="设置"
-          onClick={() => {
-            setDraftSettings(settings);
-            setSettingsOpen(true);
-          }}
+          className={`sidebar-item ${page === "recorder" ? "active" : ""}`}
+          onClick={() => navigateTo("recorder")}
+        >
+          <Mic size={20} />
+          <span>录音</span>
+          {isActive(snapshot.state) && <i className="sidebar-recording-dot" />}
+        </button>
+        <button
+          className={`sidebar-item ${page === "recordings" ? "active" : ""}`}
+          onClick={() => navigateTo("recordings")}
+        >
+          <Library size={20} />
+          <span>录音记录</span>
+          {recoverable.length > 0 && <b>{recoverable.length}</b>}
+        </button>
+        <button
+          className={`sidebar-item sidebar-settings ${page === "settings" ? "active" : ""}`}
+          aria-label="设置"
+          onClick={() => navigateTo("settings")}
         >
           <Settings size={19} />
+          <span>设置</span>
         </button>
-      </header>
+      </aside>
 
-      <main>
+      <div className="app-content">
+        <header className="topbar">
+          <div>
+            <strong>
+              {page === "recorder" ? "录音" : page === "recordings" ? "录音记录" : "设置"}
+            </strong>
+            <span>
+              {page === "recorder"
+                ? "捕捉会议声音与麦克风"
+                : page === "recordings"
+                  ? "播放录音并查看文字转写"
+                  : "管理录音偏好与语音转写服务"}
+            </span>
+          </div>
+          <span className="local-pill">本地优先</span>
+        </header>
+
+      <main className={`page-content page-${page}`}>
         {notice && (
           <div className="toast" role="alert">
             <AlertTriangle size={17} />
@@ -442,6 +673,14 @@ export default function App() {
           </div>
         )}
 
+        {page === "recorder" && (
+          <>
+          {recoverable.length > 0 && (
+            <button className="global-recovery" onClick={() => setPage("recordings")}>
+              <RotateCcw size={16} />
+              发现 {recoverable.length} 个未完成录音，前往录音记录恢复
+            </button>
+          )}
         <section className={`recorder-card state-${snapshot.state}`}>
           <div className="recorder-header">
             <div>
@@ -638,12 +877,29 @@ export default function App() {
             )}
           </div>
         </section>
+        </>
+        )}
 
-        <RecordingList
+        {page === "recordings" && (
+        <RecordingsWorkspace
           items={recordings}
           recoverable={recoverable}
+          selectedId={selectedRecordingId}
+          transcript={transcript}
+          transcriptLoading={transcriptLoading}
+          recordingActive={isActive(snapshot.state)}
+          hasProvider={!!settings.activeAsrProviderId}
+          onSelect={setSelectedRecordingId}
+          onReturnToRecorder={() => navigateTo("recorder")}
           onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
           onPlaybackError={setNotice}
+          onStartTranscription={(id) => void startTranscription(id)}
+          onResumeTranscription={(id) => void resumeTranscription(id)}
+          onCancelTranscription={(id) => void cancelTranscription(id)}
+          onCopyTranscript={(id) =>
+            void api.copyTranscript(id).then(() => setNotice("转写全文已复制")).catch((error) => setNotice(String(error)))
+          }
+          onExportTranscript={(id, title) => void exportTranscript(id, title)}
           onReveal={(id) => void api.revealRecording(id)}
           onDelete={(id) => {
             if (!confirm("将此录音移入回收站？")) return;
@@ -664,12 +920,40 @@ export default function App() {
             void api.deleteRecording(id, true).then(refreshLibrary);
           }}
         />
+        )}
+
+        {page === "settings" && (
+          <SettingsWorkspace
+            firstRun={!settings.firstRunComplete}
+            dirty={settingsDirty}
+            recordingActive={isActive(snapshot.state)}
+            settings={draftSettings}
+            providers={providers}
+            microphoneCount={micDevices.length}
+            appVersion={appVersion}
+            onChange={setDraftSettings}
+            onChooseOutput={() => void chooseDraftOutput()}
+            onOpenMicrophoneSettings={() => void api.openMicrophoneSettings()}
+            onSaveProvider={saveProvider}
+            onDeleteProvider={deleteProvider}
+            onTestProvider={(request: AsrProviderProbeRequest) =>
+              api.testAsrProvider(request)
+            }
+            onListModels={(request: AsrProviderProbeRequest) =>
+              api.listAsrModels(request)
+            }
+            onDiscardChanges={() => setDraftSettings(settings)}
+            onSave={() => void saveDraftSettings()}
+            onSkipFirstRun={() => void skipFirstRun()}
+          />
+        )}
       </main>
 
       <footer className="app-footer">
-        <span><span className="privacy-dot" />离线工作 · 无上传</span>
+        <span><span className="privacy-dot" />本地录音；仅在手动转写或启用自动转写时连接所选服务</span>
         <span>Ctrl + Alt + F9 开始/暂停 · F10 停止</span>
       </footer>
+      </div>
 
       <ConsentDialog
         open={consentOpen}
@@ -688,18 +972,6 @@ export default function App() {
           setPendingSourceDescription("");
         }}
         onStart={() => void acknowledgeNoticeAndStart()}
-      />
-      <SettingsDialog
-        open={settingsOpen}
-        firstRun={!settings.firstRunComplete}
-        settings={draftSettings}
-        microphoneCount={micDevices.length}
-        appVersion={appVersion}
-        onChange={setDraftSettings}
-        onChooseOutput={() => void chooseDraftOutput()}
-        onOpenMicrophoneSettings={() => void api.openMicrophoneSettings()}
-        onCancel={() => setSettingsOpen(false)}
-        onSave={() => void saveDraftSettings()}
       />
     </div>
   );

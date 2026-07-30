@@ -16,7 +16,19 @@ const testState = vi.hoisted(() => ({
     active: boolean;
   }>,
   recoverable: [] as Array<Record<string, unknown>>,
+  firstRunComplete: true,
   noticeAcknowledged: true,
+  activeAsrProviderId: null as string | null,
+  providers: [] as Array<{
+    id: string;
+    name: string;
+    kind: "funAsr" | "openAiCompatible";
+    baseUrl: string;
+    modelId: string;
+    hasApiKey: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>,
   targets: [] as Array<{
     id: string;
     kind: "process";
@@ -33,7 +45,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock("./api", () => ({
   api: {
-    getAppVersion: vi.fn(async () => "0.1.1"),
+    getAppVersion: vi.fn(async () => "0.2.0"),
     listCaptureTargets: vi.fn(async () => testState.targets),
     listAudioDevices: vi.fn(async () => {
       if (testState.devicesError) throw new Error("麦克风权限已关闭");
@@ -44,17 +56,21 @@ vi.mock("./api", () => ({
       aecMode: "auto",
       microphoneEnabled: true,
       consentTemplate: "已告知",
-      firstRunComplete: true,
+      firstRunComplete: testState.firstRunComplete,
       recordingNoticeAcknowledged: testState.noticeAcknowledged,
       shortcutsEnabled: true,
       toggleShortcut: "Ctrl+Alt+F9",
       stopShortcut: "Ctrl+Alt+F10",
+      activeAsrProviderId: testState.activeAsrProviderId,
+      autoTranscribe: false,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
     listRecordings: vi.fn(async () => []),
     listRecoverable: vi.fn(async () => testState.recoverable),
+    listAsrProviders: vi.fn(async () => testState.providers),
     onSnapshot: vi.fn(async () => () => undefined),
     onLevels: vi.fn(async () => () => undefined),
+    onAsrStatus: vi.fn(async () => () => undefined),
     saveSettings: vi.fn(async () => undefined),
     startRecording: vi.fn(async () => snapshot("recording")),
     onRequestStart: vi.fn(
@@ -66,6 +82,19 @@ vi.mock("./api", () => ({
       },
     ),
     onRequestExit: vi.fn(async () => () => undefined),
+    saveAsrProvider: vi.fn(),
+    deleteAsrProvider: vi.fn(async () => undefined),
+    testAsrProvider: vi.fn(async () => ({
+      reachable: true,
+      level: "success",
+      message: "服务可用",
+      models: [],
+      device: null,
+    })),
+    listAsrModels: vi.fn(async () => []),
+    getTranscript: vi.fn(async () => {
+      throw new Error("没有转写结果");
+    }),
   },
 }));
 
@@ -88,7 +117,10 @@ describe("Nota UI states", () => {
     testState.devicesError = false;
     testState.devices = [];
     testState.recoverable = [];
+    testState.firstRunComplete = true;
     testState.noticeAcknowledged = true;
+    testState.activeAsrProviderId = null;
+    testState.providers = [];
     testState.targets = [
       {
         id: "process:42",
@@ -103,7 +135,10 @@ describe("Nota UI states", () => {
     testState.requestStart = null;
     vi.clearAllMocks();
   });
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   for (const state of ["idle", "recording", "paused", "interrupted"] as const) {
     it(`renders ${state}`, async () => {
@@ -163,7 +198,93 @@ describe("Nota UI states", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
     expect(await screen.findByText("关于此应用")).toBeInTheDocument();
-    expect(screen.getByText("v0.1.1")).toBeInTheDocument();
+    expect(screen.getByText("v0.2.0")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "设置" })).not.toBeInTheDocument();
+  });
+
+  it("never exposes a saved ASR API key to the settings form", async () => {
+    testState.activeAsrProviderId = "lan";
+    testState.providers = [
+      {
+        id: "lan",
+        name: "LAN FunASR",
+        kind: "funAsr",
+        baseUrl: "http://192.168.1.20:8000/v1",
+        modelId: "sensevoice",
+        hasApiKey: true,
+        createdAt: "2026-07-28T00:00:00Z",
+        updatedAt: "2026-07-28T00:00:00Z",
+      },
+    ];
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    fireEvent.click(await screen.findByRole("button", { name: /LAN FunASR/ }));
+    const key = screen.getByLabelText("API Key");
+    expect(key).toHaveAttribute("type", "password");
+    expect(key).toHaveValue("••••••••");
+    expect(screen.queryByText(/明文保存在本机 Nota SQLite 数据库/)).not.toBeInTheDocument();
+  });
+
+  it("switches between the recorder and recording library from the sidebar", async () => {
+    render(<App />);
+    expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "录音记录" }));
+    expect(await screen.findByText("还没有录音")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "录音" }));
+    expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
+  });
+
+  it("uses the settings workspace, saves explicitly, and guards dirty navigation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    const aec = await screen.findByRole("combobox", { name: "回声消除" });
+    fireEvent.change(aec, { target: { value: "off" } });
+    expect(screen.getByText("有未保存的更改")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "录音" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "录音" }));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "回声消除" }), {
+      target: { value: "off" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    await waitFor(() =>
+      expect(vi.mocked(api.saveSettings)).toHaveBeenCalledWith(
+        expect.objectContaining({ aecMode: "off", firstRunComplete: true }),
+      ),
+    );
+    expect(await screen.findByText("所有普通设置均已保存")).toBeInTheDocument();
+  });
+
+  it("opens first run as a non-blocking settings page and can skip it", async () => {
+    testState.firstRunComplete = false;
+    render(<App />);
+    expect(await screen.findByText("欢迎使用 Nota")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "录音" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "稍后设置" }));
+    await waitFor(() =>
+      expect(vi.mocked(api.saveSettings)).toHaveBeenCalledWith(
+        expect.objectContaining({ firstRunComplete: true }),
+      ),
+    );
+    expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
+  });
+
+  it("keeps an active recording visible while browsing settings", async () => {
+    testState.snapshot = snapshot("recording");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    expect(
+      await screen.findByText(/当前录音不会被设置页操作中断/),
+    ).toBeInTheDocument();
   });
 
   it("offers crash recovery", async () => {
@@ -179,8 +300,12 @@ describe("Nota UI states", () => {
       },
     ];
     render(<App />);
-    expect(await screen.findByText("发现 1 个未完成录音")).toBeInTheDocument();
-    expect(screen.getByText("立即恢复")).toBeInTheDocument();
+    const recovery = await screen.findByRole("button", {
+      name: "发现 1 个未完成录音，前往录音记录恢复",
+    });
+    fireEvent.click(recovery);
+    expect(await screen.findByText("1 个录音可恢复")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
   });
 
   it("starts directly after the first notice was acknowledged", async () => {

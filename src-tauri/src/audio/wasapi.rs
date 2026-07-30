@@ -1061,12 +1061,11 @@ fn active_audio_processes() -> Result<Vec<u32>> {
     let mut result = Vec::new();
     for index in 0..count {
         let session = unsafe { sessions.GetSession(index)? };
-        if let Ok(control) = session.cast::<IAudioSessionControl2>() {
-            if let Ok(pid) = unsafe { control.GetProcessId() } {
-                if pid != 0 {
-                    result.push(pid);
-                }
-            }
+        if let Ok(control) = session.cast::<IAudioSessionControl2>()
+            && let Ok(pid) = unsafe { control.GetProcessId() }
+            && pid != 0
+        {
+            result.push(pid);
         }
     }
     Ok(result)

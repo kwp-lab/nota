@@ -5,12 +5,12 @@
 <h1 align="center">Nota</h1>
 
 <p align="center">
-  <strong>记录每一场会议，把每一句话留在本地。</strong>
+  <strong>把会议录在本地，按你的方式转成文字。</strong>
 </p>
 
 <p align="center">
-  面向 Windows 会议客户端与浏览器会议的隐私优先录音工具。<br>
-  无机器人参会、无云端上传、无虚拟声卡。
+  面向 Windows 会议客户端与浏览器会议的本地优先录音工具。<br>
+  无机器人参会、无遥测、无虚拟声卡，并支持自选 ASR 服务。
 </p>
 
 <p align="center">
@@ -19,9 +19,9 @@
 
 <p align="center">
   <img alt="平台：Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
-  <img alt="版本：0.1.1" src="https://img.shields.io/badge/version-0.1.1-56615D?style=flat-square">
+  <img alt="版本：0.2.0" src="https://img.shields.io/badge/version-0.2.0-56615D?style=flat-square">
   <img alt="状态：早期预览" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
-  <img alt="隐私：仅本地" src="https://img.shields.io/badge/privacy-local%20only-2F7D71?style=flat-square">
+  <img alt="隐私：本地优先" src="https://img.shields.io/badge/privacy-local%20first-2F7D71?style=flat-square">
   <img alt="遥测：无" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
   <a href="../../actions/workflows/ci.yml"><img alt="CI 状态" src="../../actions/workflows/ci.yml/badge.svg"></a>
 </p>
@@ -58,7 +58,8 @@ Nota 为 Windows 提供一条专注的本地录音工作流：
 | **麦克风与远端声音合录** | 对齐独立设备时钟，在本地进行回声消除，最终交付一个混合录音。 |
 | **崩溃安全** | 先写入恢复文件，校验完整 Ogg 页，并在应用重启后恢复中断的会话。 |
 | **紧凑的输出文件** | 默认生成 48 kHz 单声道、64 kbps 的 Ogg Opus，通常约 30 MB/小时。 |
-| **离线优先** | 无账号、无遥测、无云服务、无自动上传，运行时不建立外部网络连接。 |
+| **可选语音转写** | 仅在手动点击转写或明确开启自动转写后发送录音；可使用局域网 FunASR 或其他 OpenAI-compatible 服务。 |
+| **离线录音** | 无需账号和网络即可完成录音、播放、恢复与文件管理。 |
 
 ## 支持你正在使用的会议工具
 
@@ -86,25 +87,23 @@ flowchart LR
     E --> G["混音与<br>-1 dBFS 限制器"]
     F --> G
     G --> H["48 kHz 单声道<br>Ogg Opus"]
+    H -. "可选，由用户触发" .-> I["16 kHz WAV 分块"]
+    I -.-> J["用户配置的<br>ASR 服务"]
 ```
 
 Nota 直接使用 Windows Core Audio。指定应用模式通过 Windows 进程回环捕获目标进程树；系统声音模式通过端点回环捕获所选输出设备。麦克风独立采集，通过 QPC 时间戳对齐、异步重采样校正设备时钟漂移，在本地处理并混音后编码为 Opus。
 
-整个过程不需要 FFmpeg 运行时、虚拟声卡或云端处理服务。
+整个录音过程不需要 FFmpeg 运行时或虚拟声卡。转写是独立的可选流程：Nota 会把归档录音转换为临时的 16 kHz 单声道 WAV 分块，并发送到用户配置的服务；分块上传后立即删除。
 
 ## 获取 Nota
 
-Nota 目前处于早期预览阶段，尚未公开发布二进制文件。
-
-首个 GitHub Release 计划包含：
+Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases/latest) 下载最新版本：
 
 - 无需管理员权限、按当前用户安装的 NSIS 安装包；
 - 无需安装的便携 ZIP，设置与恢复数据仍存放在 LocalAppData。
 
-未来的公开版本会出现在 [GitHub Releases](../../releases)。在此之前，开发者可以[从源码构建](#从源码构建)。
-
 > [!NOTE]
-> 当前预览版尚未进行代码签名，Windows SmartScreen 可能显示“未知发布者”提示。
+> 当前预览版尚未进行代码签名，Windows SmartScreen 可能显示“未知发布者”提示。你也可以[从源码构建](#从源码构建)。
 
 ## 快速开始
 
@@ -113,7 +112,16 @@ Nota 目前处于早期预览阶段，尚未公开发布二进制文件。
 3. 选择麦克风，或关闭麦克风录制。
 4. 确认保存位置并开始录音。
 5. 从主窗口、托盘菜单或快捷键停止并保存。
-6. 在 **最近录音** 中直接播放，或打开文件所在目录。
+6. 打开 **录音记录** 播放、管理录音，或按需开始文字转写。
+
+### 可选语音转写
+
+打开 **设置 → 语音转写**，添加一个或多个 Provider 并选择默认项：
+
+- **FunASR**：适合运行在本机或局域网中的服务；
+- **OpenAI-compatible**：适合实现了兼容音频转写接口的其他服务商。
+
+API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。长录音会自动转换成可恢复的 10 分钟分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
 
 默认快捷键：
 
@@ -126,15 +134,18 @@ Nota 目前处于早期预览阶段，尚未公开发布二进制文件。
 
 ## 隐私优先
 
-**你的会议音频无需离开这台电脑。**
+**除非你主动选择转写服务，否则会议音频无需离开这台电脑。**
 
 - 无账号或登录
 - 无遥测或分析
-- 无云端上传或远程处理
+- 录音过程中不上传
+- 仅在手动转写或明确开启自动转写后上传
 - 不自动检测会议
 - 不自动开始录音
 - 技术日志不包含音频内容
-- 运行时不建立外部网络连接
+- 不使用转写时可完全离线工作
+
+所有 Provider HTTP 请求都由 Rust 后端发起，界面没有任意联网权限。为了保持开源实现简单、易用、易维护，API Key 会以明文保存在本机 Nota SQLite 数据库中。已保存密钥在界面中始终掩码，普通 IPC 读取只返回是否存在密钥，日志、错误与导出内容不会包含密钥，也不提供 Provider 配置整体导出。能够读取你 Windows 账户文件的人仍可能取得密钥，因此服务商支持时建议使用权限受限的 Key。
 
 Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵守所在地法律、会议规则和组织政策。
 
@@ -158,7 +169,9 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 - 当前预览版界面仅提供简体中文
 - 浏览器录音无法限制到单个标签页
 - 只输出一个混合文件，不保留独立麦克风与系统音轨
-- 仅录制音频，不包含视频、转写、摘要或说话人识别
+- 不包含视频、摘要、翻译、转写文本编辑或实时流式转写
+- 只有 Provider 返回说话人标签时才显示；Nota 本身不进行说话人识别
+- 转写需要用户自行配置 FunASR 或 OpenAI-compatible 服务
 - 回声消除效果会受到麦克风、扬声器、房间和设备模式影响
 - 预览版尚未进行代码签名
 
@@ -169,6 +182,7 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 - [ ] 扩展设备与会议客户端验收矩阵
 - [ ] 增加英文界面并改进无障碍体验
 - [ ] 支持 Windows on ARM64
+- [ ] 增加摘要与可选的转写文本编辑
 
 路线图会继续聚焦于可靠的本地录音。欢迎通过 [Issues](../../issues) 提交功能建议。
 
@@ -216,6 +230,8 @@ src-tauri/src/audio/wasapi.rs      Windows 音频采集与设备恢复
 src-tauri/src/audio/dsp.rs         对齐、重采样、AEC、混音与限制
 src-tauri/src/audio/encoder.rs     Opus 编码与 Ogg 封装
 src-tauri/src/audio/recovery.rs    校验、修复与安全完成录音
+src-tauri/src/asr.rs               Provider 客户端、解码、分块、队列与结果合并
+src-tauri/src/storage.rs           SQLite 设置、录音索引与转写数据
 src-tauri/src/controller.rs        录音状态、IPC、托盘与文件操作
 ```
 
@@ -260,9 +276,15 @@ Opus 能以较小体积保存清晰语音。默认 64 kbps 单声道通常约为
 </details>
 
 <details>
-<summary><strong>Nota 会通过互联网发送数据吗？</strong></summary>
+<summary><strong>Nota 什么时候会联网？</strong></summary>
 
-不会。应用设计为无需外部网络连接即可运行。本 README 中的徽章与链接由 GitHub 和 Shields.io 提供，与 Nota 应用本身无关。
+录音不需要网络。只有在你手动开始转写，或明确开启自动转写后，Nota 才会连接你配置的 ASR 服务。本 README 中的徽章与链接由 GitHub 和 Shields.io 提供，与 Nota 应用本身无关。
+</details>
+
+<details>
+<summary><strong>ASR API Key 保存在哪里？</strong></summary>
+
+它以明文保存在 Nota 的本地 SQLite 数据库中。普通读取只会返回“是否存在密钥”，日志和导出内容不会包含密钥。这是为了简单易维护而做出的明确取舍，并不等同于安全凭据保险库。
 </details>
 
 ## 致谢

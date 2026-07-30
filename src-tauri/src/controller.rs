@@ -1,3 +1,7 @@
+use crate::asr::{
+    AsrManager, clean_stale_temporary_chunks, list_models as list_provider_models,
+    normalize_base_url, remove_temporary_chunks, test_connection,
+};
 use crate::audio::{
     AudioMixer, AudioPacket, CaptureHandle, CaptureSource, OpusOggWriter,
     list_audio_devices as enumerate_audio_devices,
@@ -33,6 +37,7 @@ const MAX_PACKETS_PER_TICK: usize = 64;
 struct AppState {
     storage: Arc<Storage>,
     recorder: Arc<RecordingController>,
+    asr: Arc<AsrManager>,
     tray_state: Mutex<Option<RecordingState>>,
 }
 
@@ -744,6 +749,7 @@ fn recording_worker(
                 duration_ms: duration,
                 size_bytes: metadata.map(|value| value.len()).unwrap_or(0),
                 recovered: false,
+                transcription: None,
             };
             if let Err(error) = storage.insert_recording(&item) {
                 failure = Some(error);
@@ -970,7 +976,7 @@ fn set_microphone_enabled(
 
 impl AppState {
     fn runtime_active(&self) -> bool {
-        self.recorder.is_active()
+        self.recorder.is_active() || self.asr.has_active()
     }
 }
 
@@ -1017,6 +1023,7 @@ fn list_recoverable_recordings(
                 duration_ms: 0,
                 size_bytes: file.size_bytes,
                 recovered: true,
+                transcription: None,
             })
             .collect())
     })())
@@ -1028,7 +1035,7 @@ fn recover_recording(
     state: State<AppState>,
     id: String,
 ) -> std::result::Result<RecordingItem, String> {
-    if state.runtime_active() {
+    if state.recorder.is_active() {
         return Err("录音进行中不能同时恢复旧文件".into());
     }
     {
@@ -1057,6 +1064,7 @@ fn recover_recording(
             duration_ms: 0,
             size_bytes: size,
             recovered: true,
+            transcription: None,
         };
         state.storage.insert_recording(&item)?;
         Ok(item)
@@ -1108,7 +1116,11 @@ fn delete_recording(
     permanent: bool,
 ) -> std::result::Result<(), String> {
     command_result((|| {
+        if state.asr.is_active(&id) {
+            bail!("该录音正在转写，请先中断任务后再删除");
+        }
         let item = state.storage.find_recording(&id)?;
+        remove_temporary_chunks(&state.storage.paths().recovery, &id)?;
         if permanent {
             std::fs::remove_file(&item.path)?;
         } else {
@@ -1182,8 +1194,183 @@ async fn quit_application(
                 .map_err(|error| format!("退出前保存任务异常结束：{error}"))?;
         command_result(result)?;
     }
+    if state.asr.has_active() {
+        if !stop_and_save {
+            return Err("仍有语音转写任务正在进行".into());
+        }
+        command_result(state.asr.interrupt_all())?;
+    }
     app.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+fn list_asr_providers(state: State<AppState>) -> std::result::Result<Vec<AsrProvider>, String> {
+    command_result(state.storage.list_asr_providers())
+}
+
+#[tauri::command]
+fn save_asr_provider(
+    state: State<AppState>,
+    mut request: SaveAsrProviderRequest,
+) -> std::result::Result<AsrProvider, String> {
+    command_result((|| {
+        if request.name.trim().is_empty() {
+            bail!("服务名称不能为空");
+        }
+        if request.model_id.trim().is_empty() {
+            bail!("模型 ID 不能为空");
+        }
+        request.name = request.name.trim().to_owned();
+        request.model_id = request.model_id.trim().to_owned();
+        request.base_url = normalize_base_url(&request.base_url)?;
+        state.storage.save_asr_provider(request)
+    })())
+}
+
+#[tauri::command]
+fn delete_asr_provider(state: State<AppState>, id: String) -> std::result::Result<(), String> {
+    command_result(state.storage.delete_asr_provider(&id))
+}
+
+#[tauri::command]
+fn set_active_asr_provider(
+    state: State<AppState>,
+    id: Option<String>,
+) -> std::result::Result<AppSettings, String> {
+    command_result((|| {
+        if let Some(provider_id) = id.as_deref() {
+            state.storage.find_asr_provider(provider_id)?;
+        }
+        let mut settings = state.storage.settings()?;
+        settings.active_asr_provider_id = id.filter(|value| !value.trim().is_empty());
+        if settings.active_asr_provider_id.is_none() {
+            settings.auto_transcribe = false;
+        }
+        state.storage.save_settings(&settings)?;
+        Ok(settings)
+    })())
+}
+
+#[tauri::command]
+async fn test_asr_provider(
+    state: State<'_, AppState>,
+    mut request: AsrProviderProbeRequest,
+) -> std::result::Result<AsrConnectionTest, String> {
+    let storage = Arc::clone(&state.storage);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        request.base_url = normalize_base_url(&request.base_url)?;
+        let credentials = storage.asr_probe_credentials(request)?;
+        test_connection(&credentials)
+    })
+    .await
+    .map_err(|error| format!("连接测试任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+async fn list_asr_models(
+    state: State<'_, AppState>,
+    mut request: AsrProviderProbeRequest,
+) -> std::result::Result<Vec<AsrModel>, String> {
+    let storage = Arc::clone(&state.storage);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        request.base_url = normalize_base_url(&request.base_url)?;
+        let credentials = storage.asr_probe_credentials(request)?;
+        list_provider_models(&credentials)
+    })
+    .await
+    .map_err(|error| format!("读取模型任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+fn start_transcription(
+    app: AppHandle,
+    state: State<AppState>,
+    recording_id: String,
+    provider_id: Option<String>,
+) -> std::result::Result<TranscriptionSummary, String> {
+    command_result((|| {
+        let provider_id = match provider_id.filter(|value| !value.trim().is_empty()) {
+            Some(value) => value,
+            None => state
+                .storage
+                .settings()?
+                .active_asr_provider_id
+                .context("请先在设置中选择默认语音转写服务")?,
+        };
+        state.asr.start(app, &recording_id, &provider_id)
+    })())
+}
+
+#[tauri::command]
+fn cancel_transcription(
+    app: AppHandle,
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<TranscriptionSummary, String> {
+    command_result(state.asr.cancel(&app, &recording_id))
+}
+
+#[tauri::command]
+fn resume_transcription(
+    app: AppHandle,
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<TranscriptionSummary, String> {
+    command_result(state.asr.resume(app, &recording_id))
+}
+
+#[tauri::command]
+fn get_transcript(
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result(state.storage.transcript(&recording_id))
+}
+
+#[tauri::command]
+fn copy_transcript(
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<(), String> {
+    command_result((|| {
+        let transcript = state.storage.transcript(&recording_id)?;
+        if transcript.text.trim().is_empty() {
+            bail!("当前没有可复制的转写文字");
+        }
+        arboard::Clipboard::new()?.set_text(transcript.text)?;
+        Ok(())
+    })())
+}
+
+#[tauri::command]
+fn export_transcript(
+    state: State<AppState>,
+    recording_id: String,
+    path: String,
+) -> std::result::Result<(), String> {
+    command_result((|| {
+        let transcript = state.storage.transcript(&recording_id)?;
+        if transcript.text.trim().is_empty() {
+            bail!("当前没有可导出的转写文字");
+        }
+        let destination = PathBuf::from(path);
+        if destination.extension().and_then(|value| value.to_str()) != Some("txt") {
+            bail!("转写结果仅支持导出为 .txt 文件");
+        }
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(destination, transcript.text.as_bytes())?;
+        Ok(())
+    })())
+}
+
+#[tauri::command]
+fn has_active_transcription(state: State<AppState>) -> bool {
+    state.asr.has_active()
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -1435,7 +1622,21 @@ pub fn run_app() {
     crate::logging::init(&paths.logs).expect("无法初始化 Nota 技术日志");
     log::info!("Nota starting; local data initialized");
     let storage = Arc::new(Storage::open(paths).expect("无法初始化 Nota 数据库"));
+    clean_stale_temporary_chunks(&storage.paths().recovery)
+        .expect("无法清理上次遗留的转写临时文件");
+    storage
+        .interrupt_running_transcriptions()
+        .expect("无法恢复上次中断的转写任务状态");
     let recorder = Arc::new(RecordingController::new(Arc::clone(&storage)));
+    let weak_recorder = Arc::downgrade(&recorder);
+    let asr = Arc::new(AsrManager::new(
+        Arc::clone(&storage),
+        Arc::new(move || {
+            weak_recorder
+                .upgrade()
+                .is_some_and(|recorder| recorder.is_active())
+        }),
+    ));
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -1448,6 +1649,7 @@ pub fn run_app() {
         .manage(AppState {
             storage,
             recorder,
+            asr,
             tray_state: Mutex::new(Some(RecordingState::Idle)),
         })
         .setup(|app| {
@@ -1493,6 +1695,19 @@ pub fn run_app() {
             delete_recoverable_recording,
             open_microphone_settings,
             copy_consent_template,
+            list_asr_providers,
+            save_asr_provider,
+            delete_asr_provider,
+            set_active_asr_provider,
+            test_asr_provider,
+            list_asr_models,
+            start_transcription,
+            cancel_transcription,
+            resume_transcription,
+            get_transcript,
+            copy_transcript,
+            export_transcript,
+            has_active_transcription,
             quit_application,
         ])
         .build(tauri::generate_context!())
@@ -1502,6 +1717,9 @@ pub fn run_app() {
             let state = app.state::<AppState>();
             if let Err(error) = state.recorder.stop_and_wait(app) {
                 log::error!("best-effort shutdown finalization failed: {error:#}");
+            }
+            if let Err(error) = state.asr.interrupt_all() {
+                log::error!("best-effort ASR interruption failed: {error:#}");
             }
         }
     });

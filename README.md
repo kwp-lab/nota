@@ -5,12 +5,12 @@
 <h1 align="center">Nota</h1>
 
 <p align="center">
-  <strong>Record every meeting. Keep every word local.</strong>
+  <strong>Record meetings locally. Transcribe them on your terms.</strong>
 </p>
 
 <p align="center">
-  A privacy-first Windows recorder for meeting apps and browser calls.<br>
-  No bots. No cloud upload. No virtual audio device.
+  A local-first Windows recorder for meeting apps and browser calls.<br>
+  No bots, no telemetry, no virtual audio device—and optional bring-your-own ASR.
 </p>
 
 <p align="center">
@@ -19,9 +19,9 @@
 
 <p align="center">
   <img alt="Platform: Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
-  <img alt="Version: 0.1.1" src="https://img.shields.io/badge/version-0.1.1-56615D?style=flat-square">
+  <img alt="Version: 0.2.0" src="https://img.shields.io/badge/version-0.2.0-56615D?style=flat-square">
   <img alt="Status: early preview" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
-  <img alt="Privacy: local only" src="https://img.shields.io/badge/privacy-local%20only-2F7D71?style=flat-square">
+  <img alt="Privacy: local first" src="https://img.shields.io/badge/privacy-local%20first-2F7D71?style=flat-square">
   <img alt="Telemetry: none" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
   <a href="../../actions/workflows/ci.yml"><img alt="CI status" src="../../actions/workflows/ci.yml/badge.svg"></a>
 </p>
@@ -58,7 +58,8 @@ Nota gives Windows one focused recording workflow:
 | **Microphone + remote audio** | Align independent device clocks, apply local echo cancellation, and deliver a single mixed recording. |
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
-| **Offline by design** | No account, telemetry, cloud service, automatic upload, or runtime network connection. |
+| **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
+| **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
 
 ## Works with the meetings you already use
 
@@ -86,25 +87,23 @@ flowchart LR
     E --> G["Mix and<br>-1 dBFS limiter"]
     F --> G
     G --> H["48 kHz mono<br>Ogg Opus"]
+    H -. "Optional, user initiated" .-> I["16 kHz WAV chunks"]
+    I -.-> J["Configured<br>ASR provider"]
 ```
 
 Nota uses Windows Core Audio directly. Selected-application mode uses Windows process-loopback capture with the target process tree; system mode uses endpoint loopback for a selected output device. Microphone audio is captured independently, aligned with QPC timestamps, resampled to correct clock drift, processed locally, and mixed before Opus encoding.
 
-There is no FFmpeg runtime, virtual sound card, or cloud processing service.
+There is no FFmpeg runtime or virtual sound card. Transcription is a separate, optional workflow: Nota converts the archived recording to temporary 16 kHz mono WAV chunks and sends them to the provider configured by the user. Temporary chunks are removed after upload.
 
 ## Get Nota
 
-Nota is currently an early preview. Public binaries have not been published yet.
-
-The first GitHub release is planned to include:
+Nota is currently an early preview. Download the latest build from [GitHub Releases](../../releases/latest):
 
 - a per-user NSIS installer that does not require administrator access;
 - a portable ZIP that keeps settings and recovery data in LocalAppData.
 
-Future binaries will appear on the [GitHub Releases page](../../releases). Until then, developers can [build Nota from source](#build-from-source).
-
 > [!NOTE]
-> The current preview is unsigned. Windows SmartScreen may show an “Unknown publisher” warning.
+> The preview is unsigned. Windows SmartScreen may show an “Unknown publisher” warning. You can also [build Nota from source](#build-from-source).
 
 ## Quick start
 
@@ -113,7 +112,16 @@ Future binaries will appear on the [GitHub Releases page](../../releases). Until
 3. Choose a microphone, or disable microphone recording.
 4. Confirm the destination and start recording.
 5. Stop and save from the window, tray menu, or keyboard shortcut.
-6. Play the result from **Recent recordings** or open its containing folder.
+6. Open **Recordings** to play the result, manage the file, or start an optional transcription.
+
+### Optional speech-to-text
+
+Open **Settings → Speech transcription**, add one or more providers, and choose a default:
+
+- **FunASR** for a server on your own computer or LAN;
+- **OpenAI-compatible** for any service implementing the compatible audio-transcription endpoint.
+
+Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. Long recordings are converted and uploaded in resumable 10-minute chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
 
 Default shortcuts:
 
@@ -126,15 +134,18 @@ Shortcuts can be changed or disabled in Settings. Closing the main window keeps 
 
 ## Privacy by design
 
-**Your meeting audio never needs to leave your computer.**
+**Your meeting audio never needs to leave your computer unless you choose a transcription provider.**
 
 - No account or sign-in
 - No telemetry or analytics
-- No cloud upload or remote processing
+- No upload during recording
+- No upload unless you manually start transcription or explicitly enable automatic transcription
 - No automatic meeting detection
 - No automatic recording
 - No audio content in technical logs
-- No runtime network connection
+- Fully functional offline when transcription is not used
+
+Provider HTTP requests are made by the Rust backend; the interface has no general network permission. API keys are intentionally stored in plaintext in the local Nota SQLite database for a simple, maintainable open-source setup. Saved keys are masked in the interface, omitted from normal IPC reads, logs, errors, and exports, and provider configurations cannot be exported as a bundle. Anyone who can read your Windows account files may still be able to recover a saved key, so use a scoped key where your provider supports one.
 
 Nota shows a participant-notification reminder before the first recording. Users remain responsible for complying with applicable laws, meeting rules, and organizational policies.
 
@@ -158,7 +169,9 @@ The default output directory is `Documents\Nota\Recordings`. Settings and the re
 - Simplified Chinese interface in the current preview
 - Browser capture cannot be restricted to one tab
 - One mixed output file; no separate microphone/system tracks
-- Audio recording only—no video, transcription, summarization, or speaker identification
+- No video, summaries, translation, transcript editing, or real-time streaming transcription
+- Speaker labels are displayed only when the configured provider returns them; Nota does not perform diarization itself
+- Transcription requires a user-configured FunASR or OpenAI-compatible service
 - Echo-cancellation quality depends on the microphone, speakers, room, and device mode
 - The preview is not code-signed
 
@@ -169,6 +182,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings and the re
 - [ ] Expand the tested device and meeting-client matrix
 - [ ] Add an English interface and improve accessibility
 - [ ] Add Windows on ARM64 support
+- [ ] Add summaries and optional transcript editing
 
 The roadmap intentionally stays focused on reliable local recording. Feature proposals are welcome in [Issues](../../issues).
 
@@ -216,6 +230,8 @@ src-tauri/src/audio/wasapi.rs      Windows capture and device recovery
 src-tauri/src/audio/dsp.rs         Alignment, resampling, AEC, mixing, limiting
 src-tauri/src/audio/encoder.rs     Opus encoding and Ogg container
 src-tauri/src/audio/recovery.rs    Validation, repair, and safe finalization
+src-tauri/src/asr.rs               Provider client, decoding, chunking, queue, and merge
+src-tauri/src/storage.rs           SQLite settings, recording index, and transcripts
 src-tauri/src/controller.rs        Recording state, IPC, tray, and file actions
 ```
 
@@ -260,9 +276,15 @@ On the next launch, Nota scans recovery files, removes incomplete trailing data,
 </details>
 
 <details>
-<summary><strong>Does Nota send any data over the internet?</strong></summary>
+<summary><strong>When does Nota make a network connection?</strong></summary>
 
-No. The application is designed to operate without external network connections. The badges and links in this README are served by GitHub and Shields.io, not by the Nota application.
+Recording never requires a network connection. Nota contacts only the ASR provider you configured, and only when you manually request transcription or enable automatic transcription. The badges and links in this README are served by GitHub and Shields.io, not by the Nota application.
+</details>
+
+<details>
+<summary><strong>Where is my ASR API key stored?</strong></summary>
+
+It is stored in plaintext in Nota's local SQLite database. Normal reads expose only whether a key exists, and Nota excludes it from logs and exports. This is a deliberate simplicity trade-off, not a secure credential vault.
 </details>
 
 ## Acknowledgements

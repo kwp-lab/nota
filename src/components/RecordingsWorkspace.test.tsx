@@ -1,0 +1,154 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { RecordingItem, TranscriptDocument } from "../types";
+import "../styles.css";
+import { RecordingsWorkspace } from "./RecordingsWorkspace";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (path: string) => `asset://${path}`,
+}));
+
+const completed: RecordingItem = {
+  id: "completed",
+  title: "产品周会",
+  path: "C:\\Recordings\\weekly.ogg",
+  createdAt: "2026-07-28T04:00:00Z",
+  durationMs: 62_000,
+  sizeBytes: 1024 * 1024,
+  recovered: false,
+  transcription: {
+    status: "completed",
+    completedChunks: 1,
+    totalChunks: 1,
+    providerName: "Local FunASR",
+    modelId: "sensevoice",
+    errorMessage: null,
+    hasText: true,
+  },
+};
+
+const failed: RecordingItem = {
+  ...completed,
+  id: "failed",
+  title: "客户访谈",
+  transcription: {
+    ...completed.transcription!,
+    status: "failed",
+    completedChunks: 1,
+    totalChunks: 3,
+    errorMessage: "服务暂时不可用",
+    hasText: false,
+  },
+};
+
+const transcript: TranscriptDocument = {
+  recordingId: completed.id,
+  status: "completed",
+  providerName: "Local FunASR",
+  modelId: "sensevoice",
+  language: "zh",
+  text: "先确认本周目标。",
+  segments: [
+    {
+      startMs: 12_000,
+      endMs: 16_000,
+      text: "先确认本周目标。",
+      speaker: "speaker_1",
+    },
+  ],
+  completedChunks: 1,
+  totalChunks: 1,
+  errorMessage: null,
+  updatedAt: "2026-07-28T04:02:00Z",
+};
+
+const renderWorkspace = (
+  items: RecordingItem[] = [completed, failed],
+  selectedId: string | null = completed.id,
+  document: TranscriptDocument | null = transcript,
+) => {
+  const actions = {
+    onSelect: vi.fn(),
+    onReturnToRecorder: vi.fn(),
+    onPreparePlayback: vi.fn(async () => completed.path),
+    onPlaybackError: vi.fn(),
+    onStartTranscription: vi.fn(),
+    onResumeTranscription: vi.fn(),
+    onCancelTranscription: vi.fn(),
+    onCopyTranscript: vi.fn(),
+    onExportTranscript: vi.fn(),
+    onReveal: vi.fn(),
+    onDelete: vi.fn(),
+    onRecover: vi.fn(),
+    onDiscardRecovery: vi.fn(),
+    onRename: vi.fn(),
+    onPermanentDelete: vi.fn(),
+  };
+  render(
+    <RecordingsWorkspace
+      items={items}
+      recoverable={[]}
+      selectedId={selectedId}
+      transcript={document}
+      transcriptLoading={false}
+      recordingActive={false}
+      hasProvider
+      {...actions}
+    />,
+  );
+  return actions;
+};
+
+afterEach(cleanup);
+
+describe("RecordingsWorkspace", () => {
+  it("filters recordings and exposes transcription states", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+    expect(screen.getAllByText("已转写")).toHaveLength(2);
+    expect(screen.getByText("转写失败")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索录音" }), {
+      target: { value: "客户" },
+    });
+    expect(screen.queryByRole("button", { name: /产品周会/ })).not.toBeInTheDocument();
+    expect(screen.getByText("客户访谈")).toBeInTheDocument();
+  });
+
+  it("shows provider speaker labels and timestamp controls without inventing roles", () => {
+    renderWorkspace();
+    expect(screen.getByText("speaker_1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "0:12" })).toBeInTheDocument();
+    expect(screen.queryByText("我")).not.toBeInTheDocument();
+    expect(screen.queryByText("参会者")).not.toBeInTheDocument();
+  });
+
+  it("offers copy, export, and resume actions for their respective states", () => {
+    const completedActions = renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "复制全文" }));
+    fireEvent.click(screen.getByRole("button", { name: "导出 TXT" }));
+    expect(completedActions.onCopyTranscript).toHaveBeenCalledWith(completed.id);
+    expect(completedActions.onExportTranscript).toHaveBeenCalledWith(completed.id, completed.title);
+    cleanup();
+
+    const failedActions = renderWorkspace([failed], failed.id, null);
+    fireEvent.click(screen.getByRole("button", { name: "继续转写" }));
+    expect(failedActions.onResumeTranscription).toHaveBeenCalledWith(failed.id);
+    expect(screen.getByText("服务暂时不可用")).toBeInTheDocument();
+  });
+
+  it("keeps a long recording list in its own vertical scroll area", () => {
+    renderWorkspace(
+      Array.from({ length: 30 }, (_, index) => ({
+        ...completed,
+        id: `recording-${index}`,
+        title: `会议录音 ${index + 1}`,
+      })),
+      null,
+      null,
+    );
+
+    const list = screen.getByLabelText("录音列表");
+    expect(getComputedStyle(list).overflowY).toBe("auto");
+    expect(list.closest(".history-pane")).toHaveClass("history-pane");
+  });
+});
