@@ -607,6 +607,7 @@
 | @csstools/css-tokenizer | 4.0.0 | MIT |
 | @emnapi/core | 1.11.3 | MIT |
 | @emnapi/core/node_modules/@emnapi/wasi-threads | 1.2.3 | MIT |
+| @emnapi/runtime | 1.11.3 | MIT |
 | @emnapi/wasi-threads | 1.2.2 | MIT |
 | @esbuild/aix-ppc64 | 0.27.0 | MIT |
 | @esbuild/android-arm | 0.27.0 | MIT |

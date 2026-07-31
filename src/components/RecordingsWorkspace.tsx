@@ -21,6 +21,7 @@ import type {
   RecordingItem,
   TranscriptDocument,
   TranscriptionStatus,
+  TranscriptionSummary,
 } from "../types";
 
 interface RecordingsWorkspaceProps {
@@ -75,6 +76,59 @@ const statusLabels: Record<TranscriptionStatus, string> = {
 
 const processingStatuses: TranscriptionStatus[] = ["queued", "preparing", "transcribing"];
 const resumableStatuses: TranscriptionStatus[] = ["failed", "interrupted", "cancelled"];
+
+const batchPhaseLabels = {
+  preparing: "准备录音",
+  uploading: "上传录音",
+  queued: "服务器排队",
+  transcribing: "处理音频窗口",
+  diarizing: "统一说话人",
+  finalizing: "整理结果",
+} as const;
+
+const transcriptionLabel = (transcription: TranscriptionSummary) =>
+  transcription.protocol === "nota_batch_v1"
+  && processingStatuses.includes(transcription.status)
+  && transcription.progressPhase
+    ? batchPhaseLabels[transcription.progressPhase]
+    : statusLabels[transcription.status];
+
+const transcriptionProgress = (transcription: TranscriptionSummary) => {
+  if (transcription.protocol !== "nota_batch_v1") {
+    return transcription.totalChunks
+      ? `已完成 ${transcription.completedChunks} / ${transcription.totalChunks} 个分块`
+      : "正在准备 16 kHz 音频分块";
+  }
+  if (transcription.progressPhase === "queued") return "录音已上传，等待服务器处理";
+  if (transcription.progressUnit === "bytes" && transcription.progressTotal > 0) {
+    return `已上传 ${formatSize(transcription.progressCurrent)} / ${formatSize(transcription.progressTotal)}`;
+  }
+  if (transcription.progressUnit === "windows" && transcription.progressTotal > 0) {
+    return `已处理 ${transcription.progressCurrent} / ${transcription.progressTotal} 个音频窗口`;
+  }
+  if (transcription.progressPhase === "diarizing") return "正在为整场会议统一说话人";
+  if (transcription.progressPhase === "finalizing") return "正在生成最终转写结果";
+  return "正在准备整场会议转写";
+};
+
+const transcriptionProgressSuffix = (transcription: TranscriptionSummary) => {
+  if (!processingStatuses.includes(transcription.status)) return "";
+  if (transcription.protocol === "nota_batch_v1") {
+    if (transcription.progressTotal <= 0) return "";
+    if (transcription.progressUnit === "bytes") {
+      return ` ${Math.min(100, Math.round(
+        (transcription.progressCurrent / transcription.progressTotal) * 100,
+      ))}%`;
+    }
+    if (transcription.progressUnit === "windows") {
+      return ` ${transcription.progressCurrent}/${transcription.progressTotal}`;
+    }
+    return "";
+  }
+  return transcription.totalChunks > 0
+    ? ` ${transcription.completedChunks}/${transcription.totalChunks}`
+    : "";
+};
 
 export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [query, setQuery] = useState("");
@@ -224,10 +278,8 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       {" · "}{formatDuration(item.durationMs)}{" · "}{formatSize(item.sizeBytes)}
                     </small>
                     <span className={`transcription-badge status-${item.transcription?.status ?? "none"}`}>
-                      {item.transcription ? statusLabels[item.transcription.status] : "未转写"}
-                      {item.transcription && item.transcription.totalChunks > 0 && processingStatuses.includes(item.transcription.status)
-                        ? ` ${item.transcription.completedChunks}/${item.transcription.totalChunks}`
-                        : ""}
+                      {item.transcription ? transcriptionLabel(item.transcription) : "未转写"}
+                      {item.transcription ? transcriptionProgressSuffix(item.transcription) : ""}
                     </span>
                   </span>
                 </button>
@@ -304,7 +356,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <strong>文字转写</strong>
                 {transcription && (
                   <span className={`transcription-badge status-${transcription.status}`}>
-                    {statusLabels[transcription.status]}
+                    {transcriptionLabel(transcription)}
                   </span>
                 )}
                 {transcription?.providerName && (
@@ -347,16 +399,21 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               <div className="transcription-progress">
                 <LoaderCircle className="spin" size={18} />
                 <div>
-                  <strong>{statusLabels[transcription!.status]}</strong>
-                  <span>
-                    {transcription!.totalChunks
-                      ? `已完成 ${transcription!.completedChunks} / ${transcription!.totalChunks} 个分块`
-                      : "正在准备 16 kHz 音频分块"}
-                  </span>
+                  <strong>{transcriptionLabel(transcription!)}</strong>
+                  <span>{transcriptionProgress(transcription!)}</span>
                 </div>
                 <progress
-                  max={Math.max(1, transcription!.totalChunks)}
-                  value={transcription!.completedChunks}
+                  max={Math.max(
+                    1,
+                    transcription!.protocol === "nota_batch_v1"
+                      ? transcription!.progressTotal
+                      : transcription!.totalChunks,
+                  )}
+                  value={
+                    transcription!.protocol === "nota_batch_v1"
+                      ? transcription!.progressCurrent
+                      : transcription!.completedChunks
+                  }
                 />
               </div>
             )}
@@ -391,7 +448,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   <strong>{transcription ? statusLabels[transcription.status] : "尚未转写"}</strong>
                   <p>
                     {props.hasProvider
-                      ? "点击“开始转写”后，Nota 会把音频分块发送到默认服务。"
+                      ? "点击“开始转写”后，Nota 会把录音发送到默认服务。"
                       : "请先在设置中添加并选择语音转写服务。"}
                   </p>
                 </div>

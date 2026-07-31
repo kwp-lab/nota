@@ -19,7 +19,7 @@
 
 <p align="center">
   <img alt="平台：Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
-  <img alt="版本：0.2.0" src="https://img.shields.io/badge/version-0.2.0-56615D?style=flat-square">
+  <img alt="版本：0.3.0" src="https://img.shields.io/badge/version-0.3.0-56615D?style=flat-square">
   <img alt="状态：早期预览" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
   <img alt="隐私：本地优先" src="https://img.shields.io/badge/privacy-local%20first-2F7D71?style=flat-square">
   <img alt="遥测：无" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
@@ -87,13 +87,15 @@ flowchart LR
     E --> G["混音与<br>-1 dBFS 限制器"]
     F --> G
     G --> H["48 kHz 单声道<br>Ogg Opus"]
-    H -. "可选，由用户触发" .-> I["16 kHz WAV 分块"]
+    H -. "FunASR" .-> I["可续传的原始 Ogg<br>整场会议任务"]
+    H -. "OpenAI-compatible" .-> K["16 kHz WAV 分块"]
     I -.-> J["用户配置的<br>ASR 服务"]
+    K -.-> J
 ```
 
 Nota 直接使用 Windows Core Audio。指定应用模式通过 Windows 进程回环捕获目标进程树；系统声音模式通过端点回环捕获所选输出设备。麦克风独立采集，通过 QPC 时间戳对齐、异步重采样校正设备时钟漂移，在本地处理并混音后编码为 Opus。
 
-整个录音过程不需要 FFmpeg 运行时或虚拟声卡。转写是独立的可选流程：Nota 会把归档录音转换为临时的 16 kHz 单声道 WAV 分块，并发送到用户配置的服务；分块上传后立即删除。
+整个录音过程不需要 FFmpeg 运行时或虚拟声卡。转写是独立的可选流程。使用 FunASR 时，Nota 会把原始 Ogg 作为一个可续传、可恢复的整场会议任务上传，让说话人标签在整场会议内统一；其他 OpenAI-compatible Provider 继续使用临时 16 kHz 单声道 WAV 分块，分块上传后立即删除。
 
 ## 获取 Nota
 
@@ -121,7 +123,7 @@ Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases
 - **FunASR**：适合运行在本机或局域网中的服务；
 - **OpenAI-compatible**：适合实现了兼容音频转写接口的其他服务商。
 
-API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。长录音会自动转换成可恢复的 10 分钟分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
+API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。FunASR 要求服务端支持 Nota 批处理协议 v1：原始 Ogg 可断点续传，服务端按音频窗口恢复处理，最终说话人标签采用整场会议作用域。其他 OpenAI-compatible Provider 继续使用可恢复的 10 分钟 WAV 分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
 
 默认快捷键：
 
@@ -192,7 +194,8 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 
 - Windows 11 x64
 - Rust stable
-- Node.js 22
+- Node.js 24 LTS（准确的开发版本记录在 `.nvmrc`）
+- npm 11.16.0（由 `package.json` 固定）
 - Visual Studio 2022 Build Tools，包含 **Desktop development with C++**
 - Windows 11 SDK
 - CMake
@@ -230,12 +233,16 @@ src-tauri/src/audio/wasapi.rs      Windows 音频采集与设备恢复
 src-tauri/src/audio/dsp.rs         对齐、重采样、AEC、混音与限制
 src-tauri/src/audio/encoder.rs     Opus 编码与 Ogg 封装
 src-tauri/src/audio/recovery.rs    校验、修复与安全完成录音
-src-tauri/src/asr.rs               Provider 客户端、解码、分块、队列与结果合并
+src-tauri/src/asr.rs               Provider 客户端、FunASR 持久任务、兼容分块与结果合并
 src-tauri/src/storage.rs           SQLite 设置、录音索引与转写数据
 src-tauri/src/controller.rs        录音状态、IPC、托盘与文件操作
 ```
 
 前端只接收状态、健康度、故障和电平事件，原始 PCM 始终保留在 Rust 音频管线中。
+
+## 工程文档
+
+客户端架构、ASR 集成状态机、数据生命周期、测试与硬件验收矩阵、架构决策和发布流程统一收录在 [`docs` 工程文档索引](docs/README.md)中。根 README 继续作为产品与贡献入口，详细技术语义则与代码一起维护在 `docs/` 下。
 
 ## 参与贡献
 

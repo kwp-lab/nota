@@ -24,6 +24,11 @@ const completed: RecordingItem = {
     modelId: "sensevoice",
     errorMessage: null,
     hasText: true,
+    protocol: "legacy_chunks",
+    progressPhase: null,
+    progressCurrent: 1,
+    progressTotal: 1,
+    progressUnit: "chunks",
   },
 };
 
@@ -134,6 +139,43 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续转写" }));
     expect(failedActions.onResumeTranscription).toHaveBeenCalledWith(failed.id);
     expect(screen.getByText("服务暂时不可用")).toBeInTheDocument();
+  });
+
+  it("shows whole-meeting upload and server processing progress for FunASR", () => {
+    const uploading: RecordingItem = {
+      ...completed,
+      id: "uploading",
+      transcription: {
+        ...completed.transcription!,
+        status: "preparing",
+        protocol: "nota_batch_v1",
+        progressPhase: "uploading",
+        progressCurrent: 4 * 1024 * 1024,
+        progressTotal: 8 * 1024 * 1024,
+        progressUnit: "bytes",
+      },
+    };
+    renderWorkspace([uploading], uploading.id, null);
+    expect(screen.getAllByText("上传录音")).toHaveLength(2);
+    expect(screen.getByText("已上传 4.0 MB / 8.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("上传录音 50%")).toBeInTheDocument();
+    cleanup();
+
+    const diarizing: RecordingItem = {
+      ...uploading,
+      id: "diarizing",
+      transcription: {
+        ...uploading.transcription!,
+        status: "transcribing",
+        progressPhase: "diarizing",
+        progressCurrent: 12,
+        progressTotal: 12,
+        progressUnit: "windows",
+      },
+    };
+    renderWorkspace([diarizing], diarizing.id, null);
+    expect(screen.getAllByText("统一说话人")).toHaveLength(2);
+    expect(screen.getByText("已处理 12 / 12 个音频窗口")).toBeInTheDocument();
   });
 
   it("keeps a long recording list in its own vertical scroll area", () => {

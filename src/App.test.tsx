@@ -41,6 +41,9 @@ const testState = vi.hoisted(() => ({
   requestStart: null as
     | ((mode?: "process" | "system" | "current") => void)
     | null,
+  snapshotListener: null as
+    | ((snapshot: RecordingSnapshot) => void)
+    | null,
 }));
 
 vi.mock("./api", () => ({
@@ -68,11 +71,19 @@ vi.mock("./api", () => ({
     listRecordings: vi.fn(async () => []),
     listRecoverable: vi.fn(async () => testState.recoverable),
     listAsrProviders: vi.fn(async () => testState.providers),
-    onSnapshot: vi.fn(async () => () => undefined),
+    onSnapshot: vi.fn(
+      async (handler: (snapshot: RecordingSnapshot) => void) => {
+        testState.snapshotListener = handler;
+        return () => undefined;
+      },
+    ),
     onLevels: vi.fn(async () => () => undefined),
     onAsrStatus: vi.fn(async () => () => undefined),
     saveSettings: vi.fn(async () => undefined),
     startRecording: vi.fn(async () => snapshot("recording")),
+    pauseRecording: vi.fn(async () => snapshot("paused")),
+    resumeRecording: vi.fn(async () => snapshot("recording")),
+    stopRecording: vi.fn(async () => snapshot("completed")),
     onRequestStart: vi.fn(
       async (
         handler: (mode?: "process" | "system" | "current") => void,
@@ -133,6 +144,7 @@ describe("Nota UI states", () => {
       },
     ];
     testState.requestStart = null;
+    testState.snapshotListener = null;
     vi.clearAllMocks();
   });
   afterEach(() => {
@@ -152,6 +164,54 @@ describe("Nota UI states", () => {
       }
     });
   }
+
+  it("shows a transient success toast after stopping and saving", async () => {
+    testState.snapshot = snapshot("recording");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "停止并保存" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "录音已安全保存",
+    );
+    expect(vi.mocked(api.stopRecording)).toHaveBeenCalledOnce();
+  });
+
+  it("shows and deduplicates persistent recording faults received at runtime", async () => {
+    render(<App />);
+    await waitFor(() => expect(testState.snapshotListener).not.toBeNull());
+    const faultySnapshot: RecordingSnapshot = {
+      ...snapshot("recording"),
+      fault: {
+        component: "microphone",
+        code: "DEVICE_DISCONNECTED",
+        recoverable: true,
+        userMessage: "麦克风连接已中断，正在重试。",
+        occurredAt: "2026-07-30T12:00:00Z",
+      },
+    };
+
+    act(() => testState.snapshotListener?.(faultySnapshot));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "麦克风连接已中断，正在重试。",
+    );
+
+    act(() => testState.snapshotListener?.(faultySnapshot));
+    expect(
+      screen.getAllByText("麦克风连接已中断，正在重试。"),
+    ).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭通知" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("麦克风连接已中断，正在重试。"),
+      ).not.toBeInTheDocument(),
+    );
+    act(() => testState.snapshotListener?.(faultySnapshot));
+    expect(
+      screen.queryByText("麦克风连接已中断，正在重试。"),
+    ).not.toBeInTheDocument();
+  });
 
   it("shows microphone permission failures", async () => {
     testState.devicesError = true;

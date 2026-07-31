@@ -26,6 +26,12 @@ import { ConsentDialog } from "./components/ConsentDialog";
 import { LevelMeter } from "./components/LevelMeter";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
+import {
+  enqueueToast,
+  ToastRegion,
+  type AppToast,
+  type ToastTone,
+} from "./components/ToastRegion";
 import type {
   AecMode,
   AppSettings,
@@ -106,7 +112,7 @@ export default function App() {
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentConfirmed, setConsentConfirmed] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<AppToast[]>([]);
   const [appVersion, setAppVersion] = useState("…");
   const [draftSettings, setDraftSettings] = useState(defaultSettings);
   const [pendingCapture, setPendingCapture] = useState<CaptureSelection | null>(null);
@@ -117,10 +123,66 @@ export default function App() {
   const requestStartRef = useRef<(mode?: StartRequestMode) => void>(() => undefined);
   const lastCompletedSessionRef = useRef<string | null>(null);
   const selectedRecordingIdRef = useRef<string | null>(null);
+  const nextToastIdRef = useRef(1);
+  const seenFaultKeysRef = useRef(new Set<string>());
   const settingsDirty = useMemo(
     () => JSON.stringify(draftSettings) !== JSON.stringify(settings),
     [draftSettings, settings],
   );
+
+  const showToast = useCallback(
+    (
+      tone: ToastTone,
+      message: string,
+      options?: { durationMs?: number | null; dedupeKey?: string },
+    ) => {
+      const durationMs =
+        options?.durationMs === undefined
+          ? tone === "success" || tone === "info"
+            ? 3_000
+            : null
+          : options.durationMs;
+      const toast: AppToast = {
+        id: nextToastIdRef.current++,
+        tone,
+        message,
+        durationMs,
+        dedupeKey: options?.dedupeKey,
+      };
+      setToasts((current) => enqueueToast(current, toast));
+    },
+    [],
+  );
+
+  const showError = useCallback(
+    (error: unknown, dedupeKey?: string) => {
+      showToast("error", String(error), { dedupeKey });
+    },
+    [showToast],
+  );
+
+  const applySnapshot = useCallback(
+    (next: RecordingSnapshot) => {
+      setSnapshot(next);
+      if (next.fault) {
+        const faultKey = `recording-fault:${next.fault.occurredAt}:${next.fault.code}`;
+        if (!seenFaultKeysRef.current.has(faultKey)) {
+          if (seenFaultKeysRef.current.size >= 100) {
+            seenFaultKeysRef.current.clear();
+          }
+          seenFaultKeysRef.current.add(faultKey);
+          showToast("error", next.fault.userMessage, {
+            dedupeKey: faultKey,
+          });
+        }
+      }
+    },
+    [showToast],
+  );
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
 
   const refreshLibrary = useCallback(async () => {
     const [items, recoverableItems] = await Promise.all([
@@ -210,12 +272,11 @@ export default function App() {
         if (current.state === "completed") {
           lastCompletedSessionRef.current = current.sessionId;
         }
-        setSnapshot(current);
+        applySnapshot(current);
         setAppVersion(version);
         setProviders(savedProviders);
-        if (current.fault) setNotice(current.fault.userMessage);
         await refreshLibrary();
-        unlistenSnapshot = await api.onSnapshot(setSnapshot);
+        unlistenSnapshot = await api.onSnapshot(applySnapshot);
         unlistenLevels = await api.onLevels(setLevels);
         unlistenStart = await api.onRequestStart((mode) => requestStartRef.current(mode));
         unlistenExit = await api.onRequestExit(() => {
@@ -236,7 +297,7 @@ export default function App() {
           }
         });
       })
-      .catch((error) => setNotice(String(error)));
+      .catch(showError);
     return () => {
       mounted = false;
       unlistenSnapshot?.();
@@ -245,7 +306,14 @@ export default function App() {
       unlistenExit?.();
       unlistenAsr?.();
     };
-  }, [applyCaptureTargets, refreshDevices, refreshLibrary, refreshTargets]);
+  }, [
+    applyCaptureTargets,
+    applySnapshot,
+    refreshDevices,
+    refreshLibrary,
+    refreshTargets,
+    showError,
+  ]);
 
   useEffect(() => {
     if (
@@ -259,19 +327,25 @@ export default function App() {
     const recordingId = snapshot.sessionId;
     void refreshLibrary()
       .then(async () => {
-        setNotice("录音已安全保存。可前往“录音记录”播放或开始转写。");
         if (settings.autoTranscribe && settings.activeAsrProviderId) {
           await api.startTranscription(recordingId, settings.activeAsrProviderId);
-          setNotice("录音已保存，并已加入语音转写队列。");
+          showToast("success", "录音已保存，并已加入语音转写队列。");
+        } else {
+          showToast(
+            "success",
+            "录音已安全保存。可前往“录音记录”播放或开始转写。",
+          );
         }
       })
-      .catch((error) => setNotice(String(error)));
+      .catch(showError);
   }, [
     refreshLibrary,
     settings.activeAsrProviderId,
     settings.autoTranscribe,
     snapshot.sessionId,
     snapshot.state,
+    showError,
+    showToast,
   ]);
 
   useEffect(() => {
@@ -375,13 +449,13 @@ export default function App() {
         outputDirectory: settings.outputDirectory,
         consentConfirmed: noticeAcknowledged,
       });
-      setSnapshot(next);
+      applySnapshot(next);
       setConsentOpen(false);
       setConsentConfirmed(false);
       setPendingCapture(null);
       setPendingSourceDescription("");
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -399,7 +473,10 @@ export default function App() {
           targetPreferenceRef.current,
         );
         if (!target) {
-          setNotice("没有找到可录制的应用。请启动会议应用后刷新并选择录音来源。");
+          showToast(
+            "warning",
+            "没有找到可录制的应用。请启动会议应用后刷新并选择录音来源。",
+          );
           return;
         }
         selectTarget(target.id, target);
@@ -423,7 +500,7 @@ export default function App() {
       setConsentConfirmed(false);
       setConsentOpen(true);
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
   requestStartRef.current = (mode = "current") => {
@@ -442,22 +519,33 @@ export default function App() {
       setDraftSettings(nextSettings);
       await start(pendingCapture ?? capture, true);
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
   const chooseOutput = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected !== "string") return;
-    const next = { ...settings, outputDirectory: selected };
-    setSettings(next);
-    await api.saveSettings(next);
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected !== "string") return;
+      const next = { ...settings, outputDirectory: selected };
+      await api.saveSettings(next);
+      setSettings(next);
+    } catch (error) {
+      showError(error);
+    }
   };
 
   const chooseDraftOutput = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") {
-      setDraftSettings((current) => ({ ...current, outputDirectory: selected }));
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected === "string") {
+        setDraftSettings((current) => ({
+          ...current,
+          outputDirectory: selected,
+        }));
+      }
+    } catch (error) {
+      showError(error);
     }
   };
 
@@ -490,9 +578,9 @@ export default function App() {
       await api.saveSettings(next);
       setSettings(next);
       setDraftSettings(next);
-      setNotice("设置已保存");
+      showToast("success", "设置已保存");
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -506,9 +594,9 @@ export default function App() {
       setSettings(next);
       setDraftSettings(next);
       setPage("recorder");
-      setNotice("已跳过首次设置，可以随时从侧边栏返回。");
+      showToast("info", "已跳过首次设置，可以随时从侧边栏返回。");
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -554,7 +642,7 @@ export default function App() {
       );
       updateTranscriptionSummary(recordingId, summary);
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -565,7 +653,7 @@ export default function App() {
         await api.resumeTranscription(recordingId),
       );
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -576,7 +664,7 @@ export default function App() {
         await api.cancelTranscription(recordingId),
       );
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -588,9 +676,9 @@ export default function App() {
     if (!path) return;
     try {
       await api.exportTranscript(recordingId, path);
-      setNotice("转写文字已导出");
+      showToast("success", "转写文字已导出");
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
     }
   };
 
@@ -604,10 +692,30 @@ export default function App() {
             : { kind: "fixed", endpointId: micDeviceId }
           : null,
       );
-      setSnapshot(nextSnapshot);
+      applySnapshot(nextSnapshot);
       setSettings((current) => ({ ...current, microphoneEnabled: enabled }));
     } catch (error) {
-      setNotice(String(error));
+      showError(error);
+    }
+  };
+
+  const togglePause = async () => {
+    try {
+      applySnapshot(
+        snapshot.state === "paused"
+          ? await api.resumeRecording()
+          : await api.pauseRecording(),
+      );
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const stopAndSave = async () => {
+    try {
+      applySnapshot(await api.stopRecording());
+    } catch (error) {
+      showError(error);
     }
   };
 
@@ -619,6 +727,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <ToastRegion toasts={toasts} onDismiss={dismissToast} />
       <aside className="app-sidebar">
         <div className="sidebar-brand" title="Nota"><Radio size={20} /></div>
         <button
@@ -665,14 +774,6 @@ export default function App() {
         </header>
 
       <main className={`page-content page-${page}`}>
-        {notice && (
-          <div className="toast" role="alert">
-            <AlertTriangle size={17} />
-            <span>{notice}</span>
-            <button onClick={() => setNotice(null)}>关闭</button>
-          </div>
-        )}
-
         {page === "recorder" && (
           <>
           {recoverable.length > 0 && (
@@ -707,7 +808,7 @@ export default function App() {
                   className={captureMode === "process" ? "active" : ""}
                   onClick={() => {
                     setCaptureMode("process");
-                    void refreshTargets().catch((error) => setNotice(String(error)));
+                    void refreshTargets().catch(showError);
                   }}
                 >
                   指定应用
@@ -755,7 +856,7 @@ export default function App() {
                         title="刷新应用列表"
                         disabled={targetsRefreshing}
                         onClick={() =>
-                          void refreshTargets().catch((error) => setNotice(String(error)))
+                          void refreshTargets().catch(showError)
                         }
                       >
                         <RefreshCw size={16} className={targetsRefreshing ? "spinning" : ""} />
@@ -855,13 +956,7 @@ export default function App() {
                 <button
                   className="button secondary"
                   disabled={snapshot.state === "preparing" || snapshot.state === "finalizing"}
-                  onClick={async () =>
-                    setSnapshot(
-                      snapshot.state === "paused"
-                        ? await api.resumeRecording()
-                        : await api.pauseRecording(),
-                    )
-                  }
+                  onClick={() => void togglePause()}
                 >
                   {snapshot.state === "paused" ? <Radio size={16} /> : <Pause size={16} />}
                   {snapshot.state === "paused" ? "继续" : "暂停"}
@@ -869,7 +964,7 @@ export default function App() {
                 <button
                   className="button stop"
                   disabled={snapshot.state === "finalizing"}
-                  onClick={async () => setSnapshot(await api.stopRecording())}
+                  onClick={() => void stopAndSave()}
                 >
                   <Square size={14} fill="currentColor" />停止并保存
                 </button>
@@ -892,32 +987,46 @@ export default function App() {
           onSelect={setSelectedRecordingId}
           onReturnToRecorder={() => navigateTo("recorder")}
           onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
-          onPlaybackError={setNotice}
+          onPlaybackError={(message) => showToast("error", message)}
           onStartTranscription={(id) => void startTranscription(id)}
           onResumeTranscription={(id) => void resumeTranscription(id)}
           onCancelTranscription={(id) => void cancelTranscription(id)}
           onCopyTranscript={(id) =>
-            void api.copyTranscript(id).then(() => setNotice("转写全文已复制")).catch((error) => setNotice(String(error)))
+            void api
+              .copyTranscript(id)
+              .then(() => showToast("success", "转写全文已复制"))
+              .catch(showError)
           }
           onExportTranscript={(id, title) => void exportTranscript(id, title)}
-          onReveal={(id) => void api.revealRecording(id)}
+          onReveal={(id) => void api.revealRecording(id).catch(showError)}
           onDelete={(id) => {
             if (!confirm("将此录音移入回收站？")) return;
-            void api.deleteRecording(id, false).then(refreshLibrary);
+            void api
+              .deleteRecording(id, false)
+              .then(refreshLibrary)
+              .catch(showError);
           }}
-          onRecover={(id) => void api.recoverRecording(id).then(refreshLibrary)}
+          onRecover={(id) =>
+            void api.recoverRecording(id).then(refreshLibrary).catch(showError)
+          }
           onDiscardRecovery={(id) => {
             if (!confirm("永久删除这个未完成的恢复文件？此操作无法撤销。")) return;
-            void api.deleteRecoverable(id).then(refreshLibrary);
+            void api.deleteRecoverable(id).then(refreshLibrary).catch(showError);
           }}
           onRename={(id, currentTitle) => {
             const title = prompt("输入新的录音名称", currentTitle);
             if (!title || title === currentTitle) return;
-            void api.renameRecording(id, title).then(refreshLibrary).catch((error) => setNotice(String(error)));
+            void api
+              .renameRecording(id, title)
+              .then(refreshLibrary)
+              .catch(showError);
           }}
           onPermanentDelete={(id) => {
             if (!confirm("永久删除此录音？此操作无法撤销。")) return;
-            void api.deleteRecording(id, true).then(refreshLibrary);
+            void api
+              .deleteRecording(id, true)
+              .then(refreshLibrary)
+              .catch(showError);
           }}
         />
         )}
@@ -933,7 +1042,9 @@ export default function App() {
             appVersion={appVersion}
             onChange={setDraftSettings}
             onChooseOutput={() => void chooseDraftOutput()}
-            onOpenMicrophoneSettings={() => void api.openMicrophoneSettings()}
+            onOpenMicrophoneSettings={() =>
+              void api.openMicrophoneSettings().catch(showError)
+            }
             onSaveProvider={saveProvider}
             onDeleteProvider={deleteProvider}
             onTestProvider={(request: AsrProviderProbeRequest) =>
@@ -963,7 +1074,10 @@ export default function App() {
         confirmed={consentConfirmed}
         onConfirmedChange={setConsentConfirmed}
         onCopy={() =>
-          void api.copyConsentTemplate(settings.consentTemplate).then(() => setNotice("告知话术已复制"))
+          void api
+            .copyConsentTemplate(settings.consentTemplate)
+            .then(() => showToast("success", "告知话术已复制"))
+            .catch(showError)
         }
         onCancel={() => {
           setConsentOpen(false);

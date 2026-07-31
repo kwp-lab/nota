@@ -161,6 +161,18 @@ export type TranscriptionStatus =
   | "interrupted"
   | "cancelled";
 
+export type TranscriptionProtocol = "legacy_chunks" | "nota_batch_v1";
+
+export type TranscriptionProgressPhase =
+  | "preparing"
+  | "uploading"
+  | "queued"
+  | "transcribing"
+  | "diarizing"
+  | "finalizing";
+
+export type TranscriptionProgressUnit = "bytes" | "windows" | "steps" | "chunks";
+
 export interface TranscriptionSummary {
   status: TranscriptionStatus;
   completedChunks: number;
@@ -169,6 +181,11 @@ export interface TranscriptionSummary {
   modelId: string;
   errorMessage: string | null;
   hasText: boolean;
+  protocol: TranscriptionProtocol;
+  progressPhase: TranscriptionProgressPhase | null;
+  progressCurrent: number;
+  progressTotal: number;
+  progressUnit: TranscriptionProgressUnit | null;
 }
 
 export interface TranscriptSegment {

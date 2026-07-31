@@ -23,7 +23,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
@@ -1423,10 +1423,11 @@ fn create_tray(app: &tauri::App) -> Result<()> {
         .on_tray_icon_event(|tray, event| {
             if matches!(
                 event,
-                TrayIconEvent::DoubleClick {
-                    button: MouseButton::Left,
+                TrayIconEvent::Click {
+                    button,
+                    button_state,
                     ..
-                }
+                } if is_window_reveal_click(button, button_state)
             ) {
                 show_main_window(tray.app_handle());
             }
@@ -1473,8 +1474,13 @@ fn create_tray(app: &tauri::App) -> Result<()> {
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
+        let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn is_window_reveal_click(button: MouseButton, button_state: MouseButtonState) -> bool {
+    button == MouseButton::Left && button_state == MouseButtonState::Up
 }
 
 fn build_tray_menu(app: &AppHandle, state: RecordingState) -> Result<Menu<tauri::Wry>> {
@@ -1760,6 +1766,22 @@ mod tray_tests {
         );
         assert!(!tray_controls(RecordingState::Finalizing).toggle_enabled);
         assert!(tray_controls(RecordingState::Completed).start_enabled);
+    }
+
+    #[test]
+    fn only_a_released_left_click_reveals_the_window() {
+        assert!(is_window_reveal_click(
+            MouseButton::Left,
+            MouseButtonState::Up
+        ));
+        assert!(!is_window_reveal_click(
+            MouseButton::Left,
+            MouseButtonState::Down
+        ));
+        assert!(!is_window_reveal_click(
+            MouseButton::Right,
+            MouseButtonState::Up
+        ));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "nota"
-version = "0.2.0"
+version = "0.3.0"
 description = "A private, local-first Windows meeting recorder"
 authors = ["Nota Contributors"]
 license = "MIT"
@@ -32,6 +32,7 @@ rubato = { version = "0.16.2", default-features = false }
 rusqlite = { version = "0.40.1", features = ["bundled", "chrono"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 sonora = "0.1.0"
 tauri = { version = "2.11.5", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-dialog = "2.7.2"

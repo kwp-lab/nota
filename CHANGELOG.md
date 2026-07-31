@@ -7,6 +7,35 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-31
+
+### Added
+
+- Added resumable whole-meeting FunASR jobs with server-side window recovery,
+  meeting-wide speaker reconciliation, cancellation, resume, and staged
+  progress reporting.
+
+### Changed
+
+- FunASR now uploads the original Ogg recording through Nota ASR Server batch
+  protocol v1; OpenAI-compatible providers retain the existing local WAV chunk
+  workflow.
+- Changed the tray icon so a single left-click restores and focuses Nota,
+  while right-click continues to open the context menu.
+- Redesigned global notifications as accessible, tone-aware light cards with
+  restrained colors, icons, and motion.
+- Updated the development and CI toolchain to Node.js 24.18.0 LTS and npm
+  11.16.0, with the Node version shared through `.nvmrc`.
+
+### Fixed
+
+- Made successful and informational notifications dismiss automatically
+  after three seconds while keeping warnings and errors visible until closed.
+- Surfaced recording faults received after startup and deduplicated repeated
+  snapshots of the same fault.
+- Fixed local Windows release builds so they use the npm version pinned in
+  `package.json` instead of depending on the globally installed npm version.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added
@@ -72,7 +101,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kwp-lab/nota/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kwp-lab/nota/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kwp-lab/nota/releases/tag/v0.1.0

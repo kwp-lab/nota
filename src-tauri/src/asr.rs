@@ -1,7 +1,7 @@
 use crate::models::{
     AsrConnectionLevel, AsrConnectionTest, AsrModel, AsrProviderCredentials, AsrProviderKind,
-    StoredTranscriptionChunk, TranscriptSegment, TranscriptionEvent, TranscriptionStatus,
-    TranscriptionSummary,
+    StoredTranscriptionChunk, TranscriptSegment, TranscriptionEvent, TranscriptionProgressPhase,
+    TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
 };
 use crate::storage::Storage;
 use anyhow::{Context, Result, bail};
@@ -12,11 +12,12 @@ use parking_lot::Mutex;
 use reqwest::StatusCode;
 use reqwest::blocking::Client;
 use reqwest::blocking::multipart::{Form, Part};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,6 +30,8 @@ const CHUNK_OVERLAP_MS: u64 = 2_000;
 const CHUNK_SAMPLES: usize = ASR_SAMPLE_RATE as usize * 10 * 60;
 const OVERLAP_SAMPLES: usize = ASR_SAMPLE_RATE as usize * 2;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const BATCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 struct TranscriptionJob {
@@ -44,10 +47,24 @@ struct ProviderTranscript {
     segments: Vec<TranscriptSegment>,
 }
 
+struct Cancellation {
+    requested: AtomicBool,
+    remote_requested: AtomicBool,
+}
+
+impl Cancellation {
+    fn new() -> Self {
+        Self {
+            requested: AtomicBool::new(false),
+            remote_requested: AtomicBool::new(false),
+        }
+    }
+}
+
 pub struct AsrManager {
     storage: Arc<Storage>,
     sender: Sender<TranscriptionJob>,
-    cancellations: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    cancellations: Arc<Mutex<HashMap<String, Arc<Cancellation>>>>,
 }
 
 impl AsrManager {
@@ -88,6 +105,16 @@ impl AsrManager {
                 bail!("录音文件不存在或已被移动");
             }
             let credentials = self.storage.find_asr_provider(provider_id)?;
+            if credentials.provider.kind == AsrProviderKind::FunAsr {
+                fetch_batch_capabilities(&credentials)
+                    .context("当前 FunASR Server 不支持整场会议转写，请升级 Nota ASR Server")?;
+            }
+            if cleanup_previous_batch_job_if_present(&self.storage, recording_id).is_err() {
+                log::warn!(
+                    "unable to clean previous remote ASR job recording={}",
+                    recording_id
+                );
+            }
             remove_temporary_chunks(&self.storage.paths().recovery, recording_id)?;
             let generation = self
                 .storage
@@ -119,7 +146,7 @@ impl AsrManager {
         if cancellations.contains_key(recording_id) {
             bail!("该录音已有转写任务正在排队或处理");
         }
-        cancellations.insert(recording_id.to_owned(), Arc::new(AtomicBool::new(false)));
+        cancellations.insert(recording_id.to_owned(), Arc::new(Cancellation::new()));
         Ok(())
     }
 
@@ -142,7 +169,26 @@ impl AsrManager {
             .get(recording_id)
             .cloned()
             .context("该录音当前没有可取消的转写任务")?;
-        cancellation.store(true, Ordering::Release);
+        cancellation.requested.store(true, Ordering::Release);
+        cancellation.remote_requested.store(true, Ordering::Release);
+        if let Ok(Some((credentials, remote_job_id))) =
+            remote_batch_target(&self.storage, recording_id)
+        {
+            let cancel_recording_id = recording_id.to_owned();
+            if let Err(error) = std::thread::Builder::new()
+                .name("nota-asr-remote-cancel".into())
+                .spawn(move || {
+                    if cancel_batch_job(&credentials, &remote_job_id).is_err() {
+                        log::warn!(
+                            "unable to cancel remote ASR job recording={}",
+                            cancel_recording_id
+                        );
+                    }
+                })
+            {
+                log::warn!("unable to start remote ASR cancellation: {error}");
+            }
+        }
         self.storage.set_transcription_error(
             recording_id,
             self.current_generation(recording_id)?,
@@ -164,7 +210,7 @@ impl AsrManager {
 
     pub fn interrupt_all(&self) -> Result<()> {
         for cancellation in self.cancellations.lock().values() {
-            cancellation.store(true, Ordering::Release);
+            cancellation.requested.store(true, Ordering::Release);
         }
         self.storage.interrupt_running_transcriptions()
     }
@@ -177,7 +223,7 @@ impl AsrManager {
 fn worker_loop(
     receiver: Receiver<TranscriptionJob>,
     storage: Arc<Storage>,
-    cancellations: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    cancellations: Arc<Mutex<HashMap<String, Arc<Cancellation>>>>,
     is_recording: Arc<dyn Fn() -> bool + Send + Sync>,
 ) {
     while let Ok(job) = receiver.recv() {
@@ -185,17 +231,22 @@ fn worker_loop(
             .lock()
             .get(&job.recording_id)
             .cloned()
-            .unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
+            .unwrap_or_else(|| {
+                Arc::new(Cancellation {
+                    requested: AtomicBool::new(true),
+                    remote_requested: AtomicBool::new(false),
+                })
+            });
         let result = process_job(&job, &storage, cancellation.as_ref(), is_recording.as_ref());
         if let Err(error) = result {
-            let cancelled = cancellation.load(Ordering::Acquire);
+            let cancelled = cancellation.requested.load(Ordering::Acquire);
             let status = if cancelled {
                 TranscriptionStatus::Cancelled
             } else {
                 TranscriptionStatus::Failed
             };
             let message = if cancelled {
-                "转写已中断；已完成的分块已保留，可以稍后继续".to_owned()
+                "转写已中断；已完成进度已保留，可以稍后继续".to_owned()
             } else {
                 sanitize_error(&format!("{error:#}"))
             };
@@ -211,7 +262,7 @@ fn worker_loop(
                 emit_status(&job.app, &job.recording_id, summary);
             }
             log::error!(
-                "ASR job failed recording={} generation={} error={error:#}",
+                "ASR job failed recording={} generation={}",
                 job.recording_id,
                 job.generation
             );
@@ -223,14 +274,14 @@ fn worker_loop(
 fn process_job(
     job: &TranscriptionJob,
     storage: &Storage,
-    cancellation: &AtomicBool,
+    cancellation: &Cancellation,
     is_recording: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<()> {
     while is_recording() {
-        ensure_not_cancelled(cancellation)?;
+        ensure_not_cancelled(&cancellation.requested)?;
         std::thread::sleep(Duration::from_millis(250));
     }
-    ensure_not_cancelled(cancellation)?;
+    ensure_not_cancelled(&cancellation.requested)?;
 
     let recording = storage.find_recording(&job.recording_id)?;
     let (provider_id, provider_name, model_id) =
@@ -238,6 +289,18 @@ fn process_job(
     let mut credentials = storage.find_asr_provider(&provider_id)?;
     credentials.provider.name = provider_name;
     credentials.provider.model_id = model_id;
+    let execution = storage.transcription_execution(&job.recording_id)?;
+    if execution.protocol == TranscriptionProtocol::NotaBatchV1 {
+        return process_batch_job(
+            job,
+            storage,
+            cancellation,
+            &credentials,
+            Path::new(&recording.path),
+            recording.size_bytes,
+            recording.duration_ms,
+        );
+    }
     let declared_total_chunks = chunk_count(recording.duration_ms);
     let completed: HashSet<u32> = storage
         .completed_transcription_chunks(&job.recording_id, job.generation)?
@@ -260,9 +323,9 @@ fn process_job(
     let mut overlap = Vec::new();
 
     loop {
-        ensure_not_cancelled(cancellation)?;
+        ensure_not_cancelled(&cancellation.requested)?;
         while is_recording() {
-            ensure_not_cancelled(cancellation)?;
+            ensure_not_cancelled(&cancellation.requested)?;
             std::thread::sleep(Duration::from_millis(250));
         }
         let wanted = if chunk_index == 0 {
@@ -281,7 +344,7 @@ fn process_job(
             break;
         }
         while is_recording() {
-            ensure_not_cancelled(cancellation)?;
+            ensure_not_cancelled(&cancellation.requested)?;
             std::thread::sleep(Duration::from_millis(250));
         }
         let is_last = reader.finished();
@@ -311,7 +374,7 @@ fn process_job(
             ));
             write_pcm16_wav(&wav_path, &samples)?;
             let upload_result = transcribe_file(&credentials, &wav_path).and_then(|transcript| {
-                ensure_not_cancelled(cancellation)?;
+                ensure_not_cancelled(&cancellation.requested)?;
                 storage.save_transcription_chunk(
                     &job.recording_id,
                     job.generation,
@@ -345,7 +408,7 @@ fn process_job(
         }
     }
 
-    ensure_not_cancelled(cancellation)?;
+    ensure_not_cancelled(&cancellation.requested)?;
     let chunks = storage.transcription_chunks(&job.recording_id, job.generation)?;
     let actual_total_chunks = chunk_index.max(1);
     storage.set_transcription_progress(
@@ -372,6 +435,592 @@ fn process_job(
     )?;
     emit_current_status(&job.app, storage, &job.recording_id);
     Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BatchCapabilities {
+    batch_transcription_version: String,
+    upload_chunk_bytes: u64,
+    max_upload_bytes: u64,
+    max_audio_seconds: u64,
+    audio_formats: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BatchJobFailure {
+    code: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BatchJobStatus {
+    id: String,
+    state: String,
+    phase: String,
+    upload_offset: u64,
+    upload_length: u64,
+    progress_current: u64,
+    progress_total: u64,
+    progress_unit: String,
+    error: Option<BatchJobFailure>,
+}
+
+#[derive(Serialize)]
+struct CreateBatchJobRequest {
+    file_name: String,
+    content_type: &'static str,
+    size_bytes: u64,
+    model: String,
+    language: &'static str,
+    response_format: &'static str,
+    diarization: bool,
+    speaker_count: Option<u32>,
+}
+
+fn process_batch_job(
+    job: &TranscriptionJob,
+    storage: &Storage,
+    cancellation: &Cancellation,
+    credentials: &AsrProviderCredentials,
+    recording_path: &Path,
+    recorded_size: u64,
+    recorded_duration_ms: u64,
+) -> Result<()> {
+    let capabilities = fetch_batch_capabilities(credentials)?;
+    let actual_size = std::fs::metadata(recording_path)?.len();
+    if actual_size != recorded_size {
+        log::warn!(
+            "recording size changed before ASR upload recording={} indexed={} actual={}",
+            job.recording_id,
+            recorded_size,
+            actual_size
+        );
+    }
+    if actual_size > capabilities.max_upload_bytes {
+        bail!("录音文件超过 ASR Server 允许的上传大小");
+    }
+    if recorded_duration_ms > capabilities.max_audio_seconds.saturating_mul(1_000) {
+        bail!("录音时长超过 ASR Server 允许的上限");
+    }
+    let chunk_bytes = capabilities.upload_chunk_bytes.clamp(1, 16 * 1024 * 1024) as usize;
+    let execution = storage.transcription_execution(&job.recording_id)?;
+    let had_remote_job = execution.remote_job_id.is_some();
+    ensure_batch_not_cancelled(
+        cancellation,
+        credentials,
+        execution.remote_job_id.as_deref(),
+    )?;
+
+    let mut remote = match execution.remote_job_id.as_deref() {
+        Some(remote_id) => match get_batch_job(credentials, remote_id)? {
+            Some(status) => status,
+            None => {
+                let created = create_batch_job(
+                    credentials,
+                    recording_path,
+                    actual_size,
+                    &execution.idempotency_key,
+                )?;
+                storage.set_remote_transcription_job(
+                    &job.recording_id,
+                    job.generation,
+                    Some(&created.id),
+                )?;
+                created
+            }
+        },
+        None => {
+            let created = create_batch_job(
+                credentials,
+                recording_path,
+                actual_size,
+                &execution.idempotency_key,
+            )?;
+            storage.set_remote_transcription_job(
+                &job.recording_id,
+                job.generation,
+                Some(&created.id),
+            )?;
+            created
+        }
+    };
+
+    ensure_batch_not_cancelled(cancellation, credentials, Some(&remote.id))?;
+    if had_remote_job && matches!(remote.state.as_str(), "cancelled" | "failed") {
+        loop {
+            match resume_batch_job(credentials, &remote.id) {
+                Ok(resumed) => {
+                    remote = resumed;
+                    break;
+                }
+                Err(error) if format!("{error:#}").contains("job_still_stopping") => {
+                    wait_for_batch_poll(cancellation, credentials, &remote.id)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    loop {
+        ensure_batch_not_cancelled(cancellation, credentials, Some(&remote.id))?;
+        persist_batch_status(job, storage, &remote)?;
+        match remote.state.as_str() {
+            "uploading" => {
+                remote = upload_batch_audio(
+                    job,
+                    storage,
+                    cancellation,
+                    credentials,
+                    recording_path,
+                    remote,
+                    chunk_bytes,
+                )?;
+                ensure_batch_not_cancelled(cancellation, credentials, Some(&remote.id))?;
+                remote = complete_batch_job(credentials, &remote.id)?;
+            }
+            "queued" | "processing" => {
+                wait_for_batch_poll(cancellation, credentials, &remote.id)?;
+                remote = get_batch_job(credentials, &remote.id)?
+                    .context("ASR Server 上的转写任务已不存在；请点击继续转写以重新上传")?;
+            }
+            "succeeded" => {
+                storage.set_batch_transcription_progress(
+                    &job.recording_id,
+                    job.generation,
+                    TranscriptionStatus::Transcribing,
+                    TranscriptionProgressPhase::Finalizing,
+                    0,
+                    1,
+                    TranscriptionProgressUnit::Steps,
+                )?;
+                emit_current_status(&job.app, storage, &job.recording_id);
+                let transcript = fetch_batch_result(credentials, &remote.id)?;
+                storage.complete_transcription(
+                    &job.recording_id,
+                    job.generation,
+                    &transcript.text,
+                    &transcript.segments,
+                    transcript.language.as_deref(),
+                )?;
+                emit_current_status(&job.app, storage, &job.recording_id);
+                match delete_batch_job(credentials, &remote.id) {
+                    Ok(()) => {
+                        storage.set_remote_transcription_job(
+                            &job.recording_id,
+                            job.generation,
+                            None,
+                        )?;
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            "unable to acknowledge remote ASR result recording={}",
+                            job.recording_id
+                        );
+                    }
+                }
+                return Ok(());
+            }
+            "cancelled" => bail!("ASR Server 上的转写任务已取消，可以稍后继续"),
+            "failed" => {
+                let detail = remote
+                    .error
+                    .as_ref()
+                    .map(|error| format!("{} ({})", error.message, error.code))
+                    .unwrap_or_else(|| "ASR Server 处理会议录音失败".into());
+                bail!("{detail}");
+            }
+            state => bail!("ASR Server 返回了未知任务状态：{state}"),
+        }
+    }
+}
+
+fn fetch_batch_capabilities(credentials: &AsrProviderCredentials) -> Result<BatchCapabilities> {
+    let client = http_client()?;
+    let mut request = client
+        .get(format!(
+            "{}/nota/capabilities",
+            normalize_base_url(&credentials.provider.base_url)?
+        ))
+        .timeout(BATCH_REQUEST_TIMEOUT);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    let response = request.send().context("无法连接 Nota 批处理能力接口")?;
+    let status = response.status();
+    let body = response.text().context("无法读取 Nota 批处理能力响应")?;
+    if status == StatusCode::NOT_FOUND {
+        bail!("FunASR Server 版本过旧，不支持整场会议说话人一致性协议");
+    }
+    if !status.is_success() {
+        bail!(redact_secret(
+            &http_error("Nota 批处理能力接口", status, &body),
+            &credentials.api_key
+        ));
+    }
+    let capabilities: BatchCapabilities =
+        serde_json::from_str(&body).context("Nota 批处理能力接口返回了无效 JSON")?;
+    if capabilities.batch_transcription_version != "1"
+        || !capabilities
+            .audio_formats
+            .iter()
+            .any(|format| format.eq_ignore_ascii_case("ogg"))
+        || capabilities.upload_chunk_bytes == 0
+    {
+        bail!("FunASR Server 不支持 Nota 所需的批处理协议版本");
+    }
+    Ok(capabilities)
+}
+
+fn create_batch_job(
+    credentials: &AsrProviderCredentials,
+    recording_path: &Path,
+    size_bytes: u64,
+    idempotency_key: &str,
+) -> Result<BatchJobStatus> {
+    let file_name = recording_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("meeting.ogg")
+        .to_owned();
+    let payload = CreateBatchJobRequest {
+        file_name,
+        content_type: "audio/ogg",
+        size_bytes,
+        model: credentials.provider.model_id.clone(),
+        language: "auto",
+        response_format: "verbose_json",
+        diarization: true,
+        speaker_count: None,
+    };
+    let client = http_client()?;
+    let mut request = client
+        .post(format!(
+            "{}/nota/transcription-jobs",
+            normalize_base_url(&credentials.provider.base_url)?
+        ))
+        .timeout(BATCH_REQUEST_TIMEOUT)
+        .header("Idempotency-Key", idempotency_key)
+        .json(&payload);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    parse_batch_status_response(
+        request.send().context("无法创建整场会议转写任务")?,
+        "创建整场会议转写任务",
+        credentials,
+    )
+}
+
+fn get_batch_job(
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+) -> Result<Option<BatchJobStatus>> {
+    let client = http_client()?;
+    let mut request = client
+        .get(batch_job_url(credentials, remote_job_id)?)
+        .timeout(BATCH_REQUEST_TIMEOUT);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    let response = request.send().context("无法查询整场会议转写任务")?;
+    if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+        return Ok(None);
+    }
+    parse_batch_status_response(response, "查询整场会议转写任务", credentials).map(Some)
+}
+
+fn resume_batch_job(
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+) -> Result<BatchJobStatus> {
+    send_batch_status_action(credentials, remote_job_id, "resume", "继续整场会议转写任务")
+}
+
+fn complete_batch_job(
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+) -> Result<BatchJobStatus> {
+    send_batch_status_action(credentials, remote_job_id, "complete", "提交完整会议录音")
+}
+
+fn cancel_batch_job(
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+) -> Result<BatchJobStatus> {
+    send_batch_status_action(credentials, remote_job_id, "cancel", "取消整场会议转写任务")
+}
+
+fn send_batch_status_action(
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+    action: &str,
+    label: &str,
+) -> Result<BatchJobStatus> {
+    let client = http_client()?;
+    let mut request = client
+        .post(format!(
+            "{}/{action}",
+            batch_job_url(credentials, remote_job_id)?
+        ))
+        .timeout(BATCH_REQUEST_TIMEOUT);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    parse_batch_status_response(
+        request.send().with_context(|| format!("无法{label}"))?,
+        label,
+        credentials,
+    )
+}
+
+fn upload_batch_audio(
+    job: &TranscriptionJob,
+    storage: &Storage,
+    cancellation: &Cancellation,
+    credentials: &AsrProviderCredentials,
+    recording_path: &Path,
+    mut remote: BatchJobStatus,
+    chunk_bytes: usize,
+) -> Result<BatchJobStatus> {
+    let size = std::fs::metadata(recording_path)?.len();
+    if remote.upload_length != size || remote.upload_offset > size {
+        bail!("ASR Server 上的上传任务与本地录音大小不一致");
+    }
+    let mut file = File::open(recording_path)?;
+    let client = http_client()?;
+    while remote.upload_offset < size {
+        ensure_batch_not_cancelled(cancellation, credentials, Some(&remote.id))?;
+        let length = (size - remote.upload_offset).min(chunk_bytes as u64) as usize;
+        let mut content = vec![0u8; length];
+        file.seek(SeekFrom::Start(remote.upload_offset))?;
+        file.read_exact(&mut content)?;
+        let checksum = format!("{:x}", Sha256::digest(&content));
+        let mut request = client
+            .patch(format!("{}/audio", batch_job_url(credentials, &remote.id)?))
+            .timeout(BATCH_REQUEST_TIMEOUT)
+            .header("Upload-Offset", remote.upload_offset)
+            .header("Upload-Checksum", format!("sha256={checksum}"))
+            .header("Content-Type", "application/offset+octet-stream")
+            .body(content);
+        if !credentials.api_key.is_empty() {
+            request = request.bearer_auth(&credentials.api_key);
+        }
+        let response = request.send().context("上传会议录音失败")?;
+        let status = response.status();
+        let server_offset = response
+            .headers()
+            .get("Upload-Offset")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
+        if status == StatusCode::CONFLICT
+            && let Some(offset) = server_offset
+        {
+            if offset > size {
+                bail!("ASR Server 返回了无效的上传偏移");
+            }
+            remote.upload_offset = offset;
+            continue;
+        }
+        let body = response.text().context("无法读取会议录音上传响应")?;
+        if !status.is_success() {
+            bail!(redact_secret(
+                &http_error("会议录音上传", status, &body),
+                &credentials.api_key
+            ));
+        }
+        let accepted_offset = server_offset.context("ASR Server 上传响应缺少 Upload-Offset")?;
+        if accepted_offset != remote.upload_offset + length as u64 {
+            bail!("ASR Server 返回了无效的上传偏移");
+        }
+        remote.upload_offset = accepted_offset;
+        remote.progress_current = remote.upload_offset;
+        remote.progress_total = remote.upload_length;
+        remote.progress_unit = "bytes".into();
+        persist_batch_status(job, storage, &remote)?;
+    }
+    Ok(remote)
+}
+
+fn fetch_batch_result(
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+) -> Result<ProviderTranscript> {
+    let client = http_client()?;
+    let mut request = client
+        .get(format!(
+            "{}/result",
+            batch_job_url(credentials, remote_job_id)?
+        ))
+        .timeout(BATCH_REQUEST_TIMEOUT);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    let response = request.send().context("无法读取整场会议转写结果")?;
+    let status = response.status();
+    let body = response.text().context("无法读取整场会议转写响应")?;
+    if !status.is_success() {
+        bail!(redact_secret(
+            &http_error("整场会议转写结果", status, &body),
+            &credentials.api_key
+        ));
+    }
+    parse_transcript_response(&body)
+}
+
+fn delete_batch_job(credentials: &AsrProviderCredentials, remote_job_id: &str) -> Result<()> {
+    let client = http_client()?;
+    let mut request = client
+        .delete(batch_job_url(credentials, remote_job_id)?)
+        .timeout(BATCH_REQUEST_TIMEOUT);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    let response = request.send().context("无法清理 ASR Server 任务")?;
+    if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+        return Ok(());
+    }
+    let status = response.status();
+    let body = response.text().context("无法读取 ASR Server 清理响应")?;
+    if !status.is_success() {
+        bail!(redact_secret(
+            &http_error("清理 ASR Server 任务", status, &body),
+            &credentials.api_key
+        ));
+    }
+    Ok(())
+}
+
+fn parse_batch_status_response(
+    response: reqwest::blocking::Response,
+    label: &str,
+    credentials: &AsrProviderCredentials,
+) -> Result<BatchJobStatus> {
+    let status = response.status();
+    let body = response
+        .text()
+        .with_context(|| format!("无法读取{label}响应"))?;
+    if !status.is_success() {
+        bail!(redact_secret(
+            &http_error(label, status, &body),
+            &credentials.api_key
+        ));
+    }
+    serde_json::from_str(&body).with_context(|| format!("{label}响应不是有效 JSON"))
+}
+
+fn persist_batch_status(
+    job: &TranscriptionJob,
+    storage: &Storage,
+    remote: &BatchJobStatus,
+) -> Result<()> {
+    let (status, phase) = match remote.state.as_str() {
+        "uploading" => (
+            TranscriptionStatus::Preparing,
+            TranscriptionProgressPhase::Uploading,
+        ),
+        "queued" => (
+            TranscriptionStatus::Queued,
+            TranscriptionProgressPhase::Queued,
+        ),
+        "processing" => (
+            TranscriptionStatus::Transcribing,
+            match remote.phase.as_str() {
+                "diarizing" => TranscriptionProgressPhase::Diarizing,
+                "finalizing" => TranscriptionProgressPhase::Finalizing,
+                _ => TranscriptionProgressPhase::Transcribing,
+            },
+        ),
+        "succeeded" => (
+            TranscriptionStatus::Transcribing,
+            TranscriptionProgressPhase::Finalizing,
+        ),
+        _ => return Ok(()),
+    };
+    let unit = match remote.progress_unit.as_str() {
+        "bytes" => TranscriptionProgressUnit::Bytes,
+        "windows" => TranscriptionProgressUnit::Windows,
+        _ => TranscriptionProgressUnit::Steps,
+    };
+    storage.set_batch_transcription_progress(
+        &job.recording_id,
+        job.generation,
+        status,
+        phase,
+        remote.progress_current,
+        remote.progress_total,
+        unit,
+    )?;
+    emit_current_status(&job.app, storage, &job.recording_id);
+    Ok(())
+}
+
+fn ensure_batch_not_cancelled(
+    cancellation: &Cancellation,
+    credentials: &AsrProviderCredentials,
+    remote_job_id: Option<&str>,
+) -> Result<()> {
+    if !cancellation.requested.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    if cancellation.remote_requested.load(Ordering::Acquire)
+        && let Some(remote_job_id) = remote_job_id
+    {
+        let _ = cancel_batch_job(credentials, remote_job_id);
+    }
+    bail!("转写任务已取消")
+}
+
+fn wait_for_batch_poll(
+    cancellation: &Cancellation,
+    credentials: &AsrProviderCredentials,
+    remote_job_id: &str,
+) -> Result<()> {
+    let slices = BATCH_POLL_INTERVAL.as_millis().div_ceil(100) as usize;
+    for _ in 0..slices {
+        ensure_batch_not_cancelled(cancellation, credentials, Some(remote_job_id))?;
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(())
+}
+
+fn batch_job_url(credentials: &AsrProviderCredentials, remote_job_id: &str) -> Result<String> {
+    Ok(format!(
+        "{}/nota/transcription-jobs/{remote_job_id}",
+        normalize_base_url(&credentials.provider.base_url)?
+    ))
+}
+
+fn remote_batch_target(
+    storage: &Storage,
+    recording_id: &str,
+) -> Result<Option<(AsrProviderCredentials, String)>> {
+    let execution = storage.transcription_execution(recording_id)?;
+    if execution.protocol != TranscriptionProtocol::NotaBatchV1 {
+        return Ok(None);
+    }
+    let Some(remote_job_id) = execution.remote_job_id else {
+        return Ok(None);
+    };
+    let (provider_id, _, _) = storage.transcription_provider_snapshot(recording_id)?;
+    let credentials = storage.find_asr_provider(&provider_id)?;
+    Ok(Some((credentials, remote_job_id)))
+}
+
+fn cleanup_previous_batch_job_if_present(storage: &Storage, recording_id: &str) -> Result<()> {
+    let execution = match storage.transcription_execution(recording_id) {
+        Ok(execution) => execution,
+        Err(_) => return Ok(()),
+    };
+    if execution.protocol != TranscriptionProtocol::NotaBatchV1 {
+        return Ok(());
+    }
+    let Some(remote_job_id) = execution.remote_job_id else {
+        return Ok(());
+    };
+    let (provider_id, _, _) = storage.transcription_provider_snapshot(recording_id)?;
+    let credentials = storage.find_asr_provider(&provider_id)?;
+    let _ = cancel_batch_job(&credentials, &remote_job_id);
+    delete_batch_job(&credentials, &remote_job_id)
 }
 
 pub fn normalize_base_url(value: &str) -> Result<String> {
@@ -419,6 +1068,7 @@ pub fn list_models(credentials: &AsrProviderCredentials) -> Result<Vec<AsrModel>
 pub fn test_connection(credentials: &AsrProviderCredentials) -> Result<AsrConnectionTest> {
     let mut device = None;
     let mut health_message = None;
+    let mut batch_warning = None;
     if credentials.provider.kind == AsrProviderKind::FunAsr {
         let base = normalize_base_url(&credentials.provider.base_url)?;
         let root = base.strip_suffix("/v1").unwrap_or(&base);
@@ -446,14 +1096,23 @@ pub fn test_connection(credentials: &AsrProviderCredentials) -> Result<AsrConnec
                 .and_then(Value::as_str)
                 .map(ToOwned::to_owned);
         }
+        if let Err(error) = fetch_batch_capabilities(credentials) {
+            batch_warning = Some(sanitize_error(&format!("{error:#}")));
+        }
     }
     match list_models(credentials) {
         Ok(models) => Ok(AsrConnectionTest {
             reachable: true,
-            level: AsrConnectionLevel::Success,
-            message: health_message
-                .map(|status| format!("服务可用（{status}）"))
-                .unwrap_or_else(|| "服务可用，已读取模型列表".into()),
+            level: if batch_warning.is_some() {
+                AsrConnectionLevel::Warning
+            } else {
+                AsrConnectionLevel::Success
+            },
+            message: batch_warning.unwrap_or_else(|| {
+                health_message
+                    .map(|status| format!("服务可用（{status}），支持整场会议转写"))
+                    .unwrap_or_else(|| "服务可用，支持整场会议转写".into())
+            }),
             models,
             device,
         }),
@@ -461,7 +1120,12 @@ pub fn test_connection(credentials: &AsrProviderCredentials) -> Result<AsrConnec
             Ok(AsrConnectionTest {
                 reachable: true,
                 level: AsrConnectionLevel::Warning,
-                message: format!("服务健康检查通过，但模型接口不可用：{error:#}"),
+                message: match batch_warning {
+                    Some(batch_warning) => {
+                        format!("{batch_warning}；同时模型接口不可用：{error:#}")
+                    }
+                    None => format!("服务健康检查通过，但模型接口不可用：{error:#}"),
+                },
                 models: Vec::new(),
                 device,
             })
@@ -934,6 +1598,12 @@ mod tests {
         }
     }
 
+    fn funasr_credentials(base_url: String, api_key: &str) -> AsrProviderCredentials {
+        let mut credentials = credentials(base_url, api_key);
+        credentials.provider.kind = AsrProviderKind::FunAsr;
+        credentials
+    }
+
     fn mock_server(
         responses: Vec<(u16, &'static str)>,
     ) -> (String, Arc<StdMutex<Vec<String>>>, JoinHandle<()>) {
@@ -1011,6 +1681,66 @@ mod tests {
             normalize_base_url("https://api.example.test/v1/").unwrap(),
             "https://api.example.test/v1"
         );
+    }
+
+    #[test]
+    fn validates_nota_batch_capabilities_and_authenticates_the_probe() {
+        let (base_url, requests, server) = mock_server(vec![(
+            200,
+            r#"{"batch_transcription_version":"1","upload_chunk_bytes":8388608,"max_upload_bytes":100000000,"max_audio_seconds":14400,"audio_formats":["ogg"]}"#,
+        )]);
+        let capabilities =
+            fetch_batch_capabilities(&funasr_credentials(base_url, "local-secret")).unwrap();
+        server.join().unwrap();
+
+        assert_eq!(capabilities.upload_chunk_bytes, 8 * 1024 * 1024);
+        let request = &requests.lock().unwrap()[0];
+        assert!(request.starts_with("GET /v1/nota/capabilities "));
+        assert!(request.contains("authorization: Bearer local-secret"));
+    }
+
+    #[test]
+    fn funasr_connection_warns_when_the_server_lacks_batch_v1() {
+        let (base_url, requests, server) = mock_server(vec![
+            (200, r#"{"status":"ok"}"#),
+            (404, r#"{"error":{"message":"not found"}}"#),
+            (
+                200,
+                r#"{"object":"list","data":[{"id":"sensevoice","owned_by":"nota","ready":true}]}"#,
+            ),
+        ]);
+        let result = test_connection(&funasr_credentials(base_url, "")).unwrap();
+        server.join().unwrap();
+
+        assert!(result.reachable);
+        assert_eq!(result.level, AsrConnectionLevel::Warning);
+        assert!(result.message.contains("版本过旧"));
+        assert_eq!(requests.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn creates_a_diarized_whole_meeting_job_with_an_idempotency_key() {
+        let response = r#"{"id":"remote-job","state":"uploading","phase":"uploading","upload_offset":0,"upload_length":3,"progress_current":0,"progress_total":3,"progress_unit":"bytes","expires_at":"2026-07-31T00:00:00Z","error":null}"#;
+        let (base_url, requests, server) = mock_server(vec![(201, response)]);
+        let path =
+            std::env::temp_dir().join(format!("nota-asr-batch-{}.ogg", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"ogg").unwrap();
+        let created = create_batch_job(
+            &funasr_credentials(base_url, "local-secret"),
+            &path,
+            3,
+            "stable-idempotency-key",
+        )
+        .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(created.id, "remote-job");
+        let request = &requests.lock().unwrap()[0];
+        assert!(request.starts_with("POST /v1/nota/transcription-jobs "));
+        assert!(request.contains("idempotency-key: stable-idempotency-key"));
+        assert!(request.contains(r#""diarization":true"#));
+        assert!(request.contains(r#""response_format":"verbose_json""#));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

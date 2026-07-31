@@ -328,6 +328,95 @@ impl TranscriptionStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionProtocol {
+    LegacyChunks,
+    NotaBatchV1,
+}
+
+impl TranscriptionProtocol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyChunks => "legacy_chunks",
+            Self::NotaBatchV1 => "nota_batch_v1",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "nota_batch_v1" => Self::NotaBatchV1,
+            _ => Self::LegacyChunks,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionProgressPhase {
+    Preparing,
+    Uploading,
+    Queued,
+    Transcribing,
+    Diarizing,
+    Finalizing,
+}
+
+impl TranscriptionProgressPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preparing => "preparing",
+            Self::Uploading => "uploading",
+            Self::Queued => "queued",
+            Self::Transcribing => "transcribing",
+            Self::Diarizing => "diarizing",
+            Self::Finalizing => "finalizing",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "preparing" => Some(Self::Preparing),
+            "uploading" => Some(Self::Uploading),
+            "queued" => Some(Self::Queued),
+            "transcribing" => Some(Self::Transcribing),
+            "diarizing" => Some(Self::Diarizing),
+            "finalizing" => Some(Self::Finalizing),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionProgressUnit {
+    Bytes,
+    Windows,
+    Steps,
+    Chunks,
+}
+
+impl TranscriptionProgressUnit {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bytes => "bytes",
+            Self::Windows => "windows",
+            Self::Steps => "steps",
+            Self::Chunks => "chunks",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "bytes" => Some(Self::Bytes),
+            "windows" => Some(Self::Windows),
+            "steps" => Some(Self::Steps),
+            "chunks" => Some(Self::Chunks),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptionSummary {
@@ -338,6 +427,11 @@ pub struct TranscriptionSummary {
     pub model_id: String,
     pub error_message: Option<String>,
     pub has_text: bool,
+    pub protocol: TranscriptionProtocol,
+    pub progress_phase: Option<TranscriptionProgressPhase>,
+    pub progress_current: u64,
+    pub progress_total: u64,
+    pub progress_unit: Option<TranscriptionProgressUnit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -357,6 +451,13 @@ pub struct StoredTranscriptionChunk {
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
     pub language: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptionExecution {
+    pub protocol: TranscriptionProtocol,
+    pub remote_job_id: Option<String>,
+    pub idempotency_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -19,7 +19,7 @@
 
 <p align="center">
   <img alt="Platform: Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
-  <img alt="Version: 0.2.0" src="https://img.shields.io/badge/version-0.2.0-56615D?style=flat-square">
+  <img alt="Version: 0.3.0" src="https://img.shields.io/badge/version-0.3.0-56615D?style=flat-square">
   <img alt="Status: early preview" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
   <img alt="Privacy: local first" src="https://img.shields.io/badge/privacy-local%20first-2F7D71?style=flat-square">
   <img alt="Telemetry: none" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
@@ -87,13 +87,15 @@ flowchart LR
     E --> G["Mix and<br>-1 dBFS limiter"]
     F --> G
     G --> H["48 kHz mono<br>Ogg Opus"]
-    H -. "Optional, user initiated" .-> I["16 kHz WAV chunks"]
+    H -. "FunASR" .-> I["Resumable original<br>Ogg meeting job"]
+    H -. "OpenAI-compatible" .-> K["16 kHz WAV chunks"]
     I -.-> J["Configured<br>ASR provider"]
+    K -.-> J
 ```
 
 Nota uses Windows Core Audio directly. Selected-application mode uses Windows process-loopback capture with the target process tree; system mode uses endpoint loopback for a selected output device. Microphone audio is captured independently, aligned with QPC timestamps, resampled to correct clock drift, processed locally, and mixed before Opus encoding.
 
-There is no FFmpeg runtime or virtual sound card. Transcription is a separate, optional workflow: Nota converts the archived recording to temporary 16 kHz mono WAV chunks and sends them to the provider configured by the user. Temporary chunks are removed after upload.
+There is no FFmpeg runtime or virtual sound card. Transcription is a separate, optional workflow. For FunASR, Nota resumably uploads the original Ogg recording as one durable meeting job so speaker labels are reconciled across the whole meeting. Other OpenAI-compatible providers retain the temporary 16 kHz mono WAV chunk workflow; temporary chunks are removed after upload.
 
 ## Get Nota
 
@@ -121,7 +123,7 @@ Open **Settings → Speech transcription**, add one or more providers, and choos
 - **FunASR** for a server on your own computer or LAN;
 - **OpenAI-compatible** for any service implementing the compatible audio-transcription endpoint.
 
-Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. Long recordings are converted and uploaded in resumable 10-minute chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
+Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
 
 Default shortcuts:
 
@@ -192,7 +194,8 @@ The roadmap intentionally stays focused on reliable local recording. Feature pro
 
 - Windows 11 x64
 - Rust stable
-- Node.js 22
+- Node.js 24 LTS (the exact development version is recorded in `.nvmrc`)
+- npm 11.16.0 (pinned by `package.json`)
 - Visual Studio 2022 Build Tools with **Desktop development with C++**
 - Windows 11 SDK
 - CMake
@@ -230,12 +233,20 @@ src-tauri/src/audio/wasapi.rs      Windows capture and device recovery
 src-tauri/src/audio/dsp.rs         Alignment, resampling, AEC, mixing, limiting
 src-tauri/src/audio/encoder.rs     Opus encoding and Ogg container
 src-tauri/src/audio/recovery.rs    Validation, repair, and safe finalization
-src-tauri/src/asr.rs               Provider client, decoding, chunking, queue, and merge
+src-tauri/src/asr.rs               Provider clients, durable FunASR jobs, legacy chunking, and merge
 src-tauri/src/storage.rs           SQLite settings, recording index, and transcripts
 src-tauri/src/controller.rs        Recording state, IPC, tray, and file actions
 ```
 
 The frontend only receives state, health, fault, and level events. Raw PCM remains in the Rust audio pipeline.
+
+## Engineering documentation
+
+Start with the [`docs` engineering index](docs/README.md) for the client
+architecture, ASR integration state machine, data lifecycle, test and hardware
+acceptance matrix, architectural decisions, and release process. The root
+README remains the product and contributor entry point; detailed technical
+semantics live beside the code under `docs/`.
 
 ## Contributing
 

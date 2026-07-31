@@ -28,6 +28,8 @@ specific rules.
 - `src-tauri/capabilities/`: Tauri capability allowlists; keep permissions
   narrowly scoped.
 - `scripts/`: versioning, licensing, Windows build, and release packaging.
+- `docs/README.md`: engineering documentation index and source-of-truth rules.
+- `docs/decisions/`: accepted architectural decision records.
 - `docs/assets/`: tracked documentation assets.
 - `release/`, `artifacts/`, `dist/`, `node_modules/`, and
   `src-tauri/target/`: generated local output; do not commit them.
@@ -46,6 +48,19 @@ specific rules.
 - Do not add cloud services, telemetry, auto-update behavior, FFmpeg, virtual
   audio drivers, or runtime DLL dependencies without explicit approval.
 - Preserve unrelated user changes in a dirty working tree.
+
+## Documentation discipline
+
+- Read `docs/README.md` before changing architecture, ASR behavior, storage,
+  migrations, or release behavior.
+- Keep the root README focused on product orientation, setup, and contributor
+  entry points. Put detailed engineering semantics in `docs/`.
+- Update the affected specification in the same change as behavior. Add an ADR
+  for a long-lived architectural choice or reversal.
+- Treat code, schemas, migrations, and tests as executable truth; use
+  specifications for intended semantics and ADRs for rationale.
+- Do not duplicate the complete server HTTP schema in this repository. The
+  Nota ASR Server OpenAPI schema and API contract remain canonical.
 
 ## Verification
 

@@ -1,0 +1,173 @@
+# Recording and Transcription Data Lifecycle
+
+- Status: Accepted
+- Last updated: 2026-07-31
+- Owners: Nota desktop maintainers
+- Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
+  `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
+- Related tests: Rust `storage::tests`, `asr::tests`, and `paths::tests`
+
+## Data Classes
+
+| Data | Location | Lifetime |
+|---|---|---|
+| Final Ogg recording | User-selected recording directory | Until the user deletes or moves it |
+| Recovery Ogg | Nota recovery directory | Until recovery, discard, or successful finalization |
+| Settings and recording index | Local SQLite | Application lifetime |
+| ASR provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
+| Local transcript and segments | Local SQLite | Until retranscription or recording deletion |
+| Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
+| Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
+
+The original Ogg is the durable media source. Transcription must never mutate or
+replace it.
+
+## Local SQLite Model
+
+SQLite uses WAL mode, foreign keys, and secure deletion.
+
+### `recordings`
+
+Owns the durable recording identity, title, path, creation time, duration,
+indexed byte size, and recovery marker.
+
+Deleting a recording cascades its local transcription state and legacy chunk
+rows. Moving a file outside Nota can leave an indexed path that is reported as
+missing rather than silently substituted.
+
+### `asr_providers`
+
+Stores provider kind, normalized base URL, model id, and API key. Provider lists
+and settings exposed to React return only `has_api_key`; they do not return the
+stored key.
+
+### `transcriptions`
+
+There is at most one current row per recording. Important fields are:
+
+| Field | Meaning |
+|---|---|
+| `generation` | Monotonic local attempt number |
+| `provider_id` | Provider used to resolve current credentials |
+| `provider_name`, `model_id` | Snapshot used for stable display and execution |
+| `status` | Local lifecycle status |
+| `protocol` | `nota_batch_v1` or `legacy_chunks` |
+| `remote_job_id` | Current FunASR server task, if acknowledged |
+| `idempotency_key` | Stable UUID for creation retries within this generation |
+| `progress_phase/current/total/unit` | Provider-independent progress |
+| `completed_chunks/total_chunks` | Legacy chunk compatibility progress |
+| `text`, `segments_json`, `language` | Current durable result |
+| `error_message` | Bounded user-facing failure detail |
+
+Beginning a new transcription increments `generation`, snapshots the selected
+provider, creates a new idempotency key, resets execution progress, and removes
+legacy chunk checkpoints. Previous transcript text may remain visible while a
+replacement is in progress, but completion atomically replaces the final
+result fields.
+
+### `transcription_chunks`
+
+This table belongs only to `legacy_chunks`. Each row stores one completed local
+WAV chunk result so an interrupted OpenAI-compatible transcription can skip
+work already committed for the current generation.
+
+FunASR server windows must not be copied into this table; they remain private
+server checkpoints until the meeting-wide result is finalized.
+
+## FunASR Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> LocalQueued: New generation
+    LocalQueued --> Uploading: Remote job created
+    Uploading --> ServerQueued: Full Ogg committed
+    ServerQueued --> Processing
+    Processing --> Diarizing
+    Diarizing --> Finalizing
+    Finalizing --> LocalCompleted: Result committed locally
+    LocalCompleted --> RemoteDeleted: DELETE acknowledged
+
+    Uploading --> Cancelled: User cancel
+    ServerQueued --> Cancelled: User cancel
+    Processing --> Cancelled: User cancel
+    Cancelled --> Uploading: Resume incomplete upload
+    Cancelled --> ServerQueued: Resume server processing
+
+    Uploading --> Interrupted: App shutdown
+    ServerQueued --> Interrupted: App shutdown
+    Processing --> Interrupted: App shutdown
+    Interrupted --> Uploading: Resume or recreate
+    Interrupted --> Processing: Resume existing job
+```
+
+Local and remote state are intentionally decoupled. For example, a remote job
+may become `succeeded` while Nota is closed; local state remains `interrupted`
+until the user resumes and the result is committed.
+
+## Commit Ordering
+
+The success path must preserve this order:
+
+1. fetch and validate the remote `verbose_json 1.0` result;
+2. write text, segments, language, completion time, and status to local SQLite;
+3. emit the local completed summary;
+4. request remote deletion;
+5. clear `remote_job_id` only after deletion is acknowledged.
+
+Reversing steps 2 and 4 risks permanent transcript loss if Nota exits after the
+server deletes the only completed result.
+
+## Failure and Restart Matrix
+
+| Failure point | Durable state | Resume behavior |
+|---|---|---|
+| Before remote creation response | Local idempotency key | Repeat create safely |
+| During Ogg PATCH | Remote committed offset | Query task and resume from server offset |
+| After upload, before complete response | Remote job and full offset | Repeat complete safely |
+| While queued or processing | Remote task and server window checkpoints | Resume polling or remote processing |
+| After remote success, before local result commit | Remote result | Fetch again |
+| After local commit, before DELETE | Local transcript and remote id | Local completion stands; cleanup retries best-effort |
+| Application exit during any local active status | Local row becomes `interrupted` | User resumes the same generation |
+| Remote task expired | Local generation and original Ogg | Create a new remote task and upload from zero |
+
+## Migration Rules
+
+Schema migration is additive. Missing transcription execution columns are added
+at database open:
+
+- `protocol`;
+- `remote_job_id`;
+- `idempotency_key`;
+- `progress_phase`;
+- `progress_current`;
+- `progress_total`;
+- `progress_unit`.
+
+Existing rows default to `legacy_chunks` so previously completed or resumable
+work preserves its original semantics. A migration must not reinterpret old
+independent chunks as a meeting-wide speaker scope.
+
+Rust and TypeScript serialization names are part of the Tauri IPC contract.
+Changing a field requires updating both sides and adding migration or default
+behavior for persisted rows.
+
+## Deletion and Retention
+
+Local recording deletion removes associated local transcript rows through
+SQLite foreign-key cascades. Permanent recording deletion and recycle-bin
+deletion continue to follow the recording-management rules outside the ASR
+protocol.
+
+Reading a FunASR result does not delete server data. Deletion occurs only after
+the local result commit. If client cleanup never succeeds, the server applies
+its configured retention period, currently 24 hours by default.
+
+## Privacy Rules
+
+- Never log API keys, authorization headers, audio, transcript text, or
+  transcript segments.
+- Do not include meeting data in crash reports, diagnostics, documentation
+  examples, or test snapshots.
+- Keep filesystem, SQLite, clipboard, export, and ASR HTTP operations in Rust.
+- Treat the local database as private application data, not as an encrypted
+  credential vault.

@@ -1,5 +1,11 @@
 # Releasing Nota
 
+- Status: Accepted
+- Last updated: 2026-07-31
+- Owners: Nota release maintainers
+- Related files: `CHANGELOG.md`, `package.json`, `src-tauri/Cargo.toml`,
+  `src-tauri/tauri.conf.json`, `.github/workflows/release.yml`, `scripts/`
+
 Nota uses tag-driven GitHub Releases. A tag matching the application version builds
 the Windows installer and portable archive, verifies them, and creates a draft
 release for final review.

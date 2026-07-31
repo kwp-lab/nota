@@ -1,7 +1,8 @@
 use crate::models::{
     AecMode, AppSettings, AsrApiKeyUpdate, AsrProvider, AsrProviderCredentials, AsrProviderKind,
     AsrProviderProbeRequest, RecordingItem, SaveAsrProviderRequest, StoredTranscriptionChunk,
-    TranscriptDocument, TranscriptSegment, TranscriptionStatus, TranscriptionSummary,
+    TranscriptDocument, TranscriptSegment, TranscriptionExecution, TranscriptionProgressPhase,
+    TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
 };
 use crate::paths::AppPaths;
 use anyhow::{Context, Result, bail};
@@ -76,7 +77,14 @@ impl Storage {
               error_message TEXT,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
-              completed_at TEXT
+              completed_at TEXT,
+              protocol TEXT NOT NULL DEFAULT 'legacy_chunks',
+              remote_job_id TEXT,
+              idempotency_key TEXT NOT NULL DEFAULT '',
+              progress_phase TEXT,
+              progress_current INTEGER NOT NULL DEFAULT 0,
+              progress_total INTEGER NOT NULL DEFAULT 0,
+              progress_unit TEXT
             );
             CREATE TABLE IF NOT EXISTS transcription_chunks (
               recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
@@ -92,6 +100,7 @@ impl Storage {
             );
             ",
         )?;
+        ensure_transcription_job_columns(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -260,8 +269,9 @@ impl Storage {
         let connection = self.connection.lock();
         let mut statement = connection.prepare(
             "SELECT r.id, r.title, r.path, r.created_at, r.duration_ms, r.size_bytes, r.recovered,
-                    t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
-                    t.error_message, t.text
+                     t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
+                     t.error_message, t.text, t.protocol, t.progress_phase,
+                     t.progress_current, t.progress_total, t.progress_unit
              FROM recordings r
              LEFT JOIN transcriptions t ON t.recording_id = r.id
              ORDER BY r.created_at DESC",
@@ -278,8 +288,9 @@ impl Storage {
             .lock()
             .query_row(
                 "SELECT r.id, r.title, r.path, r.created_at, r.duration_ms, r.size_bytes, r.recovered,
-                        t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
-                        t.error_message, t.text
+                         t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
+                         t.error_message, t.text, t.protocol, t.progress_phase,
+                         t.progress_current, t.progress_total, t.progress_unit
                  FROM recordings r
                  LEFT JOIN transcriptions t ON t.recording_id = r.id
                  WHERE r.id = ?1",
@@ -477,6 +488,17 @@ impl Storage {
 
     pub fn begin_transcription(&self, recording_id: &str, provider: &AsrProvider) -> Result<u32> {
         let now = Utc::now().to_rfc3339();
+        let protocol = if provider.kind == AsrProviderKind::FunAsr {
+            TranscriptionProtocol::NotaBatchV1
+        } else {
+            TranscriptionProtocol::LegacyChunks
+        };
+        let progress_phase = if protocol == TranscriptionProtocol::NotaBatchV1 {
+            TranscriptionProgressPhase::Uploading
+        } else {
+            TranscriptionProgressPhase::Preparing
+        };
+        let idempotency_key = uuid::Uuid::new_v4().to_string();
         let mut connection = self.connection.lock();
         let transaction = connection.transaction()?;
         let current_generation = transaction
@@ -492,8 +514,11 @@ impl Storage {
             "INSERT INTO transcriptions
              (recording_id, generation, provider_id, provider_name, model_id, status,
               completed_chunks, total_chunks, text, segments_json, language,
-              error_message, created_at, updated_at, completed_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, 'queued', 0, 0, '', '[]', NULL, NULL, ?6, ?6, NULL)
+              error_message, created_at, updated_at, completed_at, protocol,
+              remote_job_id, idempotency_key, progress_phase, progress_current,
+              progress_total, progress_unit)
+             VALUES(?1, ?2, ?3, ?4, ?5, 'queued', 0, 0, '', '[]', NULL, NULL, ?6, ?6, NULL,
+                    ?7, NULL, ?8, ?9, 0, 0, ?10)
              ON CONFLICT(recording_id) DO UPDATE SET
                generation = excluded.generation,
                provider_id = excluded.provider_id,
@@ -504,14 +529,29 @@ impl Storage {
                total_chunks = 0,
                error_message = NULL,
                updated_at = excluded.updated_at,
-               completed_at = NULL",
+               completed_at = NULL,
+               protocol = excluded.protocol,
+               remote_job_id = NULL,
+               idempotency_key = excluded.idempotency_key,
+               progress_phase = excluded.progress_phase,
+               progress_current = 0,
+               progress_total = 0,
+               progress_unit = excluded.progress_unit",
             params![
                 recording_id,
                 generation,
                 provider.id,
                 provider.name,
                 provider.model_id,
-                now
+                now,
+                protocol.as_str(),
+                idempotency_key,
+                progress_phase.as_str(),
+                if protocol == TranscriptionProtocol::NotaBatchV1 {
+                    TranscriptionProgressUnit::Bytes.as_str()
+                } else {
+                    TranscriptionProgressUnit::Chunks.as_str()
+                }
             ],
         )?;
         transaction.execute(
@@ -531,7 +571,13 @@ impl Storage {
             |row| row.get::<_, i64>(0),
         )?;
         connection.execute(
-            "UPDATE transcriptions SET status = 'queued', error_message = NULL, updated_at = ?2
+            "UPDATE transcriptions
+             SET status = 'queued',
+                 progress_phase = CASE
+                   WHEN protocol = 'nota_batch_v1' THEN 'queued'
+                   ELSE 'preparing'
+                 END,
+                 error_message = NULL, updated_at = ?2
              WHERE recording_id = ?1",
             params![recording_id, Utc::now().to_rfc3339()],
         )?;
@@ -546,9 +592,16 @@ impl Storage {
         completed_chunks: u32,
         total_chunks: u32,
     ) -> Result<()> {
+        let phase = match status {
+            TranscriptionStatus::Queued => TranscriptionProgressPhase::Queued,
+            TranscriptionStatus::Preparing => TranscriptionProgressPhase::Preparing,
+            _ => TranscriptionProgressPhase::Transcribing,
+        };
         self.connection.lock().execute(
             "UPDATE transcriptions
-             SET status = ?3, completed_chunks = ?4, total_chunks = ?5, updated_at = ?6
+             SET status = ?3, completed_chunks = ?4, total_chunks = ?5,
+                 progress_phase = ?6, progress_current = ?4, progress_total = ?5,
+                 progress_unit = 'chunks', updated_at = ?7
              WHERE recording_id = ?1 AND generation = ?2",
             params![
                 recording_id,
@@ -556,7 +609,8 @@ impl Storage {
                 status.as_str(),
                 completed_chunks,
                 total_chunks,
-                Utc::now().to_rfc3339()
+                phase.as_str(),
+                Utc::now().to_rfc3339(),
             ],
         )?;
         Ok(())
@@ -630,8 +684,15 @@ impl Storage {
         self.connection.lock().execute(
             "UPDATE transcriptions
              SET status = 'completed', text = ?3, segments_json = ?4, language = ?5,
-                 completed_chunks = total_chunks, error_message = NULL,
-                 updated_at = ?6, completed_at = ?6
+                  completed_chunks = total_chunks, error_message = NULL,
+                  progress_phase = NULL,
+                  progress_current = CASE
+                    WHEN progress_total > 0 THEN progress_total ELSE 1
+                  END,
+                  progress_total = CASE
+                    WHEN progress_total > 0 THEN progress_total ELSE 1
+                  END,
+                  updated_at = ?6, completed_at = ?6
              WHERE recording_id = ?1 AND generation = ?2",
             params![
                 recording_id,
@@ -671,7 +732,8 @@ impl Storage {
             .lock()
             .query_row(
                 "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
-                        error_message, text
+                        error_message, text, protocol, progress_phase,
+                        progress_current, progress_total, progress_unit
                  FROM transcriptions WHERE recording_id = ?1",
                 [recording_id],
                 transcription_summary_from_row,
@@ -707,6 +769,75 @@ impl Storage {
                 },
             )
             .context("转写任务关联的服务配置已不存在")
+    }
+
+    pub fn transcription_execution(&self, recording_id: &str) -> Result<TranscriptionExecution> {
+        self.connection
+            .lock()
+            .query_row(
+                "SELECT protocol, remote_job_id, idempotency_key
+                 FROM transcriptions WHERE recording_id = ?1",
+                [recording_id],
+                |row| {
+                    Ok(TranscriptionExecution {
+                        protocol: TranscriptionProtocol::from_str(&row.get::<_, String>(0)?),
+                        remote_job_id: row.get(1)?,
+                        idempotency_key: row.get(2)?,
+                    })
+                },
+            )
+            .context("该录音还没有转写任务")
+    }
+
+    pub fn set_remote_transcription_job(
+        &self,
+        recording_id: &str,
+        generation: u32,
+        remote_job_id: Option<&str>,
+    ) -> Result<()> {
+        self.connection.lock().execute(
+            "UPDATE transcriptions
+             SET remote_job_id = ?3, updated_at = ?4
+             WHERE recording_id = ?1 AND generation = ?2",
+            params![
+                recording_id,
+                generation,
+                remote_job_id,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_batch_transcription_progress(
+        &self,
+        recording_id: &str,
+        generation: u32,
+        status: TranscriptionStatus,
+        phase: TranscriptionProgressPhase,
+        current: u64,
+        total: u64,
+        unit: TranscriptionProgressUnit,
+    ) -> Result<()> {
+        self.connection.lock().execute(
+            "UPDATE transcriptions
+             SET status = ?3, progress_phase = ?4, progress_current = ?5,
+                 progress_total = ?6, progress_unit = ?7,
+                 completed_chunks = 0, total_chunks = 0, updated_at = ?8
+             WHERE recording_id = ?1 AND generation = ?2",
+            params![
+                recording_id,
+                generation,
+                status.as_str(),
+                phase.as_str(),
+                current.min(i64::MAX as u64) as i64,
+                total.min(i64::MAX as u64) as i64,
+                unit.as_str(),
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn transcript(&self, recording_id: &str) -> Result<TranscriptDocument> {
@@ -784,6 +915,20 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
         let model_id = row.get::<_, Option<String>>(11)?.unwrap_or_default();
         let error_message = row.get(12)?;
         let text = row.get::<_, Option<String>>(13)?.unwrap_or_default();
+        let protocol = TranscriptionProtocol::from_str(
+            &row.get::<_, Option<String>>(14)?
+                .unwrap_or_else(|| "legacy_chunks".into()),
+        );
+        let progress_phase = row
+            .get::<_, Option<String>>(15)?
+            .as_deref()
+            .and_then(TranscriptionProgressPhase::from_str);
+        let progress_current = row.get::<_, Option<i64>>(16)?.unwrap_or(0).max(0) as u64;
+        let progress_total = row.get::<_, Option<i64>>(17)?.unwrap_or(0).max(0) as u64;
+        let progress_unit = row
+            .get::<_, Option<String>>(18)?
+            .as_deref()
+            .and_then(TranscriptionProgressUnit::from_str);
         Some(TranscriptionSummary {
             status: TranscriptionStatus::from_str(&status),
             completed_chunks,
@@ -792,6 +937,11 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
             model_id,
             error_message,
             has_text: !text.trim().is_empty(),
+            protocol,
+            progress_phase,
+            progress_current,
+            progress_total,
+            progress_unit,
         })
     } else {
         None
@@ -833,7 +983,63 @@ fn transcription_summary_from_row(
         model_id: row.get(4)?,
         error_message: row.get(5)?,
         has_text: !text.trim().is_empty(),
+        protocol: TranscriptionProtocol::from_str(&row.get::<_, String>(7)?),
+        progress_phase: row
+            .get::<_, Option<String>>(8)?
+            .as_deref()
+            .and_then(TranscriptionProgressPhase::from_str),
+        progress_current: row.get::<_, i64>(9)?.max(0) as u64,
+        progress_total: row.get::<_, i64>(10)?.max(0) as u64,
+        progress_unit: row
+            .get::<_, Option<String>>(11)?
+            .as_deref()
+            .and_then(TranscriptionProgressUnit::from_str),
     })
+}
+
+fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(transcriptions)")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    let additions = [
+        (
+            "protocol",
+            "ALTER TABLE transcriptions ADD COLUMN protocol TEXT NOT NULL DEFAULT 'legacy_chunks'",
+        ),
+        (
+            "remote_job_id",
+            "ALTER TABLE transcriptions ADD COLUMN remote_job_id TEXT",
+        ),
+        (
+            "idempotency_key",
+            "ALTER TABLE transcriptions ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+            "progress_phase",
+            "ALTER TABLE transcriptions ADD COLUMN progress_phase TEXT",
+        ),
+        (
+            "progress_current",
+            "ALTER TABLE transcriptions ADD COLUMN progress_current INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "progress_total",
+            "ALTER TABLE transcriptions ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "progress_unit",
+            "ALTER TABLE transcriptions ADD COLUMN progress_unit TEXT",
+        ),
+    ];
+    for (name, sql) in additions {
+        if !columns.contains(name) {
+            connection.execute(sql, [])?;
+        }
+    }
+    Ok(())
 }
 
 fn migrate_legacy_recording_paths(connection: &Connection, paths: &AppPaths) -> Result<()> {
@@ -1285,6 +1491,171 @@ mod tests {
             })
             .unwrap();
         assert_eq!(chunk_count, 0);
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn funasr_jobs_persist_batch_identity_and_generic_progress() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths.default_recordings.join("batch.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        let recording = RecordingItem {
+            id: "batch-recording".into(),
+            title: "batch".into(),
+            path: recording_path.to_string_lossy().into_owned(),
+            created_at: "2026-07-28T00:00:00Z".into(),
+            duration_ms: 10_000,
+            size_bytes: 5,
+            recovered: false,
+            transcription: None,
+        };
+        storage.insert_recording(&recording).unwrap();
+        let provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Keep))
+            .unwrap();
+        let generation = storage
+            .begin_transcription(&recording.id, &provider)
+            .unwrap();
+
+        let execution = storage.transcription_execution(&recording.id).unwrap();
+        assert_eq!(execution.protocol, TranscriptionProtocol::NotaBatchV1);
+        assert!(!execution.idempotency_key.is_empty());
+        assert_eq!(execution.remote_job_id, None);
+
+        storage
+            .set_remote_transcription_job(&recording.id, generation, Some("remote-job"))
+            .unwrap();
+        storage
+            .set_batch_transcription_progress(
+                &recording.id,
+                generation,
+                TranscriptionStatus::Transcribing,
+                TranscriptionProgressPhase::Diarizing,
+                3,
+                3,
+                TranscriptionProgressUnit::Windows,
+            )
+            .unwrap();
+        let execution = storage.transcription_execution(&recording.id).unwrap();
+        let summary = storage.transcription_summary(&recording.id).unwrap();
+        assert_eq!(execution.remote_job_id.as_deref(), Some("remote-job"));
+        assert_eq!(summary.protocol, TranscriptionProtocol::NotaBatchV1);
+        assert_eq!(
+            summary.progress_phase,
+            Some(TranscriptionProgressPhase::Diarizing)
+        );
+        assert_eq!(summary.progress_current, 3);
+        assert_eq!(summary.progress_total, 3);
+        assert_eq!(
+            summary.progress_unit,
+            Some(TranscriptionProgressUnit::Windows)
+        );
+        assert_eq!(summary.completed_chunks, 0);
+        assert_eq!(summary.total_chunks, 0);
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn old_transcription_rows_migrate_to_legacy_chunk_protocol() {
+        let root = std::env::temp_dir().join(format!(
+            "nota-storage-batch-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let nota = root.join("Nota");
+        let recordings = nota.join("Recordings");
+        let recovery = nota.join("Recovery");
+        std::fs::create_dir_all(&recordings).unwrap();
+        std::fs::create_dir_all(&recovery).unwrap();
+        let recording_path = recordings.join("legacy.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        let database = nota.join("nota.db");
+        {
+            let connection = Connection::open(&database).unwrap();
+            connection
+                .execute_batch(
+                    "
+                    CREATE TABLE recordings (
+                      id TEXT PRIMARY KEY,
+                      title TEXT NOT NULL,
+                      path TEXT NOT NULL UNIQUE,
+                      created_at TEXT NOT NULL,
+                      duration_ms INTEGER NOT NULL,
+                      size_bytes INTEGER NOT NULL,
+                      recovered INTEGER NOT NULL DEFAULT 0
+                    );
+                    CREATE TABLE transcriptions (
+                      recording_id TEXT PRIMARY KEY REFERENCES recordings(id) ON DELETE CASCADE,
+                      generation INTEGER NOT NULL DEFAULT 1,
+                      provider_id TEXT,
+                      provider_name TEXT NOT NULL,
+                      model_id TEXT NOT NULL,
+                      status TEXT NOT NULL,
+                      completed_chunks INTEGER NOT NULL DEFAULT 0,
+                      total_chunks INTEGER NOT NULL DEFAULT 0,
+                      text TEXT NOT NULL DEFAULT '',
+                      segments_json TEXT NOT NULL DEFAULT '[]',
+                      language TEXT,
+                      error_message TEXT,
+                      created_at TEXT NOT NULL,
+                      updated_at TEXT NOT NULL,
+                      completed_at TEXT
+                    );
+                    ",
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO recordings
+                     (id, title, path, created_at, duration_ms, size_bytes, recovered)
+                     VALUES('legacy', 'legacy', ?1, '2026-01-01T00:00:00Z', 1000, 5, 0)",
+                    [recording_path.to_string_lossy().as_ref()],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO transcriptions
+                     (recording_id, provider_name, model_id, status, completed_chunks,
+                      total_chunks, text, created_at, updated_at)
+                     VALUES('legacy', 'old service', 'old-model', 'interrupted', 1, 2,
+                            '', '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z')",
+                    [],
+                )
+                .unwrap();
+        }
+        let storage = Storage::open(AppPaths {
+            recovery,
+            logs: nota.join("Logs"),
+            default_recordings: recordings,
+            legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
+            database,
+        })
+        .unwrap();
+        let columns = {
+            let connection = storage.connection.lock();
+            let mut statement = connection
+                .prepare("PRAGMA table_info(transcriptions)")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .collect::<std::collections::HashSet<_>>()
+        };
+        assert!(columns.contains("protocol"));
+        assert!(columns.contains("remote_job_id"));
+        assert!(columns.contains("idempotency_key"));
+        assert!(columns.contains("progress_phase"));
+        assert!(columns.contains("progress_current"));
+        assert!(columns.contains("progress_total"));
+        assert!(columns.contains("progress_unit"));
+        let summary = storage.transcription_summary("legacy").unwrap();
+        assert_eq!(summary.protocol, TranscriptionProtocol::LegacyChunks);
+        assert_eq!(summary.completed_chunks, 1);
+        assert_eq!(summary.total_chunks, 2);
+
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }
