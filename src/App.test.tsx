@@ -2,7 +2,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api } from "./api";
-import type { RecordingItem, RecordingSnapshot } from "./types";
+import type { RecordingItem, RecordingSnapshot, TranscriptDocument } from "./types";
+
+const dialogMocks = vi.hoisted(() => ({
+  open: vi.fn(async () => null as string | string[] | null),
+  save: vi.fn(async () => null as string | null),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => dialogMocks);
 
 const testState = vi.hoisted(() => ({
   snapshot: {} as RecordingSnapshot,
@@ -17,6 +24,7 @@ const testState = vi.hoisted(() => ({
   }>,
   recoverable: [] as Array<Record<string, unknown>>,
   recordings: [] as RecordingItem[],
+  transcript: null as TranscriptDocument | null,
   firstRunComplete: true,
   activeAsrProviderId: null as string | null,
   providers: [] as Array<{
@@ -76,6 +84,9 @@ vi.mock("./api", () => ({
     deleteRecording: vi.fn(async (id: string) => {
       testState.recordings = testState.recordings.filter((item) => item.id !== id);
     }),
+    copyTranscript: vi.fn(async () => undefined),
+    exportTranscript: vi.fn(async () => undefined),
+    revealTranscriptExport: vi.fn(async () => undefined),
     listAsrProviders: vi.fn(async () => testState.providers),
     onSnapshot: vi.fn(
       async (handler: (snapshot: RecordingSnapshot) => void) => {
@@ -110,7 +121,8 @@ vi.mock("./api", () => ({
     })),
     listAsrModels: vi.fn(async () => []),
     getTranscript: vi.fn(async () => {
-      throw new Error("没有转写结果");
+      if (!testState.transcript) throw new Error("没有转写结果");
+      return testState.transcript;
     }),
   },
 }));
@@ -135,6 +147,7 @@ describe("Nota UI states", () => {
     testState.devices = [];
     testState.recoverable = [];
     testState.recordings = [];
+    testState.transcript = null;
     testState.firstRunComplete = true;
     testState.activeAsrProviderId = null;
     testState.providers = [];
@@ -151,6 +164,8 @@ describe("Nota UI states", () => {
     ];
     testState.requestStart = null;
     testState.snapshotListener = null;
+    dialogMocks.open.mockResolvedValue(null);
+    dialogMocks.save.mockResolvedValue(null);
     vi.clearAllMocks();
   });
   afterEach(() => {
@@ -340,6 +355,71 @@ describe("Nota UI states", () => {
     expect(screen.queryByRole("heading", { name: "下一条录音" })).not.toBeInTheDocument();
     expect(screen.getByText("下一条录音")).toBeInTheDocument();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("offers an open-folder action after exporting a transcript", async () => {
+    const transcription = {
+      status: "completed" as const,
+      completedChunks: 1,
+      totalChunks: 1,
+      providerName: "FunASR",
+      modelId: "sensevoice",
+      errorMessage: null,
+      hasText: true,
+      protocol: "nota_batch_v1" as const,
+      progressPhase: null,
+      progressCurrent: 1,
+      progressTotal: 1,
+      progressUnit: null,
+    };
+    testState.recordings = [
+      {
+        id: "export-recording",
+        title: "项目例会",
+        path: "C:\\Recordings\\meeting.ogg",
+        createdAt: "2026-08-02T01:00:00Z",
+        durationMs: 60_000,
+        sizeBytes: 1024,
+        recovered: false,
+        transcription,
+      },
+    ];
+    testState.transcript = {
+      recordingId: "export-recording",
+      status: "completed",
+      providerName: "FunASR",
+      modelId: "sensevoice",
+      language: "zh",
+      text: "大家好。",
+      segments: [
+        {
+          startMs: 0,
+          endMs: 1_000,
+          text: "大家好。",
+          speaker: "speaker_0",
+        },
+      ],
+      completedChunks: 1,
+      totalChunks: 1,
+      errorMessage: null,
+      updatedAt: "2026-08-02T01:01:00Z",
+    };
+    const exportPath = "C:\\Exports\\项目例会.txt";
+    dialogMocks.save.mockResolvedValue(exportPath);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 TXT" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.exportTranscript)).toHaveBeenCalledWith(
+        "export-recording",
+        exportPath,
+      ),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("转写文字已导出");
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹" }));
+    expect(vi.mocked(api.revealTranscriptExport)).toHaveBeenCalledWith(exportPath);
   });
 
   it("uses the settings workspace, saves explicitly, and guards dirty navigation", async () => {

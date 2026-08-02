@@ -15,6 +15,10 @@ export interface AppToast {
   tone: ToastTone;
   durationMs: number | null;
   dedupeKey?: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface ToastRegionProps {
@@ -116,6 +120,18 @@ function ToastItem({
       <span className="toast-copy">
         <strong>{details.label}</strong>
         <span>{toast.message}</span>
+        {toast.action && (
+          <button
+            type="button"
+            className="toast-action"
+            onClick={() => {
+              toast.action?.onClick();
+              beginDismiss();
+            }}
+          >
+            {toast.action.label}
+          </button>
+        )}
       </span>
       {persistent && (
         <button

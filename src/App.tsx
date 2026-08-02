@@ -126,7 +126,11 @@ export default function App() {
     (
       tone: ToastTone,
       message: string,
-      options?: { durationMs?: number | null; dedupeKey?: string },
+      options?: {
+        durationMs?: number | null;
+        dedupeKey?: string;
+        action?: AppToast["action"];
+      },
     ) => {
       const durationMs =
         options?.durationMs === undefined
@@ -140,6 +144,7 @@ export default function App() {
         message,
         durationMs,
         dedupeKey: options?.dedupeKey,
+        action: options?.action,
       };
       setToasts((current) => enqueueToast(current, toast));
     },
@@ -626,7 +631,15 @@ export default function App() {
     if (!path) return;
     try {
       await api.exportTranscript(recordingId, path);
-      showToast("success", "转写文字已导出");
+      showToast("success", "转写文字已导出", {
+        durationMs: 8_000,
+        action: {
+          label: "打开文件夹",
+          onClick: () => {
+            void api.revealTranscriptExport(path).catch(showError);
+          },
+        },
+      });
     } catch (error) {
       showError(error);
     }

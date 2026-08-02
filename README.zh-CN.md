@@ -125,6 +125,8 @@ Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases
 
 API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。FunASR 要求服务端支持 Nota 批处理协议 v1：原始 Ogg 可断点续传，服务端按音频窗口恢复处理，最终说话人标签采用整场会议作用域。其他 OpenAI-compatible Provider 继续使用可恢复的 10 分钟 WAV 分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
 
+完成后的转写可以复制或导出为 UTF-8 TXT。Provider 返回说话人标签时，两种输出都会按每个分段一行的 `speaker_N：转写文字` 格式生成；没有说话人标签时则保留 Provider 的纯文本全文。
+
 默认快捷键：
 
 | 快捷键 | 操作 |

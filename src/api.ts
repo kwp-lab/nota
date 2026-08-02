@@ -80,6 +80,8 @@ export const api = {
     invoke<void>("copy_transcript", { recordingId }),
   exportTranscript: (recordingId: string, path: string) =>
     invoke<void>("export_transcript", { recordingId, path }),
+  revealTranscriptExport: (path: string) =>
+    invoke<void>("reveal_transcript_export", { path }),
   hasActiveTranscription: () =>
     invoke<boolean>("has_active_transcription"),
   onSnapshot: (handler: (snapshot: RecordingSnapshot) => void) =>

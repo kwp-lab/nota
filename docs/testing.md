@@ -129,3 +129,8 @@ A behavior change is complete when:
 - affected specifications are updated;
 - an ADR records any long-lived architectural decision;
 - privacy and logging constraints remain intact.
+
+Transcript output changes must additionally verify that clipboard and TXT
+serialization remain identical, speaker labels are preserved without invented
+identities, plain-text fallback is unchanged, and post-export file navigation
+does not expose transcript content in logs.

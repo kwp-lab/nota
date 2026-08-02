@@ -1323,10 +1323,11 @@ fn copy_transcript(
 ) -> std::result::Result<(), String> {
     command_result((|| {
         let transcript = state.storage.transcript(&recording_id)?;
-        if transcript.text.trim().is_empty() {
+        let text = format_transcript_text(&transcript);
+        if text.is_empty() {
             bail!("当前没有可复制的转写文字");
         }
-        arboard::Clipboard::new()?.set_text(transcript.text)?;
+        arboard::Clipboard::new()?.set_text(text)?;
         Ok(())
     })())
 }
@@ -1339,17 +1340,81 @@ fn export_transcript(
 ) -> std::result::Result<(), String> {
     command_result((|| {
         let transcript = state.storage.transcript(&recording_id)?;
-        if transcript.text.trim().is_empty() {
+        let text = format_transcript_text(&transcript);
+        if text.is_empty() {
             bail!("当前没有可导出的转写文字");
         }
         let destination = PathBuf::from(path);
-        if destination.extension().and_then(|value| value.to_str()) != Some("txt") {
+        if !destination
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("txt"))
+        {
             bail!("转写结果仅支持导出为 .txt 文件");
         }
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(destination, transcript.text.as_bytes())?;
+        std::fs::write(destination, text.as_bytes())?;
+        Ok(())
+    })())
+}
+
+fn format_transcript_text(transcript: &TranscriptDocument) -> String {
+    let has_speaker = transcript.segments.iter().any(|segment| {
+        segment
+            .speaker
+            .as_deref()
+            .is_some_and(|speaker| !speaker.trim().is_empty())
+    });
+    if !has_speaker {
+        return transcript.text.trim().to_owned();
+    }
+
+    let lines = transcript
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let text = segment.text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            let speaker = segment
+                .speaker
+                .as_deref()
+                .map(str::trim)
+                .filter(|speaker| !speaker.is_empty());
+            Some(match speaker {
+                Some(speaker) => format!("{speaker}：{text}"),
+                None => text.to_owned(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        transcript.text.trim().to_owned()
+    } else {
+        lines.join("\r\n")
+    }
+}
+
+#[tauri::command]
+fn reveal_transcript_export(path: String) -> std::result::Result<(), String> {
+    command_result((|| {
+        let destination = PathBuf::from(path);
+        if !destination.is_file() {
+            bail!("找不到已导出的转写文件");
+        }
+        if !destination
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("txt"))
+        {
+            bail!("只能打开 TXT 转写文件所在的文件夹");
+        }
+        let directory = destination.parent().context("无法确定导出文件夹")?;
+        std::process::Command::new("explorer.exe")
+            .arg(directory)
+            .spawn()?;
         Ok(())
     })())
 }
@@ -1698,6 +1763,7 @@ pub fn run_app() {
             get_transcript,
             copy_transcript,
             export_transcript,
+            reveal_transcript_export,
             has_active_transcription,
             quit_application,
         ])
@@ -1714,6 +1780,74 @@ pub fn run_app() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod transcript_export_tests {
+    use super::*;
+
+    fn transcript(text: &str, segments: Vec<TranscriptSegment>) -> TranscriptDocument {
+        TranscriptDocument {
+            recording_id: "recording".into(),
+            status: TranscriptionStatus::Completed,
+            provider_name: "FunASR".into(),
+            model_id: "sensevoice".into(),
+            language: Some("zh".into()),
+            text: text.into(),
+            segments,
+            completed_chunks: 1,
+            total_chunks: 1,
+            error_message: None,
+            updated_at: "2026-08-02T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn formats_speaker_segments_for_copy_and_txt_export() {
+        let value = transcript(
+            "大家好。收到。继续。",
+            vec![
+                TranscriptSegment {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    text: " 大家好。 ".into(),
+                    speaker: Some("speaker_0".into()),
+                },
+                TranscriptSegment {
+                    start_ms: 1_000,
+                    end_ms: 2_000,
+                    text: "收到。".into(),
+                    speaker: Some("speaker_1".into()),
+                },
+                TranscriptSegment {
+                    start_ms: 2_000,
+                    end_ms: 3_000,
+                    text: "继续。".into(),
+                    speaker: None,
+                },
+            ],
+        );
+
+        assert_eq!(
+            format_transcript_text(&value),
+            "speaker_0：大家好。\r\nspeaker_1：收到。\r\n继续。"
+        );
+    }
+
+    #[test]
+    fn preserves_plain_transcript_when_no_speaker_labels_exist() {
+        let value = transcript(
+            " 完整的纯文本转写。 ",
+            vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "分段文本".into(),
+                speaker: None,
+            }],
+        );
+
+        assert_eq!(format_transcript_text(&value), "完整的纯文本转写。");
+    }
 }
 
 #[cfg(test)]
