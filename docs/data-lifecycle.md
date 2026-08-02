@@ -1,7 +1,7 @@
 # Recording and Transcription Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-02
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
@@ -132,8 +132,8 @@ server deletes the only completed result.
 
 ## Migration Rules
 
-Schema migration is additive. Missing transcription execution columns are added
-at database open:
+Transcription schema migration is additive. Missing transcription execution
+columns are added at database open:
 
 - `protocol`;
 - `remote_job_id`;
@@ -150,6 +150,17 @@ independent chunks as a meeting-wide speaker scope.
 Rust and TypeScript serialization names are part of the Tauri IPC contract.
 Changing a field requires updating both sides and adding migration or default
 behavior for persisted rows.
+
+### Removed recording-notice feature
+
+Nota does not own a participant-notification or consent-acknowledgement
+workflow. New databases do not create acknowledgement tables or settings, and
+the application does not read, write, migrate, or export the legacy
+`consents`, `consent_template`, or `recording_notice_acknowledged` data. Those
+objects may remain inert in databases created by older builds.
+
+Downstream distributions that require a policy-specific workflow must
+implement and document their own storage and retention model.
 
 ## Deletion and Retention
 

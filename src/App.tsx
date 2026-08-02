@@ -22,7 +22,6 @@ import {
   resolveCaptureTarget,
   type CaptureTargetPreference,
 } from "./captureTargets";
-import { ConsentDialog } from "./components/ConsentDialog";
 import { LevelMeter } from "./components/LevelMeter";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
@@ -63,10 +62,7 @@ const defaultSettings: AppSettings = {
   outputDirectory: "",
   aecMode: "auto",
   microphoneEnabled: true,
-  consentTemplate:
-    "提示：为了整理本次会议内容，我将在本地录音。录音仅保存在我的电脑中，如有异议请随时告知。",
   firstRunComplete: false,
-  recordingNoticeAcknowledged: false,
   shortcutsEnabled: true,
   toggleShortcut: "Ctrl+Alt+F9",
   stopShortcut: "Ctrl+Alt+F10",
@@ -110,13 +106,9 @@ export default function App() {
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptDocument | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const [appVersion, setAppVersion] = useState("…");
   const [draftSettings, setDraftSettings] = useState(defaultSettings);
-  const [pendingCapture, setPendingCapture] = useState<CaptureSelection | null>(null);
-  const [pendingSourceDescription, setPendingSourceDescription] = useState("");
   const targetIdRef = useRef("");
   const targetPreferenceRef = useRef<CaptureTargetPreference | null>(null);
   const refreshTargetsPromiseRef = useRef<Promise<CaptureTarget[]> | null>(null);
@@ -134,7 +126,11 @@ export default function App() {
     (
       tone: ToastTone,
       message: string,
-      options?: { durationMs?: number | null; dedupeKey?: string },
+      options?: {
+        durationMs?: number | null;
+        dedupeKey?: string;
+        action?: AppToast["action"];
+      },
     ) => {
       const durationMs =
         options?.durationMs === undefined
@@ -148,6 +144,7 @@ export default function App() {
         message,
         durationMs,
         dedupeKey: options?.dedupeKey,
+        action: options?.action,
       };
       setToasts((current) => enqueueToast(current, toast));
     },
@@ -184,18 +181,19 @@ export default function App() {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  const refreshLibrary = useCallback(async () => {
+  const refreshLibrary = useCallback(async (options?: { clearSelectionId?: string }) => {
     const [items, recoverableItems] = await Promise.all([
       api.listRecordings(),
       api.listRecoverable(),
     ]);
     setRecordings(items);
     setRecoverable(recoverableItems);
-    setSelectedRecordingId((current) =>
-      current && items.some((item) => item.id === current)
+    setSelectedRecordingId((current) => {
+      if (current && current === options?.clearSelectionId) return null;
+      return current && items.some((item) => item.id === current)
         ? current
-        : items[0]?.id ?? null,
-    );
+        : items[0]?.id ?? null;
+    });
   }, []);
 
   const refreshProviders = useCallback(async () => {
@@ -409,11 +407,6 @@ export default function App() {
     [renderDeviceId],
   );
 
-  const capture = useMemo<CaptureSelection>(() => {
-    if (captureMode === "process") return { kind: "process", targetId };
-    return systemCapture;
-  }, [captureMode, systemCapture, targetId]);
-
   const sourceDescription =
     captureMode === "process"
       ? selectedTarget?.displayName ?? "未选择应用"
@@ -433,10 +426,7 @@ export default function App() {
     setTargetId(nextTargetId);
   };
 
-  const start = async (
-    requestedCapture: CaptureSelection,
-    noticeAcknowledged: boolean,
-  ) => {
+  const start = async (requestedCapture: CaptureSelection) => {
     try {
       const next = await api.startRecording({
         capture: requestedCapture,
@@ -447,13 +437,8 @@ export default function App() {
           : null,
         aecMode: settings.aecMode,
         outputDirectory: settings.outputDirectory,
-        consentConfirmed: noticeAcknowledged,
       });
       applySnapshot(next);
-      setConsentOpen(false);
-      setConsentConfirmed(false);
-      setPendingCapture(null);
-      setPendingSourceDescription("");
     } catch (error) {
       showError(error);
     }
@@ -462,7 +447,6 @@ export default function App() {
   const requestStart = async (requestedMode: CaptureMode = captureMode) => {
     try {
       let requestedCapture: CaptureSelection;
-      let requestedDescription: string;
       setCaptureMode(requestedMode);
 
       if (requestedMode === "process") {
@@ -481,46 +465,17 @@ export default function App() {
         }
         selectTarget(target.id, target);
         requestedCapture = { kind: "process", targetId: target.id };
-        requestedDescription = target.displayName;
       } else {
         await refreshDevices();
         requestedCapture = systemCapture;
-        requestedDescription =
-          renderDeviceId === "default"
-            ? `全部系统声音 · ${defaultRenderLabel}`
-            : `全部系统声音 · ${renderDevices.find((device) => device.id === renderDeviceId)?.name ?? ""}`;
       }
-
-      setPendingCapture(requestedCapture);
-      setPendingSourceDescription(requestedDescription);
-      if (settings.recordingNoticeAcknowledged) {
-        await start(requestedCapture, true);
-        return;
-      }
-      setConsentConfirmed(false);
-      setConsentOpen(true);
+      await start(requestedCapture);
     } catch (error) {
       showError(error);
     }
   };
   requestStartRef.current = (mode = "current") => {
     void requestStart(mode === "current" ? captureMode : mode);
-  };
-
-  const acknowledgeNoticeAndStart = async () => {
-    if (!consentConfirmed) return;
-    const nextSettings = {
-      ...settings,
-      recordingNoticeAcknowledged: true,
-    };
-    try {
-      await api.saveSettings(nextSettings);
-      setSettings(nextSettings);
-      setDraftSettings(nextSettings);
-      await start(pendingCapture ?? capture, true);
-    } catch (error) {
-      showError(error);
-    }
   };
 
   const chooseOutput = async () => {
@@ -676,7 +631,15 @@ export default function App() {
     if (!path) return;
     try {
       await api.exportTranscript(recordingId, path);
-      showToast("success", "转写文字已导出");
+      showToast("success", "转写文字已导出", {
+        durationMs: 8_000,
+        action: {
+          label: "打开文件夹",
+          onClick: () => {
+            void api.revealTranscriptExport(path).catch(showError);
+          },
+        },
+      });
     } catch (error) {
       showError(error);
     }
@@ -1003,29 +966,31 @@ export default function App() {
             if (!confirm("将此录音移入回收站？")) return;
             void api
               .deleteRecording(id, false)
-              .then(refreshLibrary)
+              .then(() => refreshLibrary({ clearSelectionId: id }))
+              .then(() => showToast("success", "录音已移至回收站"))
               .catch(showError);
           }}
           onRecover={(id) =>
-            void api.recoverRecording(id).then(refreshLibrary).catch(showError)
+            void api.recoverRecording(id).then(() => refreshLibrary()).catch(showError)
           }
           onDiscardRecovery={(id) => {
             if (!confirm("永久删除这个未完成的恢复文件？此操作无法撤销。")) return;
-            void api.deleteRecoverable(id).then(refreshLibrary).catch(showError);
+            void api.deleteRecoverable(id).then(() => refreshLibrary()).catch(showError);
           }}
           onRename={(id, currentTitle) => {
             const title = prompt("输入新的录音名称", currentTitle);
             if (!title || title === currentTitle) return;
             void api
               .renameRecording(id, title)
-              .then(refreshLibrary)
+              .then(() => refreshLibrary())
               .catch(showError);
           }}
           onPermanentDelete={(id) => {
             if (!confirm("永久删除此录音？此操作无法撤销。")) return;
             void api
               .deleteRecording(id, true)
-              .then(refreshLibrary)
+              .then(() => refreshLibrary({ clearSelectionId: id }))
+              .then(() => showToast("success", "录音已永久删除"))
               .catch(showError);
           }}
         />
@@ -1066,27 +1031,6 @@ export default function App() {
       </footer>
       </div>
 
-      <ConsentDialog
-        open={consentOpen}
-        description={pendingSourceDescription || sourceDescription}
-        outputDirectory={settings.outputDirectory}
-        template={settings.consentTemplate}
-        confirmed={consentConfirmed}
-        onConfirmedChange={setConsentConfirmed}
-        onCopy={() =>
-          void api
-            .copyConsentTemplate(settings.consentTemplate)
-            .then(() => showToast("success", "告知话术已复制"))
-            .catch(showError)
-        }
-        onCancel={() => {
-          setConsentOpen(false);
-          setConsentConfirmed(false);
-          setPendingCapture(null);
-          setPendingSourceDescription("");
-        }}
-        onStart={() => void acknowledgeNoticeAndStart()}
-      />
     </div>
   );
 }

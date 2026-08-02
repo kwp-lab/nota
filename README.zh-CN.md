@@ -125,6 +125,8 @@ Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases
 
 API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。FunASR 要求服务端支持 Nota 批处理协议 v1：原始 Ogg 可断点续传，服务端按音频窗口恢复处理，最终说话人标签采用整场会议作用域。其他 OpenAI-compatible Provider 继续使用可恢复的 10 分钟 WAV 分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
 
+完成后的转写可以复制或导出为 UTF-8 TXT。Provider 返回说话人标签时，两种输出都会按每个分段一行的 `speaker_N：转写文字` 格式生成；没有说话人标签时则保留 Provider 的纯文本全文。
+
 默认快捷键：
 
 | 快捷键 | 操作 |
@@ -149,7 +151,7 @@ API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模
 
 所有 Provider HTTP 请求都由 Rust 后端发起，界面没有任意联网权限。为了保持开源实现简单、易用、易维护，API Key 会以明文保存在本机 Nota SQLite 数据库中。已保存密钥在界面中始终掩码，普通 IPC 读取只返回是否存在密钥，日志、错误与导出内容不会包含密钥，也不提供 Provider 配置整体导出。能够读取你 Windows 账户文件的人仍可能取得密钥，因此服务商支持时建议使用权限受限的 Key。
 
-Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵守所在地法律、会议规则和组织政策。
+Nota 不内置参会者告知或同意确认流程。发行者和二次开发者可以根据具体部署要求自行增加相应功能。
 
 ## 可靠性与恢复
 
@@ -200,28 +202,37 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 - Windows 11 SDK
 - CMake
 
-### 开发运行
+### 统一命令入口
+
+开发者从仓库根目录通过 `package.json` 中的 npm scripts 运行 Nota。复杂的
+Windows 检查和发布编排保留在 `scripts/*.ps1`，但同样通过 npm 暴露，因而
+无需记忆单独的 PowerShell 或 Cargo 命令。
+
+首次检出代码后安装锁定依赖：
 
 ```powershell
 npm ci
-npm run tauri dev
 ```
 
-### 测试
+| 命令 | 用途 | 主要输出 |
+|---|---|---|
+| `npm run dev` | 启动完整的 Tauri 桌面开发环境，包括 Vite 前端与 Rust 后端 | `src-tauri\target\debug\nota.exe` |
+| `npm test` | 单次运行全部前端测试 | 终端测试报告 |
+| `npm run test:watch` | 监听文件变化并重复运行相关前端测试 | 交互式测试进程 |
+| `npm run check` | 执行版本一致性、前端构建与测试、Rust 格式、测试和 Clippy 检查 | 不生成发布包 |
+| `npm run build:exe` | 构建优化后的桌面程序，但跳过安装包封装 | `src-tauri\target\release\nota.exe` |
+| `npm run build` | 构建优化后的桌面程序和按当前用户安装的 NSIS 安装包 | `src-tauri\target\release\nota.exe` 与 `src-tauri\target\release\bundle\nsis\` |
+| `npm run release:windows` | 从锁文件重新安装依赖，执行完整检查，生成许可证报告、NSIS、便携 ZIP 和 SHA-256 | 根目录 `release\` |
 
-```powershell
-npm test
-cd src-tauri
-cargo test --locked
-```
+`npm run dev:web`、`npm run build:web` 和 `npm run preview:web` 是纯前端入口，
+主要供 Tauri 的 `beforeDevCommand`/`beforeBuildCommand` 钩子和界面调试使用；
+它们不提供录音、SQLite、文件系统或 ASR Rust 后端。`npm run tauri -- <命令>`
+保留为高级 Tauri CLI 透传入口。
 
-### 发布构建
-
-```powershell
-.\scripts\build-windows.ps1
-```
-
-发布脚本会执行前端与 Rust 测试、生成第三方依赖许可证清单、构建 NSIS 安装包，并制作便携 ZIP。Cargo 与 npm 依赖版本均已锁定在仓库中。
+普通开发构建与发布级构建有意分开：`npm run build` 只完成生成桌面程序和
+NSIS 所需的构建步骤，不先运行完整测试，也不制作便携包和校验文件；
+`npm run release:windows` 面向发布验收，会从干净依赖开始执行全部质量门禁，
+然后调用同一个桌面构建并生成可分发资产。
 
 维护者可以按照[发布指南](docs/releasing.md)同步版本、创建发布标签，并由 GitHub Actions 生成待审核的草稿 Release。
 

@@ -67,7 +67,6 @@ pub struct StartRecordingRequest {
     pub microphone: Option<DeviceSelection>,
     pub aec_mode: AecMode,
     pub output_directory: String,
-    pub consent_confirmed: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -177,10 +176,7 @@ pub struct AppSettings {
     pub output_directory: String,
     pub aec_mode: AecMode,
     pub microphone_enabled: bool,
-    pub consent_template: String,
     pub first_run_complete: bool,
-    #[serde(default)]
-    pub recording_notice_acknowledged: bool,
     pub shortcuts_enabled: bool,
     pub toggle_shortcut: String,
     pub stop_shortcut: String,
@@ -499,8 +495,7 @@ mod tests {
                 "kind": "followDefaultCommunications"
             },
             "aecMode": "auto",
-            "outputDirectory": "C:\\Recordings",
-            "consentConfirmed": true
+            "outputDirectory": "C:\\Recordings"
         });
 
         let request: StartRecordingRequest = serde_json::from_value(value).unwrap();
@@ -533,8 +528,7 @@ mod tests {
                 "endpointId": "capture-endpoint"
             },
             "aecMode": "on",
-            "outputDirectory": "C:\\Recordings",
-            "consentConfirmed": true
+            "outputDirectory": "C:\\Recordings"
         });
 
         let request: StartRecordingRequest = serde_json::from_value(value).unwrap();

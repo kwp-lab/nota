@@ -1,27 +1,36 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-01
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`
 
 ## Standard Verification
 
-Run the checks appropriate to the changed area from the repository root:
+The repository-level verification entry point is:
+
+```powershell
+npm run check
+```
+
+`check` verifies synchronized versions, builds and tests the frontend, checks
+Rust formatting, runs locked Rust tests, and treats every Clippy warning as an
+error. It delegates the Windows-specific orchestration to `scripts/check.ps1`.
+
+During focused development, the narrower commands remain available:
 
 ```powershell
 npm test
-npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+npm run test:watch
+npm run build:web
 cargo test --locked --manifest-path src-tauri/Cargo.toml
-cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-.\scripts\verify-version.ps1
 ```
 
-Frontend changes require the frontend tests and production build. Rust changes
+Frontend changes require `npm test` and `npm run build:web`. Rust changes
 require formatting, tests, and Clippy. Cross-layer, migration, packaging, or
-release changes require the full set.
+release changes require `npm run check`. `npm run build` is a desktop packaging
+command, not a substitute for the verification suite.
 
 Hardware-dependent Rust tests are ignored by default and document their
 required devices or environment variables in the test name and ignore message.
@@ -120,3 +129,8 @@ A behavior change is complete when:
 - affected specifications are updated;
 - an ADR records any long-lived architectural decision;
 - privacy and logging constraints remain intact.
+
+Transcript output changes must additionally verify that clipboard and TXT
+serialization remain identical, speaker labels are preserved without invented
+identities, plain-text fallback is unchanged, and post-export file navigation
+does not expose transcript content in logs.

@@ -52,8 +52,6 @@ export const api = {
   deleteRecording: (id: string, permanent: boolean) =>
     invoke<void>("delete_recording", { id, permanent }),
   openMicrophoneSettings: () => invoke<void>("open_microphone_settings"),
-  copyConsentTemplate: (text: string) =>
-    invoke<void>("copy_consent_template", { text }),
   quitApplication: (stopAndSave: boolean) =>
     invoke<void>("quit_application", { stopAndSave }),
   listAsrProviders: () => invoke<AsrProvider[]>("list_asr_providers"),
@@ -82,6 +80,8 @@ export const api = {
     invoke<void>("copy_transcript", { recordingId }),
   exportTranscript: (recordingId: string, path: string) =>
     invoke<void>("export_transcript", { recordingId, path }),
+  revealTranscriptExport: (path: string) =>
+    invoke<void>("reveal_transcript_export", { path }),
   hasActiveTranscription: () =>
     invoke<boolean>("has_active_transcription"),
   onSnapshot: (handler: (snapshot: RecordingSnapshot) => void) =>

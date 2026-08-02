@@ -7,6 +7,34 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added a custom recording-list context menu with rename, recycle-bin, and
+  permanent-delete actions matching the recording detail menu.
+
+### Changed
+
+- Made `package.json` the unified contributor command entry point, separated
+  frontend-only hooks from full Tauri development and build commands, and
+  added explicit project-check, raw executable, and Windows release commands.
+- Changed transcript copying and TXT export to share one formatter that
+  includes provider speaker labels as `speaker_N：text` lines when available.
+- Extended the successful TXT export notification with an eight-second
+  **Open folder** action.
+
+### Fixed
+
+- Closed recording action menus before destructive operations and stopped
+  successful deletion of the selected recording from automatically opening
+  the next recording; Nota now shows an explicit success notification and an
+  empty detail state instead.
+
+### Removed
+
+- Removed the built-in pre-recording participant-notification prompt, its IPC
+  fields and backend guard, and all acknowledgement storage from the current
+  schema and runtime code. Legacy database rows, if present, remain inert.
+
 ## [0.3.0] - 2026-07-31
 
 ### Added

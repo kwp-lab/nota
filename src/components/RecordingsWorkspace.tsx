@@ -49,6 +49,28 @@ interface RecordingsWorkspaceProps {
   onPermanentDelete: (id: string) => void;
 }
 
+interface RecordingActionMenu {
+  recordingId: string;
+  left: number;
+  top: number;
+  source: "context" | "detail";
+}
+
+const actionMenuWidth = 148;
+const actionMenuHeight = 126;
+const actionMenuMargin = 8;
+
+const constrainActionMenuPosition = (left: number, top: number) => ({
+  left: Math.max(
+    actionMenuMargin,
+    Math.min(left, window.innerWidth - actionMenuWidth - actionMenuMargin),
+  ),
+  top: Math.max(
+    actionMenuMargin,
+    Math.min(top, window.innerHeight - actionMenuHeight - actionMenuMargin),
+  ),
+});
+
 const formatDuration = (milliseconds: number) => {
   const seconds = Math.round(milliseconds / 1000);
   const hours = Math.floor(seconds / 3600);
@@ -137,14 +159,54 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [pendingPlayId, setPendingPlayId] = useState<string | null>(null);
   const [pendingSeekMs, setPendingSeekMs] = useState<number | null>(null);
+  const [actionMenu, setActionMenu] = useState<RecordingActionMenu | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const detailMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const selected = props.items.find((item) => item.id === props.selectedId) ?? null;
+  const actionMenuItem = props.items.find((item) => item.id === actionMenu?.recordingId) ?? null;
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return normalized
       ? props.items.filter((item) => item.title.toLocaleLowerCase().includes(normalized))
       : props.items;
   }, [props.items, query]);
+
+  useEffect(() => {
+    if (!actionMenu) return;
+    if (!actionMenuItem) {
+      setActionMenu(null);
+      return;
+    }
+
+    const closeMenu = () => setActionMenu(null);
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !actionMenuRef.current?.contains(target)
+        && !detailMenuButtonRef.current?.contains(target)
+      ) {
+        closeMenu();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeMenu();
+      if (actionMenu.source === "detail") detailMenuButtonRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    actionMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [actionMenu, actionMenuItem]);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,6 +274,40 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     void audio.play().catch((error) => props.onPlaybackError(String(error)));
   };
 
+  const openContextMenu = (
+    item: RecordingItem,
+    clientX: number,
+    clientY: number,
+  ) => {
+    setActionMenu({
+      recordingId: item.id,
+      ...constrainActionMenuPosition(clientX, clientY),
+      source: "context",
+    });
+  };
+
+  const toggleDetailMenu = () => {
+    if (!selected) return;
+    if (actionMenu?.source === "detail" && actionMenu.recordingId === selected.id) {
+      setActionMenu(null);
+      return;
+    }
+    const bounds = detailMenuButtonRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setActionMenu({
+      recordingId: selected.id,
+      ...constrainActionMenuPosition(bounds.right - actionMenuWidth, bounds.bottom + 6),
+      source: "detail",
+    });
+  };
+
+  const runMenuAction = (action: (item: RecordingItem) => void) => {
+    if (!actionMenuItem) return;
+    const item = actionMenuItem;
+    setActionMenu(null);
+    action(item);
+  };
+
   const transcription = selected?.transcription;
   const isProcessing = !!transcription && processingStatuses.includes(transcription.status);
 
@@ -262,7 +358,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             filtered.map((item) => (
               <article
                 key={item.id}
-                className={`history-item ${item.id === props.selectedId ? "selected" : ""}`}
+                className={`history-item ${item.id === props.selectedId ? "selected" : ""} ${item.id === actionMenu?.recordingId ? "menu-target" : ""}`}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  openContextMenu(item, event.clientX, event.clientY);
+                }}
               >
                 <button className="history-select" onClick={() => props.onSelect(item.id)}>
                   <span className="history-item-icon">
@@ -326,14 +426,16 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <button className="icon-button" title="打开所在文件夹" onClick={() => props.onReveal(selected.id)}>
                   <FolderOpen size={17} />
                 </button>
-                <details className="row-menu">
-                  <summary className="icon-button" title="更多"><MoreHorizontal size={17} /></summary>
-                  <div className="row-menu-popover">
-                    <button onClick={() => props.onRename(selected.id, selected.title)}>重命名</button>
-                    <button onClick={() => props.onDelete(selected.id)}>移入回收站</button>
-                    <button className="danger" onClick={() => props.onPermanentDelete(selected.id)}>永久删除</button>
-                  </div>
-                </details>
+                <button
+                  ref={detailMenuButtonRef}
+                  className="icon-button"
+                  title="更多"
+                  aria-haspopup="menu"
+                  aria-expanded={actionMenu?.source === "detail" && actionMenu.recordingId === selected.id}
+                  onClick={toggleDetailMenu}
+                >
+                  <MoreHorizontal size={17} />
+                </button>
               </div>
             </header>
 
@@ -457,6 +559,36 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
           </>
         )}
       </article>
+      {actionMenu && actionMenuItem && (
+        <div
+          ref={actionMenuRef}
+          className="recording-actions-menu"
+          role="menu"
+          aria-label={`${actionMenuItem.title} 操作`}
+          style={{ left: actionMenu.left, top: actionMenu.top }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => runMenuAction((item) => props.onRename(item.id, item.title))}
+          >
+            重命名
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => runMenuAction((item) => props.onDelete(item.id))}
+          >
+            移至回收站
+          </button>
+          <button
+            className="danger"
+            role="menuitem"
+            onClick={() => runMenuAction((item) => props.onPermanentDelete(item.id))}
+          >
+            永久删除
+          </button>
+        </div>
+      )}
     </section>
   );
 }

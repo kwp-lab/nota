@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RecordingItem, TranscriptDocument } from "../types";
 import "../styles.css";
@@ -192,5 +192,46 @@ describe("RecordingsWorkspace", () => {
     const list = screen.getByLabelText("录音列表");
     expect(getComputedStyle(list).overflowY).toBe("auto");
     expect(list.closest(".history-pane")).toHaveClass("history-pane");
+  });
+
+  it("replaces the native row context menu with the shared recording actions", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+    const row = within(screen.getByLabelText("录音列表"))
+      .getByText("产品周会")
+      .closest("article");
+    expect(row).not.toBeNull();
+
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      clientY: 120,
+    });
+    fireEvent(row!, contextMenuEvent);
+
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+    expect(actions.onSelect).not.toHaveBeenCalled();
+    const menu = screen.getByRole("menu", { name: "产品周会 操作" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "重命名",
+      "移至回收站",
+      "永久删除",
+    ]);
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "重命名" }));
+    expect(actions.onRename).toHaveBeenCalledWith(completed.id, completed.title);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("uses the same controlled menu in details and closes it before deletion", () => {
+    const actions = renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+
+    const menu = screen.getByRole("menu", { name: "产品周会 操作" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "永久删除" }));
+
+    expect(actions.onPermanentDelete).toHaveBeenCalledWith(completed.id);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

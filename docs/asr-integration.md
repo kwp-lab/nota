@@ -215,6 +215,11 @@ must not be described as meeting-wide identities.
 - `TranscriptDocument` and `TranscriptionSummary` remain provider-independent.
 - Final transcript segments use milliseconds locally and optional anonymous
   speaker labels.
+- Clipboard copying and TXT export use the same Rust formatter. If any segment
+  has a non-empty speaker label, every non-empty segment is written on its own
+  line with the available label as `speaker_N：text`; unlabeled segments are
+  not assigned an invented identity. Without speaker labels, the normalized
+  plain transcript is preserved.
 - The frontend does not parse provider HTTP responses.
 - The existing OpenAI-compatible workflow must continue to work when FunASR
   evolves.

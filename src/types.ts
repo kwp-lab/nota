@@ -43,7 +43,6 @@ export interface StartRecordingRequest {
   microphone: DeviceSelection | null;
   aecMode: AecMode;
   outputDirectory: string;
-  consentConfirmed: boolean;
 }
 
 export interface SourceStatus {
@@ -93,9 +92,7 @@ export interface AppSettings {
   outputDirectory: string;
   aecMode: AecMode;
   microphoneEnabled: boolean;
-  consentTemplate: string;
   firstRunComplete: boolean;
-  recordingNoticeAcknowledged: boolean;
   shortcutsEnabled: boolean;
   toggleShortcut: string;
   stopShortcut: string;

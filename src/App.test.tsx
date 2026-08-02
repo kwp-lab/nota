@@ -2,7 +2,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api } from "./api";
-import type { RecordingSnapshot } from "./types";
+import type { RecordingItem, RecordingSnapshot, TranscriptDocument } from "./types";
+
+const dialogMocks = vi.hoisted(() => ({
+  open: vi.fn(async () => null as string | string[] | null),
+  save: vi.fn(async () => null as string | null),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => dialogMocks);
 
 const testState = vi.hoisted(() => ({
   snapshot: {} as RecordingSnapshot,
@@ -16,8 +23,9 @@ const testState = vi.hoisted(() => ({
     active: boolean;
   }>,
   recoverable: [] as Array<Record<string, unknown>>,
+  recordings: [] as RecordingItem[],
+  transcript: null as TranscriptDocument | null,
   firstRunComplete: true,
-  noticeAcknowledged: true,
   activeAsrProviderId: null as string | null,
   providers: [] as Array<{
     id: string;
@@ -58,9 +66,7 @@ vi.mock("./api", () => ({
       outputDirectory: "C:\\Recordings",
       aecMode: "auto",
       microphoneEnabled: true,
-      consentTemplate: "已告知",
       firstRunComplete: testState.firstRunComplete,
-      recordingNoticeAcknowledged: testState.noticeAcknowledged,
       shortcutsEnabled: true,
       toggleShortcut: "Ctrl+Alt+F9",
       stopShortcut: "Ctrl+Alt+F10",
@@ -68,8 +74,19 @@ vi.mock("./api", () => ({
       autoTranscribe: false,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
-    listRecordings: vi.fn(async () => []),
+    listRecordings: vi.fn(async () => testState.recordings),
     listRecoverable: vi.fn(async () => testState.recoverable),
+    prepareRecordingPlayback: vi.fn(async (id: string) => {
+      const recording = testState.recordings.find((item) => item.id === id);
+      if (!recording) throw new Error("录音不存在");
+      return recording.path;
+    }),
+    deleteRecording: vi.fn(async (id: string) => {
+      testState.recordings = testState.recordings.filter((item) => item.id !== id);
+    }),
+    copyTranscript: vi.fn(async () => undefined),
+    exportTranscript: vi.fn(async () => undefined),
+    revealTranscriptExport: vi.fn(async () => undefined),
     listAsrProviders: vi.fn(async () => testState.providers),
     onSnapshot: vi.fn(
       async (handler: (snapshot: RecordingSnapshot) => void) => {
@@ -104,7 +121,8 @@ vi.mock("./api", () => ({
     })),
     listAsrModels: vi.fn(async () => []),
     getTranscript: vi.fn(async () => {
-      throw new Error("没有转写结果");
+      if (!testState.transcript) throw new Error("没有转写结果");
+      return testState.transcript;
     }),
   },
 }));
@@ -128,8 +146,9 @@ describe("Nota UI states", () => {
     testState.devicesError = false;
     testState.devices = [];
     testState.recoverable = [];
+    testState.recordings = [];
+    testState.transcript = null;
     testState.firstRunComplete = true;
-    testState.noticeAcknowledged = true;
     testState.activeAsrProviderId = null;
     testState.providers = [];
     testState.targets = [
@@ -145,6 +164,8 @@ describe("Nota UI states", () => {
     ];
     testState.requestStart = null;
     testState.snapshotListener = null;
+    dialogMocks.open.mockResolvedValue(null);
+    dialogMocks.save.mockResolvedValue(null);
     vi.clearAllMocks();
   });
   afterEach(() => {
@@ -294,6 +315,113 @@ describe("Nota UI states", () => {
     expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
   });
 
+  it("clears the details selection and confirms success after permanent deletion", async () => {
+    testState.recordings = [
+      {
+        id: "first-recording",
+        title: "待删除录音",
+        path: "C:\\Recordings\\first.ogg",
+        createdAt: "2026-07-31T01:00:00Z",
+        durationMs: 60_000,
+        sizeBytes: 1024,
+        recovered: false,
+        transcription: null,
+      },
+      {
+        id: "second-recording",
+        title: "下一条录音",
+        path: "C:\\Recordings\\second.ogg",
+        createdAt: "2026-07-31T02:00:00Z",
+        durationMs: 60_000,
+        sizeBytes: 1024,
+        recovered: false,
+        transcription: null,
+      },
+    ];
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    expect(await screen.findByRole("heading", { name: "待删除录音" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "永久删除" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.deleteRecording)).toHaveBeenCalledWith("first-recording", true),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("录音已永久删除");
+    expect(screen.getByRole("heading", { name: "选择一条录音" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "下一条录音" })).not.toBeInTheDocument();
+    expect(screen.getByText("下一条录音")).toBeInTheDocument();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("offers an open-folder action after exporting a transcript", async () => {
+    const transcription = {
+      status: "completed" as const,
+      completedChunks: 1,
+      totalChunks: 1,
+      providerName: "FunASR",
+      modelId: "sensevoice",
+      errorMessage: null,
+      hasText: true,
+      protocol: "nota_batch_v1" as const,
+      progressPhase: null,
+      progressCurrent: 1,
+      progressTotal: 1,
+      progressUnit: null,
+    };
+    testState.recordings = [
+      {
+        id: "export-recording",
+        title: "项目例会",
+        path: "C:\\Recordings\\meeting.ogg",
+        createdAt: "2026-08-02T01:00:00Z",
+        durationMs: 60_000,
+        sizeBytes: 1024,
+        recovered: false,
+        transcription,
+      },
+    ];
+    testState.transcript = {
+      recordingId: "export-recording",
+      status: "completed",
+      providerName: "FunASR",
+      modelId: "sensevoice",
+      language: "zh",
+      text: "大家好。",
+      segments: [
+        {
+          startMs: 0,
+          endMs: 1_000,
+          text: "大家好。",
+          speaker: "speaker_0",
+        },
+      ],
+      completedChunks: 1,
+      totalChunks: 1,
+      errorMessage: null,
+      updatedAt: "2026-08-02T01:01:00Z",
+    };
+    const exportPath = "C:\\Exports\\项目例会.txt";
+    dialogMocks.save.mockResolvedValue(exportPath);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 TXT" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.exportTranscript)).toHaveBeenCalledWith(
+        "export-recording",
+        exportPath,
+      ),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("转写文字已导出");
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹" }));
+    expect(vi.mocked(api.revealTranscriptExport)).toHaveBeenCalledWith(exportPath);
+  });
+
   it("uses the settings workspace, saves explicitly, and guards dirty navigation", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     render(<App />);
@@ -368,26 +496,20 @@ describe("Nota UI states", () => {
     expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
   });
 
-  it("starts directly after the first notice was acknowledged", async () => {
+  it("starts recording without a participant-notification prompt", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "开始录音" }));
-    await waitFor(() =>
-      expect(vi.mocked(api.startRecording)).toHaveBeenCalledWith(
-        expect.objectContaining({ consentConfirmed: true }),
-      ),
-    );
+    await waitFor(() => expect(vi.mocked(api.startRecording)).toHaveBeenCalled());
+    const request = vi.mocked(api.startRecording).mock.calls.at(-1)?.[0];
+    expect(request).not.toHaveProperty("consentConfirmed");
     expect(screen.queryByText("首次录音提示")).not.toBeInTheDocument();
   });
 
-  it("starts directly from the tray after acknowledgement", async () => {
+  it("starts directly from the tray without a participant-notification prompt", async () => {
     render(<App />);
     await waitFor(() => expect(testState.requestStart).not.toBeNull());
     act(() => testState.requestStart?.("current"));
-    await waitFor(() =>
-      expect(vi.mocked(api.startRecording)).toHaveBeenCalledWith(
-        expect.objectContaining({ consentConfirmed: true }),
-      ),
-    );
+    await waitFor(() => expect(vi.mocked(api.startRecording)).toHaveBeenCalled());
     expect(screen.queryByText("首次录音提示")).not.toBeInTheDocument();
   });
 
@@ -450,18 +572,4 @@ describe("Nota UI states", () => {
     await waitFor(() => expect(source).toHaveValue("process:84"));
   });
 
-  it("shows and persists the notice only before the first recording", async () => {
-    testState.noticeAcknowledged = false;
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "开始录音" }));
-    expect(await screen.findByText("首次录音提示")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("我已了解上述提示，后续开始录音时不再提醒"));
-    fireEvent.click(screen.getByRole("button", { name: "确认并开始录音" }));
-    await waitFor(() =>
-      expect(vi.mocked(api.saveSettings)).toHaveBeenCalledWith(
-        expect.objectContaining({ recordingNoticeAcknowledged: true }),
-      ),
-    );
-    expect(vi.mocked(api.startRecording)).toHaveBeenCalled();
-  });
 });
