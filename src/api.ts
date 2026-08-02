@@ -52,8 +52,6 @@ export const api = {
   deleteRecording: (id: string, permanent: boolean) =>
     invoke<void>("delete_recording", { id, permanent }),
   openMicrophoneSettings: () => invoke<void>("open_microphone_settings"),
-  copyConsentTemplate: (text: string) =>
-    invoke<void>("copy_consent_template", { text }),
   quitApplication: (stopAndSave: boolean) =>
     invoke<void>("quit_application", { stopAndSave }),
   listAsrProviders: () => invoke<AsrProvider[]>("list_asr_providers"),

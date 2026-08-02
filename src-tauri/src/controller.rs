@@ -126,9 +126,6 @@ impl RecordingController {
 
     fn start(&self, app: AppHandle, request: StartRecordingRequest) -> Result<RecordingSnapshot> {
         self.reap_finalizer()?;
-        if !request.consent_confirmed {
-            bail!("开始录音前必须确认已告知参会者");
-        }
         if self.is_active() {
             return Ok(self.snapshot());
         }
@@ -265,9 +262,6 @@ impl RecordingController {
         ));
         let microphone_enabled = Arc::new(AtomicBool::new(microphone_expected));
         let output_path = unique_recording_path(&output_directory);
-
-        self.storage
-            .record_consent(&session_id, &self.storage.settings()?.consent_template)?;
 
         {
             let mut snapshot = self.snapshot.lock();
@@ -1154,14 +1148,6 @@ fn open_microphone_settings() -> std::result::Result<(), String> {
 }
 
 #[tauri::command]
-fn copy_consent_template(text: String) -> std::result::Result<(), String> {
-    command_result((|| {
-        arboard::Clipboard::new()?.set_text(text)?;
-        Ok(())
-    })())
-}
-
-#[tauri::command]
 fn delete_recoverable_recording(
     state: State<AppState>,
     id: String,
@@ -1700,7 +1686,6 @@ pub fn run_app() {
             delete_recording,
             delete_recoverable_recording,
             open_microphone_settings,
-            copy_consent_template,
             list_asr_providers,
             save_asr_provider,
             delete_asr_provider,

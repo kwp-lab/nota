@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-02
 - Owners: Nota maintainers
 
 ADRs record consequential technical choices that future maintainers should not
@@ -13,6 +13,7 @@ rejected alternatives, and consequences.
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](0001-whole-meeting-funasr-jobs.md) | Accepted | Use durable whole-meeting jobs for FunASR |
+| [0002](0002-keep-recording-core-policy-neutral.md) | Accepted | Keep participant-notification policy out of the core application |
 
 ## Lifecycle
 

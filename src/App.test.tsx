@@ -18,7 +18,6 @@ const testState = vi.hoisted(() => ({
   recoverable: [] as Array<Record<string, unknown>>,
   recordings: [] as RecordingItem[],
   firstRunComplete: true,
-  noticeAcknowledged: true,
   activeAsrProviderId: null as string | null,
   providers: [] as Array<{
     id: string;
@@ -59,9 +58,7 @@ vi.mock("./api", () => ({
       outputDirectory: "C:\\Recordings",
       aecMode: "auto",
       microphoneEnabled: true,
-      consentTemplate: "已告知",
       firstRunComplete: testState.firstRunComplete,
-      recordingNoticeAcknowledged: testState.noticeAcknowledged,
       shortcutsEnabled: true,
       toggleShortcut: "Ctrl+Alt+F9",
       stopShortcut: "Ctrl+Alt+F10",
@@ -139,7 +136,6 @@ describe("Nota UI states", () => {
     testState.recoverable = [];
     testState.recordings = [];
     testState.firstRunComplete = true;
-    testState.noticeAcknowledged = true;
     testState.activeAsrProviderId = null;
     testState.providers = [];
     testState.targets = [
@@ -420,26 +416,20 @@ describe("Nota UI states", () => {
     expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
   });
 
-  it("starts directly after the first notice was acknowledged", async () => {
+  it("starts recording without a participant-notification prompt", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "开始录音" }));
-    await waitFor(() =>
-      expect(vi.mocked(api.startRecording)).toHaveBeenCalledWith(
-        expect.objectContaining({ consentConfirmed: true }),
-      ),
-    );
+    await waitFor(() => expect(vi.mocked(api.startRecording)).toHaveBeenCalled());
+    const request = vi.mocked(api.startRecording).mock.calls.at(-1)?.[0];
+    expect(request).not.toHaveProperty("consentConfirmed");
     expect(screen.queryByText("首次录音提示")).not.toBeInTheDocument();
   });
 
-  it("starts directly from the tray after acknowledgement", async () => {
+  it("starts directly from the tray without a participant-notification prompt", async () => {
     render(<App />);
     await waitFor(() => expect(testState.requestStart).not.toBeNull());
     act(() => testState.requestStart?.("current"));
-    await waitFor(() =>
-      expect(vi.mocked(api.startRecording)).toHaveBeenCalledWith(
-        expect.objectContaining({ consentConfirmed: true }),
-      ),
-    );
+    await waitFor(() => expect(vi.mocked(api.startRecording)).toHaveBeenCalled());
     expect(screen.queryByText("首次录音提示")).not.toBeInTheDocument();
   });
 
@@ -502,18 +492,4 @@ describe("Nota UI states", () => {
     await waitFor(() => expect(source).toHaveValue("process:84"));
   });
 
-  it("shows and persists the notice only before the first recording", async () => {
-    testState.noticeAcknowledged = false;
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "开始录音" }));
-    expect(await screen.findByText("首次录音提示")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("我已了解上述提示，后续开始录音时不再提醒"));
-    fireEvent.click(screen.getByRole("button", { name: "确认并开始录音" }));
-    await waitFor(() =>
-      expect(vi.mocked(api.saveSettings)).toHaveBeenCalledWith(
-        expect.objectContaining({ recordingNoticeAcknowledged: true }),
-      ),
-    );
-    expect(vi.mocked(api.startRecording)).toHaveBeenCalled();
-  });
 });

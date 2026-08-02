@@ -149,7 +149,7 @@ Shortcuts can be changed or disabled in Settings. Closing the main window keeps 
 
 Provider HTTP requests are made by the Rust backend; the interface has no general network permission. API keys are intentionally stored in plaintext in the local Nota SQLite database for a simple, maintainable open-source setup. Saved keys are masked in the interface, omitted from normal IPC reads, logs, errors, and exports, and provider configurations cannot be exported as a bundle. Anyone who can read your Windows account files may still be able to recover a saved key, so use a scoped key where your provider supports one.
 
-Nota shows a participant-notification reminder before the first recording. Users remain responsible for complying with applicable laws, meeting rules, and organizational policies.
+Nota does not implement participant-notification or consent-acknowledgement workflows. Distributors and downstream developers may add policy-specific behavior when their deployment requires it.
 
 ## Reliability and recovery
 

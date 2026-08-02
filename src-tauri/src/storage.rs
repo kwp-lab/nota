@@ -47,11 +47,6 @@ impl Storage {
               occurred_at TEXT NOT NULL,
               detail TEXT NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS consents (
-              session_id TEXT PRIMARY KEY,
-              confirmed_at TEXT NOT NULL,
-              template TEXT NOT NULL
-            );
             CREATE TABLE IF NOT EXISTS asr_providers (
               id TEXT PRIMARY KEY,
               name TEXT NOT NULL,
@@ -126,24 +121,10 @@ impl Storage {
             .setting_value(&connection, "microphone_enabled")?
             .map(|value| value == "true")
             .unwrap_or(true);
-        let consent_template = self
-            .setting_value(&connection, "consent_template")?
-            .unwrap_or_else(|| {
-                "提示：为了整理本次会议内容，我将在本地录音。录音仅保存在我的电脑中，如有异议请随时告知。".into()
-            });
         let first_run_complete = self
             .setting_value(&connection, "first_run_complete")?
             .map(|value| value == "true")
             .unwrap_or(false);
-        let recording_notice_acknowledged =
-            match self.setting_value(&connection, "recording_notice_acknowledged")? {
-                Some(value) => value == "true",
-                None => connection.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM consents LIMIT 1)",
-                    [],
-                    |row| row.get(0),
-                )?,
-            };
         let shortcuts_enabled = self
             .setting_value(&connection, "shortcuts_enabled")?
             .map(|value| value == "true")
@@ -165,9 +146,7 @@ impl Storage {
             output_directory,
             aec_mode,
             microphone_enabled,
-            consent_template,
             first_run_complete,
-            recording_notice_acknowledged,
             shortcuts_enabled,
             toggle_shortcut,
             stop_shortcut,
@@ -200,14 +179,9 @@ impl Storage {
                 "microphone_enabled",
                 settings.microphone_enabled.to_string(),
             ),
-            ("consent_template", settings.consent_template.clone()),
             (
                 "first_run_complete",
                 settings.first_run_complete.to_string(),
-            ),
-            (
-                "recording_notice_acknowledged",
-                settings.recording_notice_acknowledged.to_string(),
             ),
             ("shortcuts_enabled", settings.shortcuts_enabled.to_string()),
             ("toggle_shortcut", settings.toggle_shortcut.clone()),
@@ -228,15 +202,6 @@ impl Storage {
             )?;
         }
         transaction.commit()?;
-        Ok(())
-    }
-
-    pub fn record_consent(&self, session_id: &str, template: &str) -> Result<()> {
-        self.connection.lock().execute(
-            "INSERT OR REPLACE INTO consents(session_id, confirmed_at, template)
-             VALUES(?1, ?2, ?3)",
-            params![session_id, Utc::now().to_rfc3339(), template],
-        )?;
         Ok(())
     }
 

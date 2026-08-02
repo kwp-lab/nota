@@ -25,6 +25,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the next recording; Nota now shows an explicit success notification and an
   empty detail state instead.
 
+### Removed
+
+- Removed the built-in pre-recording participant-notification prompt, its IPC
+  fields and backend guard, and all acknowledgement storage from the current
+  schema and runtime code. Legacy database rows, if present, remain inert.
+
 ## [0.3.0] - 2026-07-31
 
 ### Added
