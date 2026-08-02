@@ -7,6 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added a custom recording-list context menu with rename, recycle-bin, and
+  permanent-delete actions matching the recording detail menu.
+
+### Changed
+
+- Made `package.json` the unified contributor command entry point, separated
+  frontend-only hooks from full Tauri development and build commands, and
+  added explicit project-check, raw executable, and Windows release commands.
+
+### Fixed
+
+- Closed recording action menus before destructive operations and stopped
+  successful deletion of the selected recording from automatically opening
+  the next recording; Nota now shows an explicit success notification and an
+  empty detail state instead.
+
 ## [0.3.0] - 2026-07-31
 
 ### Added

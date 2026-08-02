@@ -57,7 +57,7 @@ jobs:
         run: npm test
 
       - name: Build frontend
-        run: npm run build
+        run: npm run build:web
 
       - name: Test Rust
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml

@@ -184,18 +184,19 @@ export default function App() {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  const refreshLibrary = useCallback(async () => {
+  const refreshLibrary = useCallback(async (options?: { clearSelectionId?: string }) => {
     const [items, recoverableItems] = await Promise.all([
       api.listRecordings(),
       api.listRecoverable(),
     ]);
     setRecordings(items);
     setRecoverable(recoverableItems);
-    setSelectedRecordingId((current) =>
-      current && items.some((item) => item.id === current)
+    setSelectedRecordingId((current) => {
+      if (current && current === options?.clearSelectionId) return null;
+      return current && items.some((item) => item.id === current)
         ? current
-        : items[0]?.id ?? null,
-    );
+        : items[0]?.id ?? null;
+    });
   }, []);
 
   const refreshProviders = useCallback(async () => {
@@ -1003,29 +1004,31 @@ export default function App() {
             if (!confirm("将此录音移入回收站？")) return;
             void api
               .deleteRecording(id, false)
-              .then(refreshLibrary)
+              .then(() => refreshLibrary({ clearSelectionId: id }))
+              .then(() => showToast("success", "录音已移至回收站"))
               .catch(showError);
           }}
           onRecover={(id) =>
-            void api.recoverRecording(id).then(refreshLibrary).catch(showError)
+            void api.recoverRecording(id).then(() => refreshLibrary()).catch(showError)
           }
           onDiscardRecovery={(id) => {
             if (!confirm("永久删除这个未完成的恢复文件？此操作无法撤销。")) return;
-            void api.deleteRecoverable(id).then(refreshLibrary).catch(showError);
+            void api.deleteRecoverable(id).then(() => refreshLibrary()).catch(showError);
           }}
           onRename={(id, currentTitle) => {
             const title = prompt("输入新的录音名称", currentTitle);
             if (!title || title === currentTitle) return;
             void api
               .renameRecording(id, title)
-              .then(refreshLibrary)
+              .then(() => refreshLibrary())
               .catch(showError);
           }}
           onPermanentDelete={(id) => {
             if (!confirm("永久删除此录音？此操作无法撤销。")) return;
             void api
               .deleteRecording(id, true)
-              .then(refreshLibrary)
+              .then(() => refreshLibrary({ clearSelectionId: id }))
+              .then(() => showToast("success", "录音已永久删除"))
               .catch(showError);
           }}
         />

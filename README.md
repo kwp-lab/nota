@@ -200,28 +200,41 @@ The roadmap intentionally stays focused on reliable local recording. Feature pro
 - Windows 11 SDK
 - CMake
 
-### Development
+### Unified command entry point
+
+Run Nota from the repository root through the npm scripts in `package.json`.
+Complex Windows checks and release orchestration remain in `scripts/*.ps1`, but
+they are exposed through npm so contributors do not need to memorize separate
+PowerShell or Cargo entry points.
+
+Install the locked dependencies after the first checkout:
 
 ```powershell
 npm ci
-npm run tauri dev
 ```
 
-### Tests
+| Command | Purpose | Primary output |
+|---|---|---|
+| `npm run dev` | Start the complete Tauri desktop development environment, including the Vite frontend and Rust backend | `src-tauri\target\debug\nota.exe` |
+| `npm test` | Run all frontend tests once | Terminal test report |
+| `npm run test:watch` | Watch files and rerun affected frontend tests | Interactive test process |
+| `npm run check` | Check version consistency, build and test the frontend, then run Rust formatting, tests, and Clippy | No release package |
+| `npm run build:exe` | Build the optimized desktop executable without installer bundling | `src-tauri\target\release\nota.exe` |
+| `npm run build` | Build the optimized desktop executable and per-user NSIS installer | `src-tauri\target\release\nota.exe` and `src-tauri\target\release\bundle\nsis\` |
+| `npm run release:windows` | Reinstall locked dependencies, run every check, generate licenses, NSIS, portable ZIP, and SHA-256 checksums | Root `release\` directory |
 
-```powershell
-npm test
-cd src-tauri
-cargo test --locked
-```
+`npm run dev:web`, `npm run build:web`, and `npm run preview:web` are
+frontend-only entry points used primarily by Tauri's `beforeDevCommand` and
+`beforeBuildCommand` hooks or for isolated UI work. They do not provide the
+Rust recording, SQLite, filesystem, or ASR backend. Use
+`npm run tauri -- <command>` as the advanced pass-through to the Tauri CLI.
 
-### Release package
-
-```powershell
-.\scripts\build-windows.ps1
-```
-
-The release script runs frontend and Rust tests, generates the third-party license report, builds the NSIS installer, and creates the portable ZIP. Cargo and npm dependency versions are locked in the repository.
+The ordinary and release-grade builds are intentionally separate.
+`npm run build` performs only the work needed to create the desktop executable and NSIS
+installer; it does not first run the full verification suite or create the
+portable/checksum assets. `npm run release:windows` starts from locked
+dependencies, runs all quality gates, invokes the same desktop build, and then
+creates the distributable release assets.
 
 Maintainers can follow the [release guide](docs/releasing.md) to synchronize the version, create a release tag, and let GitHub Actions prepare a reviewed draft Release.
 

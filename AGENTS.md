@@ -67,17 +67,15 @@ specific rules.
 Run checks appropriate to the changed area before handing work off:
 
 ```powershell
-npm test
-npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo test --locked --manifest-path src-tauri/Cargo.toml
-cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-.\scripts\verify-version.ps1
+npm run check
 ```
 
-- Frontend changes require the frontend tests and build.
+- Frontend-only changes may use `npm test` and `npm run build:web` while
+  iterating, then must pass the checks appropriate to their final scope.
 - Rust changes require formatting, tests, and Clippy.
-- Cross-layer, version, packaging, or release changes require the full set.
+- Cross-layer, version, packaging, or release changes require `npm run check`.
+- `npm run build` creates the desktop executable and NSIS installer; it is not
+  the frontend-only verification command.
 - Add or update tests when behavior changes or a regression is fixed.
 
 ## Versioning and changelog

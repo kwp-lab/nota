@@ -111,17 +111,14 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .recovery-banner button { border: 0; background: #775f31; color: #fff; border-radius: 8px; padding: 8px 11px; cursor: pointer; }
 .recovery-actions { display: flex; gap: 7px; }
 .recovery-banner .link-danger { color: #8c4640; background: transparent; }
-.row-menu { position: relative; }
-.row-menu summary { list-style: none; }
-.row-menu summary::-webkit-details-marker { display: none; }
-.row-menu-popover {
-  position: absolute; z-index: 5; right: 0; top: 37px; min-width: 120px; padding: 5px;
+.recording-actions-menu {
+  position: fixed; z-index: 20; min-width: 140px; padding: 5px;
   border: 1px solid #d8d7d1; border-radius: 10px; background: #fff;
   box-shadow: 0 10px 28px rgba(0,0,0,.14);
 }
-.row-menu-popover button { width: 100%; border: 0; border-radius: 7px; padding: 8px 10px; text-align: left; background: transparent; cursor: pointer; }
-.row-menu-popover button:hover { background: #f1f0eb; }
-.row-menu-popover button.danger { color: #a23e3e; }
+.recording-actions-menu button { width: 100%; border: 0; border-radius: 7px; padding: 8px 10px; text-align: left; background: transparent; cursor: pointer; }
+.recording-actions-menu button:hover, .recording-actions-menu button:focus-visible { outline: 0; background: #f1f0eb; }
+.recording-actions-menu button.danger { color: #a23e3e; }
 .app-footer { display: flex; justify-content: space-between; padding: 14px 28px; border-top: 1px solid #deddd8; color: #797d7a; font-size: 11px; }
 .app-footer span { display: flex; align-items: center; gap: 7px; }
 .privacy-dot { width: 7px; height: 7px; border-radius: 50%; background: #4d8579; }
@@ -347,6 +344,7 @@ body { min-width: 980px; min-height: 640px; overflow: hidden; }
 }
 .history-item:hover { background: rgba(255,255,255,.55); }
 .history-item.selected { border-color: #d8e3df; background: #fff; box-shadow: 0 3px 13px rgba(48,53,50,.06); }
+.history-item.menu-target { border-color: #cbd9d5; background: #fff; }
 .history-select {
   min-width: 0; display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px;
   border: 0; text-align: left; background: transparent; cursor: pointer;

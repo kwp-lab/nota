@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api } from "./api";
-import type { RecordingSnapshot } from "./types";
+import type { RecordingItem, RecordingSnapshot } from "./types";
 
 const testState = vi.hoisted(() => ({
   snapshot: {} as RecordingSnapshot,
@@ -16,6 +16,7 @@ const testState = vi.hoisted(() => ({
     active: boolean;
   }>,
   recoverable: [] as Array<Record<string, unknown>>,
+  recordings: [] as RecordingItem[],
   firstRunComplete: true,
   noticeAcknowledged: true,
   activeAsrProviderId: null as string | null,
@@ -68,8 +69,16 @@ vi.mock("./api", () => ({
       autoTranscribe: false,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
-    listRecordings: vi.fn(async () => []),
+    listRecordings: vi.fn(async () => testState.recordings),
     listRecoverable: vi.fn(async () => testState.recoverable),
+    prepareRecordingPlayback: vi.fn(async (id: string) => {
+      const recording = testState.recordings.find((item) => item.id === id);
+      if (!recording) throw new Error("录音不存在");
+      return recording.path;
+    }),
+    deleteRecording: vi.fn(async (id: string) => {
+      testState.recordings = testState.recordings.filter((item) => item.id !== id);
+    }),
     listAsrProviders: vi.fn(async () => testState.providers),
     onSnapshot: vi.fn(
       async (handler: (snapshot: RecordingSnapshot) => void) => {
@@ -128,6 +137,7 @@ describe("Nota UI states", () => {
     testState.devicesError = false;
     testState.devices = [];
     testState.recoverable = [];
+    testState.recordings = [];
     testState.firstRunComplete = true;
     testState.noticeAcknowledged = true;
     testState.activeAsrProviderId = null;
@@ -292,6 +302,48 @@ describe("Nota UI states", () => {
     expect(await screen.findByText("还没有录音")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "录音" }));
     expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
+  });
+
+  it("clears the details selection and confirms success after permanent deletion", async () => {
+    testState.recordings = [
+      {
+        id: "first-recording",
+        title: "待删除录音",
+        path: "C:\\Recordings\\first.ogg",
+        createdAt: "2026-07-31T01:00:00Z",
+        durationMs: 60_000,
+        sizeBytes: 1024,
+        recovered: false,
+        transcription: null,
+      },
+      {
+        id: "second-recording",
+        title: "下一条录音",
+        path: "C:\\Recordings\\second.ogg",
+        createdAt: "2026-07-31T02:00:00Z",
+        durationMs: 60_000,
+        sizeBytes: 1024,
+        recovered: false,
+        transcription: null,
+      },
+    ];
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    expect(await screen.findByRole("heading", { name: "待删除录音" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "永久删除" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.deleteRecording)).toHaveBeenCalledWith("first-recording", true),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("录音已永久删除");
+    expect(screen.getByRole("heading", { name: "选择一条录音" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "下一条录音" })).not.toBeInTheDocument();
+    expect(screen.getByText("下一条录音")).toBeInTheDocument();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("uses the settings workspace, saves explicitly, and guards dirty navigation", async () => {

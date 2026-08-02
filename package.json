@@ -9,11 +9,16 @@
     "npm": "11.16.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
+    "dev": "tauri dev",
+    "dev:web": "vite",
+    "build": "tauri build",
+    "build:exe": "tauri build --no-bundle",
+    "build:web": "tsc -b && vite build",
+    "preview:web": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1",
+    "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-windows.ps1",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -62,7 +62,7 @@ jobs:
         run: node .\scripts\generate-license-report.mjs
 
       - name: Build NSIS installer and executable
-        run: npm run tauri -- build
+        run: npm run build
 
       - name: Package release assets
         shell: pwsh

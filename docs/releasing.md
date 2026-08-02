@@ -1,7 +1,7 @@
 # Releasing Nota
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-01
 - Owners: Nota release maintainers
 - Related files: `CHANGELOG.md`, `package.json`, `src-tauri/Cargo.toml`,
   `src-tauri/tauri.conf.json`, `.github/workflows/release.yml`, `scripts/`
@@ -9,6 +9,22 @@
 Nota uses tag-driven GitHub Releases. A tag matching the application version builds
 the Windows installer and portable archive, verifies them, and creates a draft
 release for final review.
+
+## Local command layers
+
+`package.json` is the public command entry point for local development and
+release preparation:
+
+| Command | Contract |
+|---|---|
+| `npm run build:exe` | Build the optimized raw executable and skip installer bundling. |
+| `npm run build` | Run Tauri's frontend hook, compile the optimized Rust executable, and build the NSIS installer. It does not run the full test suite or create portable/checksum assets. |
+| `npm run check` | Run all repository quality gates without creating release assets. |
+| `npm run release:windows` | Reinstall locked npm dependencies, run `check`, generate the license report, run `build`, then create the renamed installer, portable ZIP, and SHA-256 file under `release/`. |
+
+The PowerShell files under `scripts/` implement complex Windows workflows but
+are not separate contributor-facing entry points. CI may call the narrower
+internal commands where its steps need separate names and logs.
 
 ## Prepare the version
 
@@ -22,6 +38,13 @@ command:
 
 Review and commit the manifest and lockfile changes. Let CI pass on the pull
 request before merging it to `main`.
+
+Before tagging, produce and inspect the local release-grade assets when the
+change affects packaging or Windows integration:
+
+```powershell
+npm run release:windows
+```
 
 ## Trigger a release
 
