@@ -12,11 +12,14 @@ import type {
   CaptureTarget,
   DeviceSelection,
   LevelEvent,
+  ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
   StartRecordingRequest,
   SaveAsrProviderRequest,
   TranscriptDocument,
+  SpeakerIdentificationAssignment,
+  SpeakerIdentificationSession,
   TranscriptionEvent,
   TranscriptionSummary,
 } from "./types";
@@ -82,6 +85,27 @@ export const api = {
     invoke<void>("export_transcript", { recordingId, path }),
   revealTranscriptExport: (path: string) =>
     invoke<void>("reveal_transcript_export", { path }),
+  identifyRecordingSpeakers: (recordingId: string, providerId?: string | null) =>
+    invoke<SpeakerIdentificationSession>("identify_recording_speakers", {
+      recordingId,
+      providerId: providerId ?? null,
+    }),
+  saveSpeakerIdentification: (
+    sessionId: string,
+    assignments: SpeakerIdentificationAssignment[],
+  ) => invoke<TranscriptDocument>("save_speaker_identification", {
+    sessionId,
+    assignments,
+  }),
+  discardSpeakerIdentification: (sessionId: string) =>
+    invoke<void>("discard_speaker_identification", { sessionId }),
+  listParticipants: () => invoke<ParticipantProfile[]>("list_participants"),
+  renameParticipant: (id: string, displayName: string) =>
+    invoke<ParticipantProfile[]>("rename_participant", { id, displayName }),
+  deleteParticipant: (id: string) =>
+    invoke<ParticipantProfile[]>("delete_participant", { id }),
+  deleteVoiceprint: (id: string) =>
+    invoke<ParticipantProfile[]>("delete_voiceprint", { id }),
   hasActiveTranscription: () =>
     invoke<boolean>("has_active_transcription"),
   onSnapshot: (handler: (snapshot: RecordingSnapshot) => void) =>

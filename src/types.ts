@@ -97,6 +97,7 @@ export interface AppSettings {
   toggleShortcut: string;
   stopShortcut: string;
   activeAsrProviderId: string | null;
+  voiceprintProviderId: string | null;
   autoTranscribe: boolean;
 }
 
@@ -200,10 +201,59 @@ export interface TranscriptDocument {
   language: string | null;
   text: string;
   segments: TranscriptSegment[];
+  speakerNames: Record<string, string>;
   completedChunks: number;
   totalChunks: number;
   errorMessage: string | null;
   updatedAt: string;
+}
+
+export interface VoiceprintSample {
+  id: string;
+  participantId: string;
+  embeddingFingerprint: string;
+  sourceRecordingId: string | null;
+  sourceRecordingTitle: string | null;
+  sourceSpeaker: string;
+  previewStartMs: number;
+  previewEndMs: number;
+  previewAvailable: boolean;
+  speechDurationMs: number;
+  createdAt: string;
+}
+
+export interface ParticipantProfile {
+  id: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+  samples: VoiceprintSample[];
+}
+
+export interface SpeakerIdentificationCandidate {
+  rawSpeaker: string;
+  totalSpeechMs: number;
+  previewStartMs: number;
+  previewEndMs: number;
+  embeddingExtracted: boolean;
+  errorMessage: string | null;
+  suggestedParticipantId: string | null;
+  suggestedParticipantName: string | null;
+  matchScore: number | null;
+}
+
+export interface SpeakerIdentificationSession {
+  id: string;
+  recordingId: string;
+  speakerCount: number;
+  voiceprintCount: number;
+  candidates: SpeakerIdentificationCandidate[];
+}
+
+export interface SpeakerIdentificationAssignment {
+  rawSpeaker: string;
+  participantId: string | null;
+  newDisplayName: string | null;
 }
 
 export interface TranscriptionEvent {

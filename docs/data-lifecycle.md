@@ -16,6 +16,9 @@
 | Settings and recording index | Local SQLite | Application lifetime |
 | ASR provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
 | Local transcript and segments | Local SQLite | Until retranscription or recording deletion |
+| Participant names and confirmed meeting assignments | Local SQLite, Rust access only | Until participant, assignment, or recording deletion |
+| CAM++ voiceprint embeddings | Local SQLite BLOB, Rust access only | Until sample or participant deletion |
+| Voiceprint extraction WAV | Recovery `VoiceprintTemp` directory | One extraction request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
 
@@ -58,6 +61,21 @@ There is at most one current row per recording. Important fields are:
 | `completed_chunks/total_chunks` | Legacy chunk compatibility progress |
 | `text`, `segments_json`, `language` | Current durable result |
 | `error_message` | Bounded user-facing failure detail |
+
+### `participants`, `voiceprints`, and `recording_speaker_assignments`
+
+`participants` owns the stable local display name. `voiceprints` stores
+little-endian f32 vectors with their model fingerprint, dimension, source
+recording reference, raw speaker, and preview timestamps. React never receives
+the vector BLOB.
+
+`recording_speaker_assignments` maps a raw speaker label to a participant for
+one recording and transcription generation. `segments_json` remains raw.
+Renaming a participant updates historical display at read time. Deleting one
+sample preserves assignments; deleting a participant cascades samples and
+assignments so affected transcripts fall back to `speaker_N`. Recording
+deletion removes assignments and nulls voiceprint source references, leaving
+the embedding usable but its preview unavailable.
 
 Beginning a new transcription increments `generation`, snapshots the selected
 provider, creates a new idempotency key, resets execution progress, and removes

@@ -5,6 +5,7 @@ import {
   Clipboard,
   Download,
   FileAudio,
+  Fingerprint,
   FolderOpen,
   LoaderCircle,
   MoreHorizontal,
@@ -18,11 +19,15 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ParticipantProfile,
   RecordingItem,
+  SpeakerIdentificationAssignment,
+  SpeakerIdentificationSession,
   TranscriptDocument,
   TranscriptionStatus,
   TranscriptionSummary,
 } from "../types";
+import { SpeakerIdentificationModal } from "./SpeakerIdentificationModal";
 
 interface RecordingsWorkspaceProps {
   items: RecordingItem[];
@@ -32,6 +37,8 @@ interface RecordingsWorkspaceProps {
   transcriptLoading: boolean;
   recordingActive: boolean;
   hasProvider: boolean;
+  hasVoiceprintProvider: boolean;
+  participants: ParticipantProfile[];
   onSelect: (id: string) => void;
   onReturnToRecorder: () => void;
   onPreparePlayback: (id: string) => Promise<string>;
@@ -41,6 +48,12 @@ interface RecordingsWorkspaceProps {
   onCancelTranscription: (id: string) => void;
   onCopyTranscript: (id: string) => void;
   onExportTranscript: (id: string, title: string) => void;
+  onIdentifySpeakers: (id: string) => Promise<SpeakerIdentificationSession>;
+  onSaveSpeakerIdentification: (
+    sessionId: string,
+    assignments: SpeakerIdentificationAssignment[],
+  ) => Promise<void>;
+  onDiscardSpeakerIdentification: (sessionId: string) => void;
   onReveal: (id: string) => void;
   onDelete: (id: string) => void;
   onRecover: (id: string) => void;
@@ -160,7 +173,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [pendingPlayId, setPendingPlayId] = useState<string | null>(null);
   const [pendingSeekMs, setPendingSeekMs] = useState<number | null>(null);
   const [actionMenu, setActionMenu] = useState<RecordingActionMenu | null>(null);
+  const [identification, setIdentification] = useState<SpeakerIdentificationSession | null>(null);
+  const [identificationLoading, setIdentificationLoading] = useState(false);
+  const [identificationSaving, setIdentificationSaving] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const previewEndMsRef = useRef<number | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const detailMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const selected = props.items.find((item) => item.id === props.selectedId) ?? null;
@@ -171,6 +188,15 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
       ? props.items.filter((item) => item.title.toLocaleLowerCase().includes(normalized))
       : props.items;
   }, [props.items, query]);
+
+  useEffect(() => {
+    setIdentification((current) => {
+      if (current) props.onDiscardSpeakerIdentification(current.id);
+      return null;
+    });
+    // A different recording cannot reuse the previous extraction session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.selectedId]);
 
   useEffect(() => {
     if (!actionMenu) return;
@@ -272,6 +298,23 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     }
     audio.currentTime = milliseconds / 1_000;
     void audio.play().catch((error) => props.onPlaybackError(String(error)));
+  };
+
+  const previewSpeaker = (startMs: number, endMs: number) => {
+    previewEndMsRef.current = endMs;
+    seekTo(startMs);
+  };
+
+  const identifySpeakers = async () => {
+    if (!selected) return;
+    setIdentificationLoading(true);
+    try {
+      setIdentification(await props.onIdentifySpeakers(selected.id));
+    } catch (error) {
+      props.onPlaybackError(String(error));
+    } finally {
+      setIdentificationLoading(false);
+    }
   };
 
   const openContextMenu = (
@@ -449,6 +492,14 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
                 onEnded={() => setPlaying(false)}
+                onTimeUpdate={() => {
+                  const audio = audioRef.current;
+                  const previewEnd = previewEndMsRef.current;
+                  if (audio && previewEnd !== null && audio.currentTime * 1_000 >= previewEnd) {
+                    previewEndMsRef.current = null;
+                    audio.pause();
+                  }
+                }}
                 onError={() => audioSource && props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。")}
               />
             </div>
@@ -481,6 +532,19 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                     </button>
                     <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
                       <Download size={15} />导出 TXT
+                    </button>
+                    <button
+                      className="button secondary"
+                      disabled={identificationLoading || !props.hasVoiceprintProvider}
+                      title={props.hasVoiceprintProvider
+                        ? "提取匿名声纹并在本地匹配参会人"
+                        : "请先在声纹管理中选择 Nota ASR Server"}
+                      onClick={() => void identifySpeakers()}
+                    >
+                      {identificationLoading
+                        ? <LoaderCircle className="spin" size={15} />
+                        : <Fingerprint size={15} />}
+                      说话人识别
                     </button>
                     <button className="text-button" onClick={() => props.onStartTranscription(selected.id)}>重新转写</button>
                   </>
@@ -537,7 +601,9 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       {formatDuration(segment.startMs)}
                     </button>
                     <div>
-                      {segment.speaker && <strong>{segment.speaker}</strong>}
+                      {segment.speaker && (
+                        <strong>{props.transcript?.speakerNames?.[segment.speaker] ?? segment.speaker}</strong>
+                      )}
                       <p>{segment.text}</p>
                     </div>
                   </div>
@@ -588,6 +654,27 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             永久删除
           </button>
         </div>
+      )}
+      {identification && (
+        <SpeakerIdentificationModal
+          session={identification}
+          participants={props.participants}
+          saving={identificationSaving}
+          onPreview={previewSpeaker}
+          onCancel={() => {
+            previewEndMsRef.current = null;
+            props.onDiscardSpeakerIdentification(identification.id);
+            setIdentification(null);
+          }}
+          onSave={(assignments) => {
+            setIdentificationSaving(true);
+            void props
+              .onSaveSpeakerIdentification(identification.id, assignments)
+              .then(() => setIdentification(null))
+              .catch((error) => props.onPlaybackError(String(error)))
+              .finally(() => setIdentificationSaving(false));
+          }}
+        />
       )}
     </section>
   );

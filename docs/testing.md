@@ -43,6 +43,7 @@ required devices or environment variables in the test name and ignore message.
 | IPC serialization | `src-tauri/src/models.rs` tests |
 | SQLite schema and migrations | `src-tauri/src/storage.rs` tests |
 | ASR parsing, capability checks, request construction, chunk merging | `src-tauri/src/asr.rs` tests |
+| Voiceprint range planning, local matching, and confirmation sessions | `src-tauri/src/voiceprints.rs` tests |
 | Ogg encoding, decoding, and recovery | `src-tauri/src/audio/` tests |
 | Recording state and idempotent controls | `src-tauri/src/state_machine.rs` tests |
 | Tray and controller behavior | `src-tauri/src/controller.rs` tests |
@@ -64,6 +65,10 @@ Automated client coverage must include:
 - persistence of remote job identity and generic progress;
 - UI rendering for byte upload, server queue, windows, diarization, and
   finalization;
+- speaker-embedding capability discovery and strict response compatibility;
+- local matching threshold plus runner-up margin behavior;
+- raw transcript preservation, generation-scoped assignments, participant
+  rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
 - Ogg Opus decode coverage for the legacy path.
 

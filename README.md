@@ -59,6 +59,7 @@ Nota gives Windows one focused recording workflow:
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
+| **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
 | **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
 
 ## Works with the meetings you already use
@@ -125,7 +126,14 @@ Open **Settings → Speech transcription**, add one or more providers, and choos
 
 Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
 
-Completed transcripts can be copied or exported as UTF-8 TXT. When the provider returns speaker labels, both outputs use one `speaker_N：transcribed text` line per segment; otherwise Nota preserves the provider's plain transcript.
+Completed transcripts can be copied or exported as UTF-8 TXT. When the provider returns speaker labels, both outputs use one `speaker_N：transcribed text` line per segment, replacing `speaker_N` with a locally confirmed participant name when available; otherwise Nota preserves the provider's plain transcript.
+
+Speaker identification is an independent, user-triggered action. Select a
+compatible Nota ASR Server in **Voiceprints**, then use **Identify speakers**
+from a completed recording. Nota sends only bounded voice samples for
+anonymous CAM++ extraction, performs matching locally, and asks you to confirm
+every name. Confirmed names are used consistently in the detail view, copy,
+and TXT export while raw `speaker_N` labels remain unchanged in the transcript.
 
 Default shortcuts:
 
@@ -165,7 +173,7 @@ Recording begins in `%LOCALAPPDATA%\Nota\Recovery` before the result is moved to
 - Low disk space triggers a warning below 200 MB and a safe stop below 50 MB.
 - Paused time and system sleep are excluded from the final recording.
 
-The default output directory is `Documents\Nota\Recordings`. Settings and the recording index are stored locally in SQLite WAL mode; rotating technical logs are limited to 3 × 10 MB.
+The default output directory is `Documents\Nota\Recordings`. Settings, the recording index, transcripts, participant names, voiceprints, and confirmed meeting mappings are stored locally in SQLite WAL mode; rotating technical logs are limited to 3 × 10 MB.
 
 ## Current limitations
 
@@ -174,7 +182,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings and the re
 - Browser capture cannot be restricted to one tab
 - One mixed output file; no separate microphone/system tracks
 - No video, summaries, translation, transcript editing, or real-time streaming transcription
-- Speaker labels are displayed only when the configured provider returns them; Nota does not perform diarization itself
+- Speaker identification requires provider-supplied diarization labels and a compatible Nota ASR Server; suggestions remain probabilistic until the user confirms them
 - Transcription requires a user-configured FunASR or OpenAI-compatible service
 - Echo-cancellation quality depends on the microphone, speakers, room, and device mode
 - The preview is not code-signed
@@ -249,11 +257,13 @@ src-tauri/src/audio/dsp.rs         Alignment, resampling, AEC, mixing, limiting
 src-tauri/src/audio/encoder.rs     Opus encoding and Ogg container
 src-tauri/src/audio/recovery.rs    Validation, repair, and safe finalization
 src-tauri/src/asr.rs               Provider clients, durable FunASR jobs, legacy chunking, and merge
+src-tauri/src/voiceprints.rs       Bounded sample extraction, local matching, and confirmation sessions
 src-tauri/src/storage.rs           SQLite settings, recording index, and transcripts
 src-tauri/src/controller.rs        Recording state, IPC, tray, and file actions
 ```
 
-The frontend only receives state, health, fault, and level events. Raw PCM remains in the Rust audio pipeline.
+The frontend receives typed state and confirmation metadata. Raw PCM, stored
+API keys, and voiceprint vectors remain in Rust.
 
 ## Engineering documentation
 

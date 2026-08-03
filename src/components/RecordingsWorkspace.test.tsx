@@ -61,6 +61,7 @@ const transcript: TranscriptDocument = {
       speaker: "speaker_1",
     },
   ],
+  speakerNames: {},
   completedChunks: 1,
   totalChunks: 1,
   errorMessage: null,
@@ -82,6 +83,9 @@ const renderWorkspace = (
     onCancelTranscription: vi.fn(),
     onCopyTranscript: vi.fn(),
     onExportTranscript: vi.fn(),
+    onIdentifySpeakers: vi.fn(),
+    onSaveSpeakerIdentification: vi.fn(),
+    onDiscardSpeakerIdentification: vi.fn(),
     onReveal: vi.fn(),
     onDelete: vi.fn(),
     onRecover: vi.fn(),
@@ -98,6 +102,8 @@ const renderWorkspace = (
       transcriptLoading={false}
       recordingActive={false}
       hasProvider
+      hasVoiceprintProvider
+      participants={[]}
       {...actions}
     />,
   );
@@ -125,6 +131,17 @@ describe("RecordingsWorkspace", () => {
     expect(screen.getByRole("button", { name: "0:12" })).toBeInTheDocument();
     expect(screen.queryByText("我")).not.toBeInTheDocument();
     expect(screen.queryByText("参会者")).not.toBeInTheDocument();
+  });
+
+  it("renders confirmed participant names without changing the raw segment", () => {
+    renderWorkspace(undefined, undefined, {
+      ...transcript,
+      speakerNames: { speaker_1: "小明" },
+    });
+
+    expect(screen.getByText("小明")).toBeInTheDocument();
+    expect(screen.queryByText("speaker_1")).not.toBeInTheDocument();
+    expect(transcript.segments[0].speaker).toBe("speaker_1");
   });
 
   it("offers copy, export, and resume actions for their respective states", () => {

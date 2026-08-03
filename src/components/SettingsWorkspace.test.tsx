@@ -17,6 +17,7 @@ const settings: AppSettings = {
   toggleShortcut: "Ctrl+Alt+F9",
   stopShortcut: "Ctrl+Alt+F10",
   activeAsrProviderId: "lan",
+  voiceprintProviderId: null,
   autoTranscribe: false,
 };
 
