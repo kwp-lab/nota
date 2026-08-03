@@ -1,7 +1,7 @@
 # ASR Integration Specification
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-03
 - Owners: Nota desktop and Nota ASR Server maintainers
 - Related code: `src-tauri/src/asr.rs`, `src-tauri/src/models.rs`,
   `src-tauri/src/storage.rs`, `src/components/RecordingsWorkspace.tsx`
@@ -216,8 +216,10 @@ must not be described as meeting-wide identities.
 - Final transcript segments use milliseconds locally and optional anonymous
   speaker labels.
 - Optional speaker identification is a separate post-transcription request.
-  It uses `/v1/nota/speaker-embeddings`, keeps names and matching local, and
-  must not change normal transcription completion or retry semantics. See
+  It requires `speaker_sample_analysis_version=1`, sends repeated bounded
+  candidates for one anonymous speaker to
+  `/v1/nota/speaker-samples/analyze`, keeps names and matching local, and must
+  not change normal transcription completion or retry semantics. See
   `speaker-identification.md`.
 - Clipboard copying and TXT export use the same Rust formatter. If any segment
   has a non-empty speaker label, every non-empty segment is written on its own

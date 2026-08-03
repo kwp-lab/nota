@@ -236,6 +236,8 @@ export interface SpeakerIdentificationCandidate {
   previewStartMs: number;
   previewEndMs: number;
   embeddingExtracted: boolean;
+  sampleStatus: "enrollable" | "preview_only" | "unavailable";
+  statusMessage: string | null;
   errorMessage: string | null;
   suggestedParticipantId: string | null;
   suggestedParticipantName: string | null;

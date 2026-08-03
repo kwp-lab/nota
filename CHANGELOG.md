@@ -29,6 +29,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   **Open folder** action.
 - Resolved confirmed participant names consistently in transcript details,
   clipboard copying, and TXT export while preserving raw `speaker_N` values.
+- Changed voiceprint enrollment and preview to use CAM++ multi-candidate purity
+  analysis, ignore short or mixed-speaker turns, and keep speakers without a
+  sufficiently clean sample available for preview and meeting-local naming
+  without saving a polluted reusable voiceprint.
 
 ### Fixed
 

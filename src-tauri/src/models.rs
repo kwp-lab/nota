@@ -511,10 +511,20 @@ pub struct SpeakerIdentificationCandidate {
     pub preview_start_ms: u64,
     pub preview_end_ms: u64,
     pub embedding_extracted: bool,
+    pub sample_status: SpeakerSampleStatus,
+    pub status_message: Option<String>,
     pub error_message: Option<String>,
     pub suggested_participant_id: Option<String>,
     pub suggested_participant_name: Option<String>,
     pub match_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerSampleStatus {
+    Enrollable,
+    PreviewOnly,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -59,6 +59,13 @@ specific rules.
   for a long-lived architectural choice or reversal.
 - Treat code, schemas, migrations, and tests as executable truth; use
   specifications for intended semantics and ADRs for rationale.
+- When a change introduces complex business logic, cross-component ownership,
+  three or more dependent stages, or a non-trivial state transition, add or
+  update a Mermaid diagram in the owning specification under `docs/`.
+- Keep diagrams version-controlled and update them in the same change as the
+  behavior. Use flowcharts for processing flows, sequence diagrams for
+  request/response interactions, and state diagrams for lifecycles. A diagram
+  complements concise prose and executable tests; it does not replace either.
 - Do not duplicate the complete server HTTP schema in this repository. The
   Nota ASR Server OpenAPI schema and API contract remain canonical.
 

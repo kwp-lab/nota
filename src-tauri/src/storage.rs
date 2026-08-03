@@ -1545,6 +1545,33 @@ mod tests {
             storage.transcript("meeting").unwrap().speaker_names.len(),
             1
         );
+        storage
+            .save_speaker_identification(
+                "meeting",
+                generation,
+                &[VoiceprintEnrollment {
+                    raw_speaker: "speaker_0".into(),
+                    participant_id: Some(profiles[0].id.clone()),
+                    new_display_name: None,
+                    match_score: None,
+                    embedding_fingerprint: "cam++:test:v1".into(),
+                    embedding: None,
+                    preview_start_ms: 0,
+                    preview_end_ms: 6_000,
+                    speech_duration_ms: 6_000,
+                }],
+            )
+            .unwrap();
+        assert_eq!(storage.list_participants().unwrap()[0].samples.len(), 0);
+        assert_eq!(
+            storage
+                .transcript("meeting")
+                .unwrap()
+                .speaker_names
+                .get("speaker_0")
+                .unwrap(),
+            "小明同学"
+        );
         storage.delete_participant(&profiles[0].id).unwrap();
         assert!(
             storage
