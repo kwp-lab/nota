@@ -1,7 +1,7 @@
 # Recording and Transcription Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-02
+- Last updated: 2026-08-03
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
@@ -18,7 +18,7 @@
 | Local transcript and segments | Local SQLite | Until retranscription or recording deletion |
 | Participant names and confirmed meeting assignments | Local SQLite, Rust access only | Until participant, assignment, or recording deletion |
 | CAM++ voiceprint embeddings | Local SQLite BLOB, Rust access only | Until sample or participant deletion |
-| Voiceprint extraction WAV | Recovery `VoiceprintTemp` directory | One extraction request; stale files are removed at startup |
+| Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
 

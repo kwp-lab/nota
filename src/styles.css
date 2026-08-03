@@ -593,9 +593,13 @@ body { min-width: 980px; min-height: 640px; overflow: hidden; }
 }
 
 .match-suggestion,
+.candidate-status,
 .candidate-error { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .match-suggestion { color: #276c57; }
 .match-suggestion span { margin-left: auto; color: #70746f; }
+.candidate-status { color: #5d635e; }
+.candidate-status.enrollable { color: #276c57; }
+.candidate-status.preview_only { color: #8a6824; }
 .candidate-error { color: #a9433d; }
 
 .page-voiceprints { overflow-y: auto; }

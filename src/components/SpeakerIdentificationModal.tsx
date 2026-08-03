@@ -1,4 +1,4 @@
-import { AlertCircle, LoaderCircle, Play, UserRound, Waves } from "lucide-react";
+import { AlertCircle, Info, LoaderCircle, Play, UserRound, Waves } from "lucide-react";
 import { useMemo, useState } from "react";
 import type {
   ParticipantProfile,
@@ -66,6 +66,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
     (selection) => selection.participantId === "__new__"
       && !selection.newDisplayName.trim(),
   );
+  const hasEnrollableVoiceprints = props.session.voiceprintCount > 0;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -80,8 +81,8 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
             <p className="eyebrow">VOICEPRINT CONFIRMATION</p>
             <h2 id="speaker-identification-title">确认说话人</h2>
             <p>
-              检测到 {props.session.speakerCount} 个 speaker，成功提取 {props.session.voiceprintCount} 个声纹。
-              建议结果仅供参考，保存前请试听确认。
+              检测到 {props.session.speakerCount} 个 speaker，其中 {props.session.voiceprintCount} 个可保存声纹。
+              其他说话人仍可试听并手动标记姓名，但不会写入声纹库。
             </p>
           </div>
           <Waves size={26} />
@@ -97,10 +98,19 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
                   <span className="participant-avatar"><UserRound size={18} /></span>
                   <div>
                     <strong>{candidate.rawSpeaker}</strong>
-                    <small>累计发言 {formatDuration(candidate.totalSpeechMs)}</small>
+                    <small>
+                      {candidate.sampleStatus === "enrollable" ? "可入库样本" : "试听片段"}
+                      {" "}{formatDuration(candidate.totalSpeechMs)}
+                    </small>
                   </div>
                   <button
                     className="button secondary"
+                    disabled={candidate.previewEndMs <= candidate.previewStartMs}
+                    title={candidate.previewEndMs > candidate.previewStartMs
+                      ? candidate.sampleStatus === "enrollable"
+                        ? "试听 CAM++ 筛选后的单人原始录音片段"
+                        : "试听原始录音候选片段，仅供人工确认"
+                      : "没有可试听的原始录音片段"}
                     onClick={() => props.onPreview(
                       candidate.previewStartMs,
                       candidate.previewEndMs,
@@ -116,6 +126,11 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
                     {candidate.matchScore !== null && (
                       <span>相似度 {(candidate.matchScore * 100).toFixed(1)}%</span>
                     )}
+                  </div>
+                )}
+                {candidate.statusMessage && (
+                  <div className={`candidate-status ${candidate.sampleStatus}`}>
+                    <Info size={14} />{candidate.statusMessage}
                   </div>
                 )}
                 {candidate.errorMessage && (
@@ -168,7 +183,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
             onClick={save}
           >
             {props.saving && <LoaderCircle className="spin" size={15} />}
-            保存声纹并更新说话人
+            {hasEnrollableVoiceprints ? "保存可用声纹并更新说话人" : "更新说话人"}
           </button>
         </footer>
       </section>

@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-03
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -53,7 +53,7 @@ flowchart LR
 | Audio pipeline | Capture scope, clock alignment, AEC, mixing, Opus encoding, recovery | Network access or transcript state |
 | Storage | Settings, recording index, provider snapshots, transcription state and results | Audio capture or HTTP retry policy |
 | ASR manager | Queueing, cancellation, provider protocol selection, retry and result normalization | UI rendering or raw credential disclosure |
-| Voiceprint manager | Timestamp range planning, bounded Ogg sampling, anonymous embedding requests, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
+| Voiceprint manager | Timestamp candidate planning, bounded Ogg sampling, clean-range response mapping, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
 
 ## Non-Negotiable Invariants

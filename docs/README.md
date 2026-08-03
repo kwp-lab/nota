@@ -1,7 +1,7 @@
 # Nota Engineering Documentation
 
 - Status: Accepted
-- Last updated: 2026-08-02
+- Last updated: 2026-08-03
 - Owners: Nota maintainers
 
 This directory is the durable engineering context for Nota. It explains the
@@ -55,6 +55,7 @@ uses that contract and what it promises locally.
 | Long-lived architectural choice or reversed decision | New ADR |
 | Versioning or packaging workflow | `releasing.md` |
 | Product-owned policy or compliance workflow | New ADR plus affected specification |
+| Complex business flow or non-trivial state transition | Mermaid diagram in the owning specification |
 
 ## Writing Rules
 
