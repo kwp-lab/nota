@@ -12,6 +12,7 @@ use crate::models::*;
 use crate::paths::AppPaths;
 use crate::state_machine::{RecordingEvent, transition};
 use crate::storage::Storage;
+use crate::voiceprints::VoiceprintManager;
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{Local, Utc};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
@@ -38,6 +39,7 @@ struct AppState {
     storage: Arc<Storage>,
     recorder: Arc<RecordingController>,
     asr: Arc<AsrManager>,
+    voiceprints: Arc<VoiceprintManager>,
     tray_state: Mutex<Option<RecordingState>>,
 }
 
@@ -1385,7 +1387,14 @@ fn format_transcript_text(transcript: &TranscriptDocument) -> String {
                 .map(str::trim)
                 .filter(|speaker| !speaker.is_empty());
             Some(match speaker {
-                Some(speaker) => format!("{speaker}：{text}"),
+                Some(speaker) => {
+                    let display = transcript
+                        .speaker_names
+                        .get(speaker)
+                        .map(String::as_str)
+                        .unwrap_or(speaker);
+                    format!("{display}：{text}")
+                }
                 None => text.to_owned(),
             })
         })
@@ -1395,6 +1404,79 @@ fn format_transcript_text(transcript: &TranscriptDocument) -> String {
     } else {
         lines.join("\r\n")
     }
+}
+
+#[tauri::command]
+async fn identify_recording_speakers(
+    state: State<'_, AppState>,
+    recording_id: String,
+    provider_id: Option<String>,
+) -> std::result::Result<SpeakerIdentificationSession, String> {
+    let manager = Arc::clone(&state.voiceprints);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        manager.identify(&recording_id, provider_id.as_deref())
+    })
+    .await
+    .map_err(|error| format!("说话人识别任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+fn save_speaker_identification(
+    state: State<AppState>,
+    session_id: String,
+    assignments: Vec<SpeakerIdentificationAssignment>,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result((|| {
+        let recording_id = state.voiceprints.save(&session_id, assignments)?;
+        state.storage.transcript(&recording_id)
+    })())
+}
+
+#[tauri::command]
+fn discard_speaker_identification(state: State<AppState>, session_id: String) {
+    state.voiceprints.discard(&session_id);
+}
+
+#[tauri::command]
+fn list_participants(
+    state: State<AppState>,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result(state.voiceprints.list_participants())
+}
+
+#[tauri::command]
+fn rename_participant(
+    state: State<AppState>,
+    id: String,
+    display_name: String,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result((|| {
+        state.storage.rename_participant(&id, &display_name)?;
+        state.voiceprints.list_participants()
+    })())
+}
+
+#[tauri::command]
+fn delete_participant(
+    state: State<AppState>,
+    id: String,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result((|| {
+        state.storage.delete_participant(&id)?;
+        state.voiceprints.list_participants()
+    })())
+}
+
+#[tauri::command]
+fn delete_voiceprint(
+    state: State<AppState>,
+    id: String,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result((|| {
+        state.storage.delete_voiceprint(&id)?;
+        state.voiceprints.list_participants()
+    })())
 }
 
 #[tauri::command]
@@ -1694,6 +1776,8 @@ pub fn run_app() {
                 .is_some_and(|recorder| recorder.is_active())
         }),
     ));
+    let voiceprints =
+        Arc::new(VoiceprintManager::new(Arc::clone(&storage)).expect("无法初始化 Nota 声纹管理"));
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -1707,6 +1791,7 @@ pub fn run_app() {
             storage,
             recorder,
             asr,
+            voiceprints,
             tray_state: Mutex::new(Some(RecordingState::Idle)),
         })
         .setup(|app| {
@@ -1764,6 +1849,13 @@ pub fn run_app() {
             copy_transcript,
             export_transcript,
             reveal_transcript_export,
+            identify_recording_speakers,
+            save_speaker_identification,
+            discard_speaker_identification,
+            list_participants,
+            rename_participant,
+            delete_participant,
+            delete_voiceprint,
             has_active_transcription,
             quit_application,
         ])
@@ -1795,6 +1887,7 @@ mod transcript_export_tests {
             language: Some("zh".into()),
             text: text.into(),
             segments,
+            speaker_names: std::collections::BTreeMap::new(),
             completed_chunks: 1,
             total_chunks: 1,
             error_message: None,
@@ -1847,6 +1940,25 @@ mod transcript_export_tests {
         );
 
         assert_eq!(format_transcript_text(&value), "完整的纯文本转写。");
+    }
+
+    #[test]
+    fn resolved_participant_names_are_used_for_copy_and_export() {
+        let mut value = transcript(
+            "大家好。",
+            vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "大家好。".into(),
+                speaker: Some("speaker_0".into()),
+            }],
+        );
+        value
+            .speaker_names
+            .insert("speaker_0".into(), "小明".into());
+
+        assert_eq!(format_transcript_text(&value), "小明：大家好。");
+        assert_eq!(value.segments[0].speaker.as_deref(), Some("speaker_0"));
     }
 }
 

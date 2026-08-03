@@ -27,6 +27,7 @@ const testState = vi.hoisted(() => ({
   transcript: null as TranscriptDocument | null,
   firstRunComplete: true,
   activeAsrProviderId: null as string | null,
+  voiceprintProviderId: null as string | null,
   providers: [] as Array<{
     id: string;
     name: string;
@@ -71,6 +72,7 @@ vi.mock("./api", () => ({
       toggleShortcut: "Ctrl+Alt+F9",
       stopShortcut: "Ctrl+Alt+F10",
       activeAsrProviderId: testState.activeAsrProviderId,
+      voiceprintProviderId: testState.voiceprintProviderId,
       autoTranscribe: false,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
@@ -88,6 +90,7 @@ vi.mock("./api", () => ({
     exportTranscript: vi.fn(async () => undefined),
     revealTranscriptExport: vi.fn(async () => undefined),
     listAsrProviders: vi.fn(async () => testState.providers),
+    listParticipants: vi.fn(async () => []),
     onSnapshot: vi.fn(
       async (handler: (snapshot: RecordingSnapshot) => void) => {
         testState.snapshotListener = handler;
@@ -120,6 +123,12 @@ vi.mock("./api", () => ({
       device: null,
     })),
     listAsrModels: vi.fn(async () => []),
+    identifyRecordingSpeakers: vi.fn(),
+    saveSpeakerIdentification: vi.fn(),
+    discardSpeakerIdentification: vi.fn(async () => undefined),
+    renameParticipant: vi.fn(async () => []),
+    deleteParticipant: vi.fn(async () => []),
+    deleteVoiceprint: vi.fn(async () => []),
     getTranscript: vi.fn(async () => {
       if (!testState.transcript) throw new Error("没有转写结果");
       return testState.transcript;
@@ -150,6 +159,7 @@ describe("Nota UI states", () => {
     testState.transcript = null;
     testState.firstRunComplete = true;
     testState.activeAsrProviderId = null;
+    testState.voiceprintProviderId = null;
     testState.providers = [];
     testState.targets = [
       {
@@ -399,6 +409,7 @@ describe("Nota UI states", () => {
           speaker: "speaker_0",
         },
       ],
+      speakerNames: {},
       completedChunks: 1,
       totalChunks: 1,
       errorMessage: null,

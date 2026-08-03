@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -182,6 +183,8 @@ pub struct AppSettings {
     pub stop_shortcut: String,
     #[serde(default)]
     pub active_asr_provider_id: Option<String>,
+    #[serde(default)]
+    pub voiceprint_provider_id: Option<String>,
     #[serde(default)]
     pub auto_transcribe: bool,
 }
@@ -466,10 +469,70 @@ pub struct TranscriptDocument {
     pub language: Option<String>,
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
+    #[serde(default)]
+    pub speaker_names: BTreeMap<String, String>,
     pub completed_chunks: u32,
     pub total_chunks: u32,
     pub error_message: Option<String>,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceprintSample {
+    pub id: String,
+    pub participant_id: String,
+    pub embedding_fingerprint: String,
+    pub source_recording_id: Option<String>,
+    pub source_recording_title: Option<String>,
+    pub source_speaker: String,
+    pub preview_start_ms: u64,
+    pub preview_end_ms: u64,
+    pub preview_available: bool,
+    pub speech_duration_ms: u64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantProfile {
+    pub id: String,
+    pub display_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub samples: Vec<VoiceprintSample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerIdentificationCandidate {
+    pub raw_speaker: String,
+    pub total_speech_ms: u64,
+    pub preview_start_ms: u64,
+    pub preview_end_ms: u64,
+    pub embedding_extracted: bool,
+    pub error_message: Option<String>,
+    pub suggested_participant_id: Option<String>,
+    pub suggested_participant_name: Option<String>,
+    pub match_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerIdentificationSession {
+    pub id: String,
+    pub recording_id: String,
+    pub speaker_count: u32,
+    pub voiceprint_count: u32,
+    pub candidates: Vec<SpeakerIdentificationCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerIdentificationAssignment {
+    pub raw_speaker: String,
+    pub participant_id: Option<String>,
+    pub new_display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

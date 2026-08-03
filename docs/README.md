@@ -22,6 +22,9 @@ that are intentionally too detailed for the project README.
    index, lifecycle, and template.
 6. [`releasing.md`](releasing.md) — version, tag, package, and release process.
 
+7. [`speaker-identification.md`](speaker-identification.md) - local
+   voiceprint enrollment, matching, confirmation, and lifecycle rules.
+
 ## Sources of Truth
 
 Documentation has different kinds of authority. Keep them distinct:

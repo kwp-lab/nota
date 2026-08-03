@@ -14,6 +14,7 @@ rejected alternatives, and consequences.
 |---|---|---|
 | [0001](0001-whole-meeting-funasr-jobs.md) | Accepted | Use durable whole-meeting jobs for FunASR |
 | [0002](0002-keep-recording-core-policy-neutral.md) | Accepted | Keep participant-notification policy out of the core application |
+| [0003](0003-local-speaker-identification.md) | Accepted | Keep voiceprints and participant identity in the local Rust backend |
 
 ## Lifecycle
 

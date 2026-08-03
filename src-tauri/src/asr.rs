@@ -33,6 +33,19 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const BATCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
+#[derive(Debug, Clone)]
+pub struct SpeakerEmbeddingCapabilities {
+    pub max_bytes: u64,
+    pub min_seconds: u64,
+    pub max_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpeakerEmbeddingResult {
+    pub fingerprint: String,
+    pub embedding: Vec<f32>,
+}
+
 #[derive(Clone)]
 struct TranscriptionJob {
     app: AppHandle,
@@ -444,6 +457,14 @@ struct BatchCapabilities {
     max_upload_bytes: u64,
     max_audio_seconds: u64,
     audio_formats: Vec<String>,
+    #[serde(default)]
+    speaker_embedding_version: Option<String>,
+    #[serde(default)]
+    speaker_embedding_max_bytes: Option<u64>,
+    #[serde(default)]
+    speaker_embedding_min_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_embedding_max_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -669,6 +690,101 @@ fn fetch_batch_capabilities(credentials: &AsrProviderCredentials) -> Result<Batc
         bail!("FunASR Server 不支持 Nota 所需的批处理协议版本");
     }
     Ok(capabilities)
+}
+
+pub fn fetch_speaker_embedding_capabilities(
+    credentials: &AsrProviderCredentials,
+) -> Result<SpeakerEmbeddingCapabilities> {
+    if credentials.provider.kind != AsrProviderKind::FunAsr {
+        bail!("说话人识别需要 Nota ASR Server（FunASR 类型）");
+    }
+    let capabilities = fetch_batch_capabilities(credentials)?;
+    if capabilities.speaker_embedding_version.as_deref() != Some("1") {
+        bail!("当前 Nota ASR Server 版本不支持说话人声纹提取，请升级服务端");
+    }
+    let max_bytes = capabilities
+        .speaker_embedding_max_bytes
+        .context("服务端未返回声纹样本字节限制")?;
+    let min_seconds = capabilities
+        .speaker_embedding_min_seconds
+        .context("服务端未返回声纹样本最短时长")?;
+    let max_seconds = capabilities
+        .speaker_embedding_max_seconds
+        .context("服务端未返回声纹样本最长时长")?;
+    if max_bytes == 0 || min_seconds == 0 || max_seconds <= min_seconds {
+        bail!("服务端返回了无效的声纹样本限制");
+    }
+    Ok(SpeakerEmbeddingCapabilities {
+        max_bytes,
+        min_seconds,
+        max_seconds,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSpeakerEmbeddingResponse {
+    schema_version: String,
+    embedding_model: String,
+    embedding_fingerprint: String,
+    dimension: usize,
+    embedding: Vec<f32>,
+}
+
+pub fn extract_speaker_embedding(
+    credentials: &AsrProviderCredentials,
+    path: &Path,
+) -> Result<SpeakerEmbeddingResult> {
+    let base = normalize_base_url(&credentials.provider.base_url)?;
+    let file = File::open(path)?;
+    let file_length = std::fs::metadata(path)?.len();
+    let part = Part::reader_with_length(file, file_length)
+        .file_name("nota-speaker.wav")
+        .mime_str("audio/wav")?;
+    let client = http_client()?;
+    let mut request = client
+        .post(format!("{base}/nota/speaker-embeddings"))
+        .timeout(REQUEST_TIMEOUT)
+        .multipart(Form::new().part("file", part));
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    let response = request.send().context("无法连接说话人声纹提取接口")?;
+    let status = response.status();
+    let body = response.text().context("无法读取声纹提取响应")?;
+    if !status.is_success() {
+        bail!(redact_secret(
+            &http_error("说话人声纹提取接口", status, &body),
+            &credentials.api_key
+        ));
+    }
+    let raw: RawSpeakerEmbeddingResponse =
+        serde_json::from_str(&body).context("声纹提取接口返回了无效 JSON")?;
+    if raw.schema_version != "1"
+        || raw.embedding_model != "cam++"
+        || raw.embedding_fingerprint.trim().is_empty()
+        || raw.dimension == 0
+        || raw.embedding.len() != raw.dimension
+        || raw.embedding.iter().any(|value| !value.is_finite())
+    {
+        bail!("声纹提取接口返回了不兼容的向量");
+    }
+    let norm = raw
+        .embedding
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt();
+    if !norm.is_finite() || norm <= f32::EPSILON {
+        bail!("声纹提取接口返回了空向量");
+    }
+    Ok(SpeakerEmbeddingResult {
+        fingerprint: raw.embedding_fingerprint,
+        embedding: raw
+            .embedding
+            .into_iter()
+            .map(|value| value / norm)
+            .collect(),
+    })
 }
 
 fn create_batch_job(
@@ -1451,7 +1567,7 @@ pub fn clean_stale_temporary_chunks(recovery_directory: &Path) -> Result<()> {
     Ok(())
 }
 
-struct OggPcm16Reader {
+pub(crate) struct OggPcm16Reader {
     packets: PacketReader<BufReader<File>>,
     decoder: Decoder,
     pending: VecDeque<i16>,
@@ -1462,7 +1578,7 @@ struct OggPcm16Reader {
 }
 
 impl OggPcm16Reader {
-    fn open(path: &Path, duration_ms: u64) -> Result<Self> {
+    pub(crate) fn open(path: &Path, duration_ms: u64) -> Result<Self> {
         let file =
             File::open(path).with_context(|| format!("无法打开录音文件 {}", path.display()))?;
         Ok(Self {
@@ -1480,7 +1596,7 @@ impl OggPcm16Reader {
         })
     }
 
-    fn read_samples(&mut self, wanted: usize) -> Result<Vec<i16>> {
+    pub(crate) fn read_samples(&mut self, wanted: usize) -> Result<Vec<i16>> {
         while self.pending.len() < wanted && !self.reached_end {
             self.decode_next_packet()?;
         }
@@ -1533,12 +1649,12 @@ impl OggPcm16Reader {
         Ok(())
     }
 
-    fn finished(&self) -> bool {
+    pub(crate) fn finished(&self) -> bool {
         self.reached_end && self.pending.is_empty()
     }
 }
 
-fn write_pcm16_wav(path: &Path, samples: &[i16]) -> Result<()> {
+pub(crate) fn write_pcm16_wav(path: &Path, samples: &[i16]) -> Result<()> {
     let data_size = samples
         .len()
         .checked_mul(2)
@@ -1697,6 +1813,49 @@ mod tests {
         let request = &requests.lock().unwrap()[0];
         assert!(request.starts_with("GET /v1/nota/capabilities "));
         assert!(request.contains("authorization: Bearer local-secret"));
+    }
+
+    #[test]
+    fn discovers_and_calls_the_speaker_embedding_extension() {
+        let (base_url, requests, server) = mock_server(vec![
+            (
+                200,
+                r#"{"batch_transcription_version":"1","upload_chunk_bytes":8388608,"max_upload_bytes":100000000,"max_audio_seconds":14400,"audio_formats":["ogg"],"speaker_embedding_version":"1","speaker_embedding_max_bytes":2097152,"speaker_embedding_min_seconds":5,"speaker_embedding_max_seconds":30}"#,
+            ),
+            (
+                200,
+                r#"{"schema_version":"1","embedding_model":"cam++","embedding_fingerprint":"cam++:test:v1","dimension":2,"audio_duration":5.0,"embedding":[3.0,4.0]}"#,
+            ),
+        ]);
+        let credentials = funasr_credentials(base_url, "local-secret");
+        let capabilities = fetch_speaker_embedding_capabilities(&credentials).unwrap();
+        let wav = test_wav();
+        let embedding = extract_speaker_embedding(&credentials, &wav).unwrap();
+        server.join().unwrap();
+
+        assert_eq!(capabilities.min_seconds, 5);
+        assert_eq!(capabilities.max_seconds, 30);
+        assert_eq!(embedding.fingerprint, "cam++:test:v1");
+        assert_eq!(embedding.embedding, vec![0.6, 0.8]);
+        let requests = requests.lock().unwrap();
+        assert!(requests[1].starts_with("POST /v1/nota/speaker-embeddings "));
+        assert!(requests[1].contains("authorization: Bearer local-secret"));
+        assert!(requests[1].contains("name=\"file\""));
+        std::fs::remove_file(wav).unwrap();
+    }
+
+    #[test]
+    fn rejects_a_server_without_the_speaker_embedding_capability() {
+        let (base_url, _, server) = mock_server(vec![(
+            200,
+            r#"{"batch_transcription_version":"1","upload_chunk_bytes":8388608,"max_upload_bytes":100000000,"max_audio_seconds":14400,"audio_formats":["ogg"]}"#,
+        )]);
+
+        let error =
+            fetch_speaker_embedding_capabilities(&funasr_credentials(base_url, "")).unwrap_err();
+        server.join().unwrap();
+
+        assert!(format!("{error:#}").contains("不支持说话人声纹提取"));
     }
 
     #[test]

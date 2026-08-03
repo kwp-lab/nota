@@ -1,8 +1,9 @@
 use crate::models::{
     AecMode, AppSettings, AsrApiKeyUpdate, AsrProvider, AsrProviderCredentials, AsrProviderKind,
-    AsrProviderProbeRequest, RecordingItem, SaveAsrProviderRequest, StoredTranscriptionChunk,
-    TranscriptDocument, TranscriptSegment, TranscriptionExecution, TranscriptionProgressPhase,
-    TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
+    AsrProviderProbeRequest, ParticipantProfile, RecordingItem, SaveAsrProviderRequest,
+    StoredTranscriptionChunk, TranscriptDocument, TranscriptSegment, TranscriptionExecution,
+    TranscriptionProgressPhase, TranscriptionProgressUnit, TranscriptionProtocol,
+    TranscriptionStatus, TranscriptionSummary, VoiceprintSample,
 };
 use crate::paths::AppPaths;
 use anyhow::{Context, Result, bail};
@@ -10,6 +11,28 @@ use chrono::Utc;
 use parking_lot::Mutex;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct StoredVoiceprintEmbedding {
+    pub participant_id: String,
+    pub display_name: String,
+    pub embedding_fingerprint: String,
+    pub dimension: usize,
+    pub embedding: Vec<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceprintEnrollment {
+    pub raw_speaker: String,
+    pub participant_id: Option<String>,
+    pub new_display_name: Option<String>,
+    pub match_score: Option<f32>,
+    pub embedding_fingerprint: String,
+    pub embedding: Option<Vec<f32>>,
+    pub preview_start_ms: u64,
+    pub preview_end_ms: u64,
+    pub speech_duration_ms: u64,
+}
 
 pub struct Storage {
     connection: Mutex<Connection>,
@@ -93,6 +116,40 @@ impl Storage {
               completed_at TEXT NOT NULL,
               PRIMARY KEY(recording_id, generation, chunk_index)
             );
+            CREATE TABLE IF NOT EXISTS participants (
+              id TEXT PRIMARY KEY,
+              display_name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS voiceprints (
+              id TEXT PRIMARY KEY,
+              participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+              embedding_model TEXT NOT NULL,
+              embedding_fingerprint TEXT NOT NULL,
+              dimension INTEGER NOT NULL,
+              embedding BLOB NOT NULL,
+              source_recording_id TEXT REFERENCES recordings(id) ON DELETE SET NULL,
+              source_generation INTEGER NOT NULL,
+              source_speaker TEXT NOT NULL,
+              preview_start_ms INTEGER NOT NULL,
+              preview_end_ms INTEGER NOT NULL,
+              speech_duration_ms INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS voiceprints_source_unique
+              ON voiceprints(source_recording_id, source_generation, source_speaker)
+              WHERE source_recording_id IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS recording_speaker_assignments (
+              recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+              generation INTEGER NOT NULL,
+              raw_speaker TEXT NOT NULL,
+              participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+              match_score REAL,
+              assignment_source TEXT NOT NULL,
+              confirmed_at TEXT NOT NULL,
+              PRIMARY KEY(recording_id, generation, raw_speaker)
+            );
             ",
         )?;
         ensure_transcription_job_columns(&connection)?;
@@ -138,6 +195,9 @@ impl Storage {
         let active_asr_provider_id = self
             .setting_value(&connection, "active_asr_provider_id")?
             .filter(|value| !value.trim().is_empty());
+        let voiceprint_provider_id = self
+            .setting_value(&connection, "voiceprint_provider_id")?
+            .filter(|value| !value.trim().is_empty());
         let auto_transcribe = self
             .setting_value(&connection, "auto_transcribe")?
             .map(|value| value == "true")
@@ -151,6 +211,7 @@ impl Storage {
             toggle_shortcut,
             stop_shortcut,
             active_asr_provider_id,
+            voiceprint_provider_id,
             auto_transcribe,
         })
     }
@@ -189,6 +250,10 @@ impl Storage {
             (
                 "active_asr_provider_id",
                 settings.active_asr_provider_id.clone().unwrap_or_default(),
+            ),
+            (
+                "voiceprint_provider_id",
+                settings.voiceprint_provider_id.clone().unwrap_or_default(),
             ),
             ("auto_transcribe", settings.auto_transcribe.to_string()),
         ];
@@ -374,6 +439,7 @@ impl Storage {
 
     pub fn save_asr_provider(&self, request: SaveAsrProviderRequest) -> Result<AsrProvider> {
         let now = Utc::now().to_rfc3339();
+        let voiceprint_compatible = request.kind == AsrProviderKind::FunAsr;
         let id = request
             .id
             .filter(|value| !value.trim().is_empty())
@@ -418,6 +484,13 @@ impl Storage {
                 now
             ],
         )?;
+        if !voiceprint_compatible {
+            transaction.execute(
+                "UPDATE settings SET value = ''
+                 WHERE key = 'voiceprint_provider_id' AND value = ?1",
+                [&id],
+            )?;
+        }
         transaction.commit()?;
         connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         drop(connection);
@@ -439,6 +512,10 @@ impl Storage {
         transaction.execute("DELETE FROM asr_providers WHERE id = ?1", [id])?;
         transaction.execute(
             "UPDATE settings SET value = '' WHERE key = 'active_asr_provider_id' AND value = ?1",
+            [id],
+        )?;
+        transaction.execute(
+            "UPDATE settings SET value = '' WHERE key = 'voiceprint_provider_id' AND value = ?1",
             [id],
         )?;
         transaction.execute(
@@ -806,8 +883,8 @@ impl Storage {
     }
 
     pub fn transcript(&self, recording_id: &str) -> Result<TranscriptDocument> {
-        self.connection
-            .lock()
+        let connection = self.connection.lock();
+        let mut document = connection
             .query_row(
                 "SELECT status, provider_name, model_id, language, text, segments_json,
                         completed_chunks, total_chunks, error_message, updated_at
@@ -823,6 +900,7 @@ impl Storage {
                         language: row.get(3)?,
                         text: row.get(4)?,
                         segments: serde_json::from_str(&segments_json).unwrap_or_default(),
+                        speaker_names: std::collections::BTreeMap::new(),
                         completed_chunks: row.get::<_, i64>(6)?.max(0) as u32,
                         total_chunks: row.get::<_, i64>(7)?.max(0) as u32,
                         error_message: row.get(8)?,
@@ -830,7 +908,253 @@ impl Storage {
                     })
                 },
             )
-            .context("该录音还没有转写结果")
+            .context("该录音还没有转写结果")?;
+        let mut statement = connection.prepare(
+            "SELECT a.raw_speaker, p.display_name
+             FROM recording_speaker_assignments a
+             JOIN participants p ON p.id = a.participant_id
+             JOIN transcriptions t
+               ON t.recording_id = a.recording_id AND t.generation = a.generation
+             WHERE a.recording_id = ?1
+             ORDER BY a.raw_speaker",
+        )?;
+        let rows = statement.query_map([recording_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        document.speaker_names = rows.filter_map(std::result::Result::ok).collect();
+        Ok(document)
+    }
+
+    pub fn voiceprint_embeddings(&self) -> Result<Vec<StoredVoiceprintEmbedding>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT v.participant_id, p.display_name, v.embedding_fingerprint,
+                    v.dimension, v.embedding
+             FROM voiceprints v
+             JOIN participants p ON p.id = v.participant_id
+             ORDER BY p.display_name, v.created_at",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let dimension = row.get::<_, i64>(3)?.max(0) as usize;
+            let bytes: Vec<u8> = row.get(4)?;
+            Ok(StoredVoiceprintEmbedding {
+                participant_id: row.get(0)?,
+                display_name: row.get(1)?,
+                embedding_fingerprint: row.get(2)?,
+                dimension,
+                embedding: decode_embedding(&bytes, dimension).unwrap_or_default(),
+            })
+        })?;
+        Ok(rows
+            .filter_map(std::result::Result::ok)
+            .filter(|sample| sample.embedding.len() == sample.dimension)
+            .collect())
+    }
+
+    pub fn list_participants(&self) -> Result<Vec<ParticipantProfile>> {
+        let connection = self.connection.lock();
+        let mut participants_statement = connection.prepare(
+            "SELECT id, display_name, created_at, updated_at
+             FROM participants ORDER BY display_name COLLATE NOCASE",
+        )?;
+        let participant_rows = participants_statement.query_map([], |row| {
+            Ok(ParticipantProfile {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+                samples: Vec::new(),
+            })
+        })?;
+        let mut participants = participant_rows
+            .filter_map(std::result::Result::ok)
+            .collect::<Vec<_>>();
+
+        let mut sample_statement = connection.prepare(
+            "SELECT v.id, v.participant_id, v.embedding_fingerprint,
+                    v.source_recording_id, r.title, v.source_speaker,
+                    v.preview_start_ms, v.preview_end_ms, v.speech_duration_ms,
+                    v.created_at, r.path
+             FROM voiceprints v
+             LEFT JOIN recordings r ON r.id = v.source_recording_id
+             ORDER BY v.created_at DESC",
+        )?;
+        let sample_rows = sample_statement.query_map([], |row| {
+            let source_recording_id: Option<String> = row.get(3)?;
+            let recording_path: Option<String> = row.get(10)?;
+            Ok(VoiceprintSample {
+                id: row.get(0)?,
+                participant_id: row.get(1)?,
+                embedding_fingerprint: row.get(2)?,
+                source_recording_id,
+                source_recording_title: row.get(4)?,
+                source_speaker: row.get(5)?,
+                preview_start_ms: row.get::<_, i64>(6)?.max(0) as u64,
+                preview_end_ms: row.get::<_, i64>(7)?.max(0) as u64,
+                preview_available: recording_path
+                    .as_deref()
+                    .is_some_and(|path| Path::new(path).is_file()),
+                speech_duration_ms: row.get::<_, i64>(8)?.max(0) as u64,
+                created_at: row.get(9)?,
+            })
+        })?;
+        let samples = sample_rows
+            .filter_map(std::result::Result::ok)
+            .collect::<Vec<_>>();
+        for participant in &mut participants {
+            participant.samples = samples
+                .iter()
+                .filter(|sample| sample.participant_id == participant.id)
+                .cloned()
+                .collect();
+        }
+        Ok(participants)
+    }
+
+    pub fn rename_participant(&self, id: &str, display_name: &str) -> Result<()> {
+        let display_name = display_name.trim();
+        if display_name.is_empty() {
+            bail!("说话人姓名不能为空");
+        }
+        let changed = self.connection.lock().execute(
+            "UPDATE participants SET display_name = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, display_name, Utc::now().to_rfc3339()],
+        )?;
+        if changed == 0 {
+            bail!("找不到该说话人");
+        }
+        Ok(())
+    }
+
+    pub fn delete_participant(&self, id: &str) -> Result<()> {
+        let changed = self
+            .connection
+            .lock()
+            .execute("DELETE FROM participants WHERE id = ?1", [id])?;
+        if changed == 0 {
+            bail!("找不到该说话人");
+        }
+        Ok(())
+    }
+
+    pub fn delete_voiceprint(&self, id: &str) -> Result<()> {
+        let changed = self
+            .connection
+            .lock()
+            .execute("DELETE FROM voiceprints WHERE id = ?1", [id])?;
+        if changed == 0 {
+            bail!("找不到该声纹样本");
+        }
+        Ok(())
+    }
+
+    pub fn save_speaker_identification(
+        &self,
+        recording_id: &str,
+        generation: u32,
+        enrollments: &[VoiceprintEnrollment],
+    ) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "DELETE FROM recording_speaker_assignments
+             WHERE recording_id = ?1 AND generation = ?2",
+            params![recording_id, generation],
+        )?;
+        for enrollment in enrollments {
+            let participant_id = if let Some(id) = enrollment.participant_id.as_deref() {
+                let exists = transaction
+                    .query_row("SELECT 1 FROM participants WHERE id = ?1", [id], |_| Ok(()))
+                    .optional()?
+                    .is_some();
+                if !exists {
+                    bail!("选择的说话人已经不存在");
+                }
+                id.to_owned()
+            } else if let Some(name) = enrollment
+                .new_display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            {
+                if let Some(existing) = transaction
+                    .query_row(
+                        "SELECT id FROM participants WHERE display_name = ?1 COLLATE NOCASE",
+                        [name],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?
+                {
+                    existing
+                } else {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    transaction.execute(
+                        "INSERT INTO participants(id, display_name, created_at, updated_at)
+                         VALUES(?1, ?2, ?3, ?3)",
+                        params![id, name, now],
+                    )?;
+                    id
+                }
+            } else {
+                continue;
+            };
+            transaction.execute(
+                "INSERT INTO recording_speaker_assignments
+                 (recording_id, generation, raw_speaker, participant_id,
+                  match_score, assignment_source, confirmed_at)
+                 VALUES(?1, ?2, ?3, ?4, ?5, 'confirmed', ?6)",
+                params![
+                    recording_id,
+                    generation,
+                    enrollment.raw_speaker,
+                    participant_id,
+                    enrollment.match_score,
+                    now,
+                ],
+            )?;
+            let Some(embedding) = enrollment.embedding.as_deref() else {
+                continue;
+            };
+            if embedding.is_empty() || embedding.iter().any(|value| !value.is_finite()) {
+                bail!("声纹向量无效");
+            }
+            transaction.execute(
+                "INSERT INTO voiceprints
+                 (id, participant_id, embedding_model, embedding_fingerprint,
+                  dimension, embedding, source_recording_id, source_generation,
+                  source_speaker, preview_start_ms, preview_end_ms,
+                  speech_duration_ms, created_at)
+                 VALUES(?1, ?2, 'cam++', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 ON CONFLICT(source_recording_id, source_generation, source_speaker)
+                 WHERE source_recording_id IS NOT NULL DO UPDATE SET
+                   participant_id = excluded.participant_id,
+                   embedding_model = excluded.embedding_model,
+                   embedding_fingerprint = excluded.embedding_fingerprint,
+                   dimension = excluded.dimension,
+                   embedding = excluded.embedding,
+                   preview_start_ms = excluded.preview_start_ms,
+                   preview_end_ms = excluded.preview_end_ms,
+                   speech_duration_ms = excluded.speech_duration_ms,
+                   created_at = excluded.created_at",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    participant_id,
+                    enrollment.embedding_fingerprint,
+                    embedding.len() as i64,
+                    encode_embedding(embedding),
+                    recording_id,
+                    generation,
+                    enrollment.raw_speaker,
+                    enrollment.preview_start_ms.min(i64::MAX as u64) as i64,
+                    enrollment.preview_end_ms.min(i64::MAX as u64) as i64,
+                    enrollment.speech_duration_ms.min(i64::MAX as u64) as i64,
+                    now,
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn transcription_chunks(
@@ -921,6 +1245,28 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
         recovered: row.get::<_, i32>(6)? != 0,
         transcription,
     })
+}
+
+fn encode_embedding(values: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn decode_embedding(bytes: &[u8], dimension: usize) -> Option<Vec<f32>> {
+    if dimension == 0 || bytes.len() != dimension.checked_mul(std::mem::size_of::<f32>())? {
+        return None;
+    }
+    let values = bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect::<Vec<_>>();
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(values)
 }
 
 fn provider_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AsrProvider> {
@@ -1114,6 +1460,102 @@ mod tests {
             model_id: "draft-model".into(),
             api_key,
         }
+    }
+
+    #[test]
+    fn voiceprints_resolve_names_without_rewriting_raw_segments() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths().default_recordings.join("meeting.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        storage
+            .insert_recording(&RecordingItem {
+                id: "meeting".into(),
+                title: "产品周会".into(),
+                path: recording_path.to_string_lossy().into_owned(),
+                created_at: "2026-08-02T00:00:00Z".into(),
+                duration_ms: 10_000,
+                size_bytes: 5,
+                recovered: false,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Clear))
+            .unwrap();
+        let generation = storage.begin_transcription("meeting", &provider).unwrap();
+        storage
+            .complete_transcription(
+                "meeting",
+                generation,
+                "大家好",
+                &[TranscriptSegment {
+                    start_ms: 0,
+                    end_ms: 6_000,
+                    text: "大家好".into(),
+                    speaker: Some("speaker_0".into()),
+                }],
+                Some("zh"),
+            )
+            .unwrap();
+        storage
+            .save_speaker_identification(
+                "meeting",
+                generation,
+                &[VoiceprintEnrollment {
+                    raw_speaker: "speaker_0".into(),
+                    participant_id: None,
+                    new_display_name: Some("小明".into()),
+                    match_score: None,
+                    embedding_fingerprint: "cam++:test:v1".into(),
+                    embedding: Some(vec![0.6, 0.8]),
+                    preview_start_ms: 0,
+                    preview_end_ms: 6_000,
+                    speech_duration_ms: 6_000,
+                }],
+            )
+            .unwrap();
+
+        let transcript = storage.transcript("meeting").unwrap();
+        assert_eq!(transcript.segments[0].speaker.as_deref(), Some("speaker_0"));
+        assert_eq!(transcript.speaker_names.get("speaker_0").unwrap(), "小明");
+        let profiles = storage.list_participants().unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].samples.len(), 1);
+        assert!(profiles[0].samples[0].preview_available);
+        let embeddings = storage.voiceprint_embeddings().unwrap();
+        assert_eq!(embeddings[0].embedding, vec![0.6, 0.8]);
+
+        storage
+            .rename_participant(&profiles[0].id, "小明同学")
+            .unwrap();
+        assert_eq!(
+            storage
+                .transcript("meeting")
+                .unwrap()
+                .speaker_names
+                .get("speaker_0")
+                .unwrap(),
+            "小明同学"
+        );
+        storage
+            .delete_voiceprint(&profiles[0].samples[0].id)
+            .unwrap();
+        assert_eq!(storage.list_participants().unwrap()[0].samples.len(), 0);
+        assert_eq!(
+            storage.transcript("meeting").unwrap().speaker_names.len(),
+            1
+        );
+        storage.delete_participant(&profiles[0].id).unwrap();
+        assert!(
+            storage
+                .transcript("meeting")
+                .unwrap()
+                .speaker_names
+                .is_empty()
+        );
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn migration_schema(connection: &Connection) {

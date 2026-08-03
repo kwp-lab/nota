@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChevronDown,
   Folder,
+  Fingerprint,
   Headphones,
   Library,
   Mic,
@@ -25,6 +26,7 @@ import {
 import { LevelMeter } from "./components/LevelMeter";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
+import { VoiceprintsWorkspace } from "./components/VoiceprintsWorkspace";
 import {
   enqueueToast,
   ToastRegion,
@@ -40,6 +42,7 @@ import type {
   CaptureSelection,
   CaptureTarget,
   LevelEvent,
+  ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
   TranscriptDocument,
@@ -67,6 +70,7 @@ const defaultSettings: AppSettings = {
   toggleShortcut: "Ctrl+Alt+F9",
   stopShortcut: "Ctrl+Alt+F10",
   activeAsrProviderId: null,
+  voiceprintProviderId: null,
   autoTranscribe: false,
 };
 
@@ -86,7 +90,7 @@ const followDefaultDeviceLabel = (device?: AudioDevice) =>
 
 type CaptureMode = "process" | "system";
 type StartRequestMode = CaptureMode | "current";
-type AppPage = "recorder" | "recordings" | "settings";
+type AppPage = "recorder" | "recordings" | "voiceprints" | "settings";
 
 export default function App() {
   const [targets, setTargets] = useState<CaptureTarget[]>([]);
@@ -102,6 +106,8 @@ export default function App() {
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [recoverable, setRecoverable] = useState<RecordingItem[]>([]);
   const [providers, setProviders] = useState<AsrProvider[]>([]);
+  const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
   const [page, setPage] = useState<AppPage>("recorder");
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptDocument | null>(null);
@@ -202,6 +208,17 @@ export default function App() {
     return next;
   }, []);
 
+  const refreshParticipants = useCallback(async () => {
+    setParticipantsLoading(true);
+    try {
+      const next = await api.listParticipants();
+      setParticipants(next);
+      return next;
+    } finally {
+      setParticipantsLoading(false);
+    }
+  }, []);
+
   const applyCaptureTargets = useCallback((nextTargets: CaptureTarget[]) => {
     const selected = resolveCaptureTarget(
       nextTargets,
@@ -257,8 +274,9 @@ export default function App() {
       api.getSnapshot(),
       api.getAppVersion().catch(() => "未知"),
       api.listAsrProviders(),
+      api.listParticipants(),
     ])
-      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders]) => {
+      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedParticipants]) => {
         if (!mounted) return;
         applyCaptureTargets(targetList);
         setDevices(deviceList);
@@ -273,6 +291,7 @@ export default function App() {
         applySnapshot(current);
         setAppVersion(version);
         setProviders(savedProviders);
+        setParticipants(savedParticipants);
         await refreshLibrary();
         unlistenSnapshot = await api.onSnapshot(applySnapshot);
         unlistenLevels = await api.onLevels(setLevels);
@@ -557,7 +576,12 @@ export default function App() {
 
   const saveProvider = async (request: Parameters<typeof api.saveAsrProvider>[0]) => {
     const saved = await api.saveAsrProvider(request);
-    await refreshProviders();
+    const [nextSettings] = await Promise.all([api.getSettings(), refreshProviders()]);
+    setSettings(nextSettings);
+    setDraftSettings((current) => ({
+      ...current,
+      voiceprintProviderId: nextSettings.voiceprintProviderId,
+    }));
     return saved;
   };
 
@@ -571,11 +595,27 @@ export default function App() {
         current.activeAsrProviderId === id
           ? nextSettings.activeAsrProviderId
           : current.activeAsrProviderId,
+      voiceprintProviderId:
+        current.voiceprintProviderId === id
+          ? nextSettings.voiceprintProviderId
+          : current.voiceprintProviderId,
       autoTranscribe:
         current.activeAsrProviderId === id
           ? nextSettings.autoTranscribe
           : current.autoTranscribe,
     }));
+  };
+
+  const setVoiceprintProvider = async (id: string | null) => {
+    const next = { ...settings, voiceprintProviderId: id };
+    try {
+      await api.saveSettings(next);
+      setSettings(next);
+      setDraftSettings((current) => ({ ...current, voiceprintProviderId: id }));
+      showToast("success", id ? "声纹提取服务已更新" : "已清除声纹提取服务");
+    } catch (error) {
+      showError(error);
+    }
   };
 
   const updateTranscriptionSummary = (
@@ -710,6 +750,13 @@ export default function App() {
           {recoverable.length > 0 && <b>{recoverable.length}</b>}
         </button>
         <button
+          className={`sidebar-item ${page === "voiceprints" ? "active" : ""}`}
+          onClick={() => navigateTo("voiceprints")}
+        >
+          <Fingerprint size={20} />
+          <span>声纹管理</span>
+        </button>
+        <button
           className={`sidebar-item sidebar-settings ${page === "settings" ? "active" : ""}`}
           aria-label="设置"
           onClick={() => navigateTo("settings")}
@@ -723,14 +770,22 @@ export default function App() {
         <header className="topbar">
           <div>
             <strong>
-              {page === "recorder" ? "录音" : page === "recordings" ? "录音记录" : "设置"}
+              {page === "recorder"
+                ? "录音"
+                : page === "recordings"
+                  ? "录音记录"
+                  : page === "voiceprints"
+                    ? "声纹管理"
+                    : "设置"}
             </strong>
             <span>
               {page === "recorder"
                 ? "捕捉会议声音与麦克风"
                 : page === "recordings"
                   ? "播放录音并查看文字转写"
-                  : "管理录音偏好与语音转写服务"}
+                  : page === "voiceprints"
+                    ? "管理本地参会人姓名与声纹样本"
+                    : "管理录音偏好与语音转写服务"}
             </span>
           </div>
           <span className="local-pill">本地优先</span>
@@ -947,6 +1002,11 @@ export default function App() {
           transcriptLoading={transcriptLoading}
           recordingActive={isActive(snapshot.state)}
           hasProvider={!!settings.activeAsrProviderId}
+          hasVoiceprintProvider={providers.some(
+            (provider) => provider.id === settings.voiceprintProviderId
+              && provider.kind === "funAsr",
+          )}
+          participants={participants}
           onSelect={setSelectedRecordingId}
           onReturnToRecorder={() => navigateTo("recorder")}
           onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
@@ -961,6 +1021,18 @@ export default function App() {
               .catch(showError)
           }
           onExportTranscript={(id, title) => void exportTranscript(id, title)}
+          onIdentifySpeakers={(id) =>
+            api.identifyRecordingSpeakers(id, settings.voiceprintProviderId)
+          }
+          onSaveSpeakerIdentification={async (sessionId, assignments) => {
+            const updated = await api.saveSpeakerIdentification(sessionId, assignments);
+            setTranscript(updated);
+            await refreshParticipants();
+            showToast("success", "声纹与当前会议的说话人姓名已保存");
+          }}
+          onDiscardSpeakerIdentification={(sessionId) => {
+            void api.discardSpeakerIdentification(sessionId);
+          }}
           onReveal={(id) => void api.revealRecording(id).catch(showError)}
           onDelete={(id) => {
             if (!confirm("将此录音移入回收站？")) return;
@@ -994,6 +1066,41 @@ export default function App() {
               .catch(showError);
           }}
         />
+        )}
+
+        {page === "voiceprints" && (
+          <VoiceprintsWorkspace
+            participants={participants}
+            providers={providers}
+            providerId={settings.voiceprintProviderId}
+            loading={participantsLoading}
+            onProviderChange={(id) => void setVoiceprintProvider(id)}
+            onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
+            onError={(message) => showToast("error", message)}
+            onRename={(id, displayName) => {
+              void api
+                .renameParticipant(id, displayName)
+                .then(setParticipants)
+                .then(() => selectedRecordingId
+                  ? api.getTranscript(selectedRecordingId).then(setTranscript).catch(() => undefined)
+                  : undefined)
+                .catch(showError);
+            }}
+            onDeleteParticipant={(id) => {
+              if (!confirm("删除这个参会人？历史会议将恢复显示原始 speaker 标签，声纹样本也会删除。")) return;
+              void api
+                .deleteParticipant(id)
+                .then(setParticipants)
+                .then(() => selectedRecordingId
+                  ? api.getTranscript(selectedRecordingId).then(setTranscript).catch(() => undefined)
+                  : undefined)
+                .catch(showError);
+            }}
+            onDeleteSample={(id) => {
+              if (!confirm("删除这个声纹样本？参会人姓名和历史会议映射会保留。")) return;
+              void api.deleteVoiceprint(id).then(setParticipants).catch(showError);
+            }}
+          />
         )}
 
         {page === "settings" && (

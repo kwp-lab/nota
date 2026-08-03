@@ -11,6 +11,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Added a custom recording-list context menu with rename, recycle-bin, and
   permanent-delete actions matching the recording detail menu.
+- Added explicit post-transcription speaker identification with bounded
+  CAM++ sample extraction, conservative local voiceprint matching, a preview
+  and name-confirmation dialog, and generation-scoped meeting assignments.
+- Added a local **Voiceprints** workspace for choosing an independent Nota ASR
+  Server, replaying available source segments, renaming participants, and
+  deleting participants or individual samples.
 
 ### Changed
 
@@ -21,6 +27,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   includes provider speaker labels as `speaker_N：text` lines when available.
 - Extended the successful TXT export notification with an eight-second
   **Open folder** action.
+- Resolved confirmed participant names consistently in transcript details,
+  clipboard copying, and TXT export while preserving raw `speaker_N` values.
 
 ### Fixed
 
