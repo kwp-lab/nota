@@ -1,7 +1,7 @@
 # Recording and Transcription Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-03
+- Last updated: 2026-08-04
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
@@ -53,6 +53,7 @@ There is at most one current row per recording. Important fields are:
 | `generation` | Monotonic local attempt number |
 | `provider_id` | Provider used to resolve current credentials |
 | `provider_name`, `model_id` | Snapshot used for stable display and execution |
+| `speaker_count` | Nullable per-generation FunASR whole-meeting clustering constraint |
 | `status` | Local lifecycle status |
 | `protocol` | `nota_batch_v1` or `legacy_chunks` |
 | `remote_job_id` | Current FunASR server task, if acknowledged |
@@ -78,8 +79,8 @@ deletion removes assignments and nulls voiceprint source references, leaving
 the embedding usable but its preview unavailable.
 
 Beginning a new transcription increments `generation`, snapshots the selected
-provider, creates a new idempotency key, resets execution progress, and removes
-legacy chunk checkpoints. Previous transcript text may remain visible while a
+provider and optional FunASR speaker count, creates a new idempotency key,
+resets execution progress, and removes legacy chunk checkpoints. Previous transcript text may remain visible while a
 replacement is in progress, but completion atomically replaces the final
 result fields.
 
@@ -159,10 +160,11 @@ columns are added at database open:
 - `progress_phase`;
 - `progress_current`;
 - `progress_total`;
-- `progress_unit`.
+- `progress_unit`;
+- `speaker_count`.
 
 Existing rows default to `legacy_chunks` so previously completed or resumable
-work preserves its original semantics. A migration must not reinterpret old
+work preserves its original semantics; their speaker count remains null. A migration must not reinterpret old
 independent chunks as a meeting-wide speaker scope.
 
 Rust and TypeScript serialization names are part of the Tauri IPC contract.

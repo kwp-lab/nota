@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RecordingItem, TranscriptDocument } from "../types";
+import type { AsrProviderKind, RecordingItem, TranscriptDocument } from "../types";
 import "../styles.css";
 import { RecordingsWorkspace } from "./RecordingsWorkspace";
 
@@ -22,6 +22,7 @@ const completed: RecordingItem = {
     totalChunks: 1,
     providerName: "Local FunASR",
     modelId: "sensevoice",
+    speakerCount: null,
     errorMessage: null,
     hasText: true,
     protocol: "legacy_chunks",
@@ -72,6 +73,7 @@ const renderWorkspace = (
   items: RecordingItem[] = [completed, failed],
   selectedId: string | null = completed.id,
   document: TranscriptDocument | null = transcript,
+  activeProviderKind: AsrProviderKind | null = "funAsr",
 ) => {
   const actions = {
     onSelect: vi.fn(),
@@ -102,6 +104,7 @@ const renderWorkspace = (
       transcriptLoading={false}
       recordingActive={false}
       hasProvider
+      activeProviderKind={activeProviderKind}
       hasVoiceprintProvider
       participants={[]}
       {...actions}
@@ -156,6 +159,44 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续转写" }));
     expect(failedActions.onResumeTranscription).toHaveBeenCalledWith(failed.id);
     expect(screen.getByText("服务暂时不可用")).toBeInTheDocument();
+  });
+
+  it("asks for FunASR speaker options before manual retranscription", () => {
+    const actions = renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
+
+    expect(screen.getByRole("dialog", { name: "重新转写" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /指定人数/ }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "说话人数" }), {
+      target: { value: "3" },
+    });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {
+      name: "重新转写",
+    }));
+
+    expect(actions.onStartTranscription).toHaveBeenCalledWith(completed.id, 3);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps OpenAI-compatible retranscription as a one-click action", () => {
+    const actions = renderWorkspace(undefined, undefined, undefined, "openAiCompatible");
+    fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
+
+    expect(actions.onStartTranscription).toHaveBeenCalledWith(completed.id, null);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows the snapshotted speaker-count mode for batch jobs", () => {
+    const specified: RecordingItem = {
+      ...completed,
+      transcription: {
+        ...completed.transcription!,
+        protocol: "nota_batch_v1",
+        speakerCount: 3,
+      },
+    };
+    renderWorkspace([specified], specified.id);
+    expect(screen.getByText(/指定 3 人/)).toBeInTheDocument();
   });
 
   it("shows whole-meeting upload and server processing progress for FunASR", () => {

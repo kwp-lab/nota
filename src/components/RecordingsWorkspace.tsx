@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AsrProviderKind,
   ParticipantProfile,
   RecordingItem,
   SpeakerIdentificationAssignment,
@@ -28,6 +29,7 @@ import type {
   TranscriptionSummary,
 } from "../types";
 import { SpeakerIdentificationModal } from "./SpeakerIdentificationModal";
+import { TranscriptionOptionsModal } from "./TranscriptionOptionsModal";
 
 interface RecordingsWorkspaceProps {
   items: RecordingItem[];
@@ -37,13 +39,14 @@ interface RecordingsWorkspaceProps {
   transcriptLoading: boolean;
   recordingActive: boolean;
   hasProvider: boolean;
+  activeProviderKind: AsrProviderKind | null;
   hasVoiceprintProvider: boolean;
   participants: ParticipantProfile[];
   onSelect: (id: string) => void;
   onReturnToRecorder: () => void;
   onPreparePlayback: (id: string) => Promise<string>;
   onPlaybackError: (message: string) => void;
-  onStartTranscription: (id: string) => void;
+  onStartTranscription: (id: string, speakerCount: number | null) => void;
   onResumeTranscription: (id: string) => void;
   onCancelTranscription: (id: string) => void;
   onCopyTranscript: (id: string) => void;
@@ -176,6 +179,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [identification, setIdentification] = useState<SpeakerIdentificationSession | null>(null);
   const [identificationLoading, setIdentificationLoading] = useState(false);
   const [identificationSaving, setIdentificationSaving] = useState(false);
+  const [transcriptionOptions, setTranscriptionOptions] = useState<{
+    recordingId: string;
+    recordingTitle: string;
+    retranscription: boolean;
+  } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previewEndMsRef = useRef<number | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -315,6 +323,22 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     } finally {
       setIdentificationLoading(false);
     }
+  };
+
+  const requestTranscription = (item: RecordingItem, retranscription: boolean) => {
+    if (props.activeProviderKind === "funAsr") {
+      setTranscriptionOptions({
+        recordingId: item.id,
+        recordingTitle: item.title,
+        retranscription,
+      });
+      return;
+    }
+    if (props.activeProviderKind === "openAiCompatible") {
+      props.onStartTranscription(item.id, null);
+      return;
+    }
+    props.onPlaybackError("请先在设置中选择可用的语音转写服务");
   };
 
   const openContextMenu = (
@@ -513,7 +537,14 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   </span>
                 )}
                 {transcription?.providerName && (
-                  <small>{transcription.providerName} · {transcription.modelId}</small>
+                  <small>
+                    {transcription.providerName} · {transcription.modelId}
+                    {transcription.protocol === "nota_batch_v1"
+                      ? ` · ${transcription.speakerCount === null
+                        ? "自动判断人数"
+                        : `指定 ${transcription.speakerCount} 人`}`
+                      : ""}
+                  </small>
                 )}
               </div>
               <div className="transcript-actions">
@@ -546,14 +577,14 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                         : <Fingerprint size={15} />}
                       说话人识别
                     </button>
-                    <button className="text-button" onClick={() => props.onStartTranscription(selected.id)}>重新转写</button>
+                    <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
                   </>
                 ) : (
                   <button
                     className="button primary"
                     disabled={!props.hasProvider}
                     title={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
-                    onClick={() => props.onStartTranscription(selected.id)}
+                    onClick={() => requestTranscription(selected, false)}
                   >
                     <Sparkles size={15} />开始转写
                   </button>
@@ -673,6 +704,18 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               .then(() => setIdentification(null))
               .catch((error) => props.onPlaybackError(String(error)))
               .finally(() => setIdentificationSaving(false));
+          }}
+        />
+      )}
+      {transcriptionOptions && (
+        <TranscriptionOptionsModal
+          recordingTitle={transcriptionOptions.recordingTitle}
+          retranscription={transcriptionOptions.retranscription}
+          onCancel={() => setTranscriptionOptions(null)}
+          onConfirm={(speakerCount) => {
+            const recordingId = transcriptionOptions.recordingId;
+            setTranscriptionOptions(null);
+            props.onStartTranscription(recordingId, speakerCount);
           }}
         />
       )}

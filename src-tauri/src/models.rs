@@ -424,6 +424,7 @@ pub struct TranscriptionSummary {
     pub total_chunks: u32,
     pub provider_name: String,
     pub model_id: String,
+    pub speaker_count: Option<u32>,
     pub error_message: Option<String>,
     pub has_text: bool,
     pub protocol: TranscriptionProtocol,
@@ -457,6 +458,7 @@ pub struct TranscriptionExecution {
     pub protocol: TranscriptionProtocol,
     pub remote_job_id: Option<String>,
     pub idempotency_key: String,
+    pub speaker_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -177,6 +177,7 @@ export interface TranscriptionSummary {
   totalChunks: number;
   providerName: string;
   modelId: string;
+  speakerCount: number | null;
   errorMessage: string | null;
   hasText: boolean;
   protocol: TranscriptionProtocol;

@@ -345,7 +345,7 @@ export default function App() {
     void refreshLibrary()
       .then(async () => {
         if (settings.autoTranscribe && settings.activeAsrProviderId) {
-          await api.startTranscription(recordingId, settings.activeAsrProviderId);
+          await api.startTranscription(recordingId, settings.activeAsrProviderId, null);
           showToast("success", "录音已保存，并已加入语音转写队列。");
         } else {
           showToast(
@@ -629,11 +629,15 @@ export default function App() {
     );
   };
 
-  const startTranscription = async (recordingId: string) => {
+  const startTranscription = async (
+    recordingId: string,
+    speakerCount: number | null,
+  ) => {
     try {
       const summary = await api.startTranscription(
         recordingId,
         settings.activeAsrProviderId,
+        speakerCount,
       );
       updateTranscriptionSummary(recordingId, summary);
     } catch (error) {
@@ -1001,7 +1005,12 @@ export default function App() {
           transcript={transcript}
           transcriptLoading={transcriptLoading}
           recordingActive={isActive(snapshot.state)}
-          hasProvider={!!settings.activeAsrProviderId}
+          hasProvider={providers.some(
+            (provider) => provider.id === settings.activeAsrProviderId,
+          )}
+          activeProviderKind={providers.find(
+            (provider) => provider.id === settings.activeAsrProviderId,
+          )?.kind ?? null}
           hasVoiceprintProvider={providers.some(
             (provider) => provider.id === settings.voiceprintProviderId
               && provider.kind === "funAsr",
@@ -1011,7 +1020,9 @@ export default function App() {
           onReturnToRecorder={() => navigateTo("recorder")}
           onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
           onPlaybackError={(message) => showToast("error", message)}
-          onStartTranscription={(id) => void startTranscription(id)}
+          onStartTranscription={(id, speakerCount) =>
+            void startTranscription(id, speakerCount)
+          }
           onResumeTranscription={(id) => void resumeTranscription(id)}
           onCancelTranscription={(id) => void cancelTranscription(id)}
           onCopyTranscript={(id) =>

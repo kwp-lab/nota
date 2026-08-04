@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added per-transcription FunASR speaker-count controls: manual jobs default to
+  automatic detection or accept a known 1–64 count, while automatic jobs remain
+  fully automatic and OpenAI-compatible providers keep their one-click flow.
 - Added a custom recording-list context menu with rename, recycle-bin, and
   permanent-delete actions matching the recording detail menu.
 - Added explicit post-transcription speaker identification with bounded
@@ -20,6 +23,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Persisted the selected FunASR speaker count with each transcription
+  generation so cancellation, restart, resume, and expired remote-job
+  recreation preserve the original clustering constraint.
 - Made `package.json` the unified contributor command entry point, separated
   frontend-only hooks from full Tauri development and build commands, and
   added explicit project-check, raw executable, and Windows release commands.
