@@ -68,10 +68,15 @@ export const api = {
     invoke<AsrConnectionTest>("test_asr_provider", { request }),
   listAsrModels: (request: AsrProviderProbeRequest) =>
     invoke<AsrModel[]>("list_asr_models", { request }),
-  startTranscription: (recordingId: string, providerId?: string | null) =>
+  startTranscription: (
+    recordingId: string,
+    providerId?: string | null,
+    speakerCount: number | null = null,
+  ) =>
     invoke<TranscriptionSummary>("start_transcription", {
       recordingId,
       providerId: providerId ?? null,
+      speakerCount,
     }),
   cancelTranscription: (recordingId: string) =>
     invoke<TranscriptionSummary>("cancel_transcription", { recordingId }),

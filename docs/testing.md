@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-03
+- Last updated: 2026-08-04
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`
@@ -63,6 +63,10 @@ Automated client coverage must include:
 - authenticated batch request construction with a stable idempotency key;
 - migration of old transcription rows to `legacy_chunks`;
 - persistence of remote job identity and generic progress;
+- FunASR manual speaker-count defaults, 1/64 boundaries, invalid input,
+  cancellation, retranscription, and recovery from the persisted snapshot;
+- automatic transcription always using automatic speaker detection and the
+  OpenAI-compatible path remaining a one-click flow;
 - UI rendering for byte upload, server queue, windows, diarization, and
   finalization;
 - speaker-sample-analysis capability discovery, repeated multipart upload,
@@ -106,6 +110,10 @@ scenarios on Windows 11:
    final meeting.
 8. For the four-hour limit, confirm working memory remains bounded by the
    server window and verify disk-full errors are explicit.
+9. With Paraformer, retranscribe a controlled rapid-turn recording once with a
+   known speaker count and once with automatic detection. Confirm the known
+   count reaches whole-meeting clustering, sentence timestamps remain ordered,
+   and automatic mode does not change the response schema.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not

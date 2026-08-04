@@ -1,7 +1,7 @@
 # ASR Integration Specification
 
 - Status: Accepted
-- Last updated: 2026-08-03
+- Last updated: 2026-08-04
 - Owners: Nota desktop and Nota ASR Server maintainers
 - Related code: `src-tauri/src/asr.rs`, `src-tauri/src/models.rs`,
   `src-tauri/src/storage.rs`, `src/components/RecordingsWorkspace.tsx`
@@ -23,9 +23,11 @@ The provider kind selects the protocol when a new local transcription
 generation begins. Existing records migrated from older Nota versions remain
 `legacy_chunks`.
 
-Fun-ASR-Nano, OpenVINO, and realtime transcription are outside this
-specification. They may reuse the durable job protocol later without changing
-the client-visible transcript types.
+The durable protocol is model-independent: SenseVoice, Paraformer, and
+Fun-ASR-Nano may be selected by provider model id while retaining the same
+client-visible transcript types. Model-specific VAD, punctuation, and speaker
+segmentation remain server-owned. OpenVINO and realtime transcription are
+outside this specification.
 
 ## FunASR Capability Gate
 
@@ -67,9 +69,17 @@ For each new FunASR generation, Nota creates a persistent UUID
 }
 ```
 
-Language and speaker count are not currently configurable in the desktop UI.
-The client therefore requests automatic language detection, enables
-diarization, and leaves speaker count unknown.
+Language remains automatic and diarization remains enabled. Before a manual
+FunASR start or retranscription, the desktop asks whether the server should
+detect the speaker count automatically or use a known count from 1 through 64.
+Automatic detection is the default. The selected nullable value is a per-job
+snapshot, not a global preference. Automatic transcription always stores and
+sends `speaker_count=null` without showing the dialog.
+
+OpenAI-compatible manual transcription does not show speaker-count controls
+and rejects a non-null count at the Rust boundary. An incorrect known count can
+merge different speakers or split one speaker; the client validates only the
+1–64 range and does not silently replace an accepted value.
 
 The server-provided upload chunk size is authoritative, with a defensive
 client-side maximum of 16 MiB. Nota also rejects a recording that exceeds the
@@ -84,7 +94,7 @@ sequenceDiagram
     participant DB as Local SQLite
     participant ASR as Nota ASR Server
 
-    UI->>Rust: start_transcription(recordingId)
+    UI->>Rust: start_transcription(recordingId, speakerCount?)
     Rust->>ASR: GET /v1/nota/capabilities
     Rust->>DB: create generation + idempotency key
     Rust->>ASR: POST /v1/nota/transcription-jobs
@@ -176,6 +186,9 @@ remote cancellation. On resume, Nota queries the persisted remote job:
 - existing `cancelled` or `failed` jobs receive `POST resume`;
 - existing `succeeded` jobs fetch their result;
 - missing or expired jobs are recreated and uploaded from byte zero.
+
+The local generation's snapshotted `speaker_count` is reused for every remote
+recreation. Resume never reads a current UI value or a global setting.
 
 ## Result Commit and Cleanup
 

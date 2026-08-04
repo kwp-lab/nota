@@ -26,6 +26,7 @@ const testState = vi.hoisted(() => ({
   recordings: [] as RecordingItem[],
   transcript: null as TranscriptDocument | null,
   firstRunComplete: true,
+  autoTranscribe: false,
   activeAsrProviderId: null as string | null,
   voiceprintProviderId: null as string | null,
   providers: [] as Array<{
@@ -73,7 +74,7 @@ vi.mock("./api", () => ({
       stopShortcut: "Ctrl+Alt+F10",
       activeAsrProviderId: testState.activeAsrProviderId,
       voiceprintProviderId: testState.voiceprintProviderId,
-      autoTranscribe: false,
+      autoTranscribe: testState.autoTranscribe,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
     listRecordings: vi.fn(async () => testState.recordings),
@@ -115,6 +116,21 @@ vi.mock("./api", () => ({
     onRequestExit: vi.fn(async () => () => undefined),
     saveAsrProvider: vi.fn(),
     deleteAsrProvider: vi.fn(async () => undefined),
+    startTranscription: vi.fn(async () => ({
+      status: "queued" as const,
+      completedChunks: 0,
+      totalChunks: 0,
+      providerName: "FunASR",
+      modelId: "paraformer",
+      speakerCount: null,
+      errorMessage: null,
+      hasText: false,
+      protocol: "nota_batch_v1" as const,
+      progressPhase: "queued" as const,
+      progressCurrent: 0,
+      progressTotal: 0,
+      progressUnit: "steps" as const,
+    })),
     testAsrProvider: vi.fn(async () => ({
       reachable: true,
       level: "success",
@@ -158,6 +174,7 @@ describe("Nota UI states", () => {
     testState.recordings = [];
     testState.transcript = null;
     testState.firstRunComplete = true;
+    testState.autoTranscribe = false;
     testState.activeAsrProviderId = null;
     testState.voiceprintProviderId = null;
     testState.providers = [];
@@ -206,6 +223,37 @@ describe("Nota UI states", () => {
       "录音已安全保存",
     );
     expect(vi.mocked(api.stopRecording)).toHaveBeenCalledOnce();
+  });
+
+  it("keeps automatic FunASR transcription on automatic speaker detection", async () => {
+    testState.snapshot = snapshot("recording");
+    testState.autoTranscribe = true;
+    testState.activeAsrProviderId = "funasr";
+    testState.providers = [{
+      id: "funasr",
+      name: "Local FunASR",
+      kind: "funAsr",
+      baseUrl: "http://127.0.0.1:8010/v1",
+      modelId: "paraformer",
+      hasApiKey: false,
+      createdAt: "2026-08-04T00:00:00Z",
+      updatedAt: "2026-08-04T00:00:00Z",
+    }];
+
+    render(<App />);
+
+    await waitFor(() => expect(testState.snapshotListener).not.toBeNull());
+    await waitFor(() => expect(api.listAsrProviders).toHaveBeenCalled());
+    await act(async () => {
+      testState.snapshotListener?.(snapshot("completed"));
+    });
+
+    await waitFor(() => expect(api.startTranscription).toHaveBeenCalledWith(
+      "session",
+      "funasr",
+      null,
+    ));
+    expect(screen.queryByRole("dialog", { name: /转写/ })).not.toBeInTheDocument();
   });
 
   it("shows and deduplicates persistent recording faults received at runtime", async () => {
@@ -374,6 +422,7 @@ describe("Nota UI states", () => {
       totalChunks: 1,
       providerName: "FunASR",
       modelId: "sensevoice",
+      speakerCount: null,
       errorMessage: null,
       hasText: true,
       protocol: "nota_batch_v1" as const,

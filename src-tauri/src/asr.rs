@@ -133,6 +133,7 @@ impl AsrManager {
         app: AppHandle,
         recording_id: &str,
         provider_id: &str,
+        speaker_count: Option<u32>,
     ) -> Result<TranscriptionSummary> {
         self.reserve(recording_id)?;
         let result = (|| {
@@ -141,6 +142,9 @@ impl AsrManager {
                 bail!("录音文件不存在或已被移动");
             }
             let credentials = self.storage.find_asr_provider(provider_id)?;
+            if speaker_count.is_some() && credentials.provider.kind != AsrProviderKind::FunAsr {
+                bail!("只有 FunASR 服务支持指定说话人数");
+            }
             if credentials.provider.kind == AsrProviderKind::FunAsr {
                 fetch_batch_capabilities(&credentials)
                     .context("当前 FunASR Server 不支持整场会议转写，请升级 Nota ASR Server")?;
@@ -152,9 +156,11 @@ impl AsrManager {
                 );
             }
             remove_temporary_chunks(&self.storage.paths().recovery, recording_id)?;
-            let generation = self
-                .storage
-                .begin_transcription(recording_id, &credentials.provider)?;
+            let generation = self.storage.begin_transcription(
+                recording_id,
+                &credentials.provider,
+                speaker_count,
+            )?;
             self.enqueue(app, recording_id, generation)?;
             self.storage.transcription_summary(recording_id)
         })();
@@ -578,6 +584,7 @@ fn process_batch_job(
                     recording_path,
                     actual_size,
                     &execution.idempotency_key,
+                    execution.speaker_count,
                 )?;
                 storage.set_remote_transcription_job(
                     &job.recording_id,
@@ -593,6 +600,7 @@ fn process_batch_job(
                 recording_path,
                 actual_size,
                 &execution.idempotency_key,
+                execution.speaker_count,
             )?;
             storage.set_remote_transcription_job(
                 &job.recording_id,
@@ -929,6 +937,7 @@ fn create_batch_job(
     recording_path: &Path,
     size_bytes: u64,
     idempotency_key: &str,
+    speaker_count: Option<u32>,
 ) -> Result<BatchJobStatus> {
     let file_name = recording_path
         .file_name()
@@ -943,7 +952,7 @@ fn create_batch_job(
         language: "auto",
         response_format: "verbose_json",
         diarization: true,
-        speaker_count: None,
+        speaker_count,
     };
     let client = http_client()?;
     let mut request = client
@@ -2066,6 +2075,7 @@ mod tests {
             &path,
             3,
             "stable-idempotency-key",
+            Some(3),
         )
         .unwrap();
         server.join().unwrap();
@@ -2076,6 +2086,7 @@ mod tests {
         assert!(request.contains("idempotency-key: stable-idempotency-key"));
         assert!(request.contains(r#""diarization":true"#));
         assert!(request.contains(r#""response_format":"verbose_json""#));
+        assert!(request.contains(r#""speaker_count":3"#));
         std::fs::remove_file(path).unwrap();
     }
 

@@ -1278,6 +1278,7 @@ fn start_transcription(
     state: State<AppState>,
     recording_id: String,
     provider_id: Option<String>,
+    speaker_count: Option<u32>,
 ) -> std::result::Result<TranscriptionSummary, String> {
     command_result((|| {
         let provider_id = match provider_id.filter(|value| !value.trim().is_empty()) {
@@ -1288,7 +1289,9 @@ fn start_transcription(
                 .active_asr_provider_id
                 .context("请先在设置中选择默认语音转写服务")?,
         };
-        state.asr.start(app, &recording_id, &provider_id)
+        state
+            .asr
+            .start(app, &recording_id, &provider_id, speaker_count)
     })())
 }
 

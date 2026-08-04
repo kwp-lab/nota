@@ -124,7 +124,7 @@ Open **Settings → Speech transcription**, add one or more providers, and choos
 - **FunASR** for a server on your own computer or LAN;
 - **OpenAI-compatible** for any service implementing the compatible audio-transcription endpoint.
 
-Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
+Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. When manually starting or restarting a FunASR transcript, you can keep automatic speaker detection or specify a known count from 1 to 64; automatic transcription always uses automatic detection. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
 
 Completed transcripts can be copied or exported as UTF-8 TXT. When the provider returns speaker labels, both outputs use one `speaker_N：transcribed text` line per segment, replacing `speaker_N` with a locally confirmed participant name when available; otherwise Nota preserves the provider's plain transcript.
 

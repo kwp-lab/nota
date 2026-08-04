@@ -536,6 +536,62 @@ body { min-width: 980px; min-height: 640px; overflow: hidden; }
   box-shadow: 0 24px 80px rgba(18, 25, 22, 0.24);
 }
 
+.transcription-options-modal {
+  width: min(560px, 100%);
+  overflow: hidden;
+  border: 1px solid #d8d7d1;
+  border-radius: 18px;
+  background: #fbfbf8;
+  box-shadow: 0 24px 80px rgba(18, 25, 22, 0.24);
+}
+
+.transcription-options-modal > header,
+.transcription-options-modal > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px;
+}
+.transcription-options-modal > header { border-bottom: 1px solid #e2e1dc; }
+.transcription-options-modal > footer { justify-content: flex-end; border-top: 1px solid #e2e1dc; }
+.transcription-options-modal h2 { margin: 3px 0 6px; }
+.transcription-options-modal header p:last-child {
+  max-width: 430px;
+  margin: 0;
+  overflow: hidden;
+  color: #696d69;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transcription-options-body { display: grid; gap: 12px; padding: 20px 24px; }
+.transcription-options-body fieldset { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
+.transcription-options-body legend { margin-bottom: 10px; font-weight: 650; }
+.transcription-options-body label {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #deddd7;
+  border-radius: 12px;
+  background: white;
+}
+.transcription-options-body label.selected { border-color: #5a927f; box-shadow: 0 0 0 2px rgba(39, 116, 95, .1); }
+.transcription-options-body label > span { display: grid; gap: 3px; }
+.transcription-options-body label small { color: #717570; }
+.transcription-options-body input[type="number"] {
+  width: 76px;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid #cfcec8;
+  border-radius: 9px;
+}
+.transcription-options-warning { display: flex; align-items: flex-start; gap: 8px; color: #80621e; font-size: 12px; }
+.transcription-options-warning svg { flex: 0 0 auto; }
+.field-error { margin: 0; color: #a9433d; font-size: 12px; }
+
 .speaker-identification-modal > header,
 .speaker-identification-modal > footer {
   display: flex;
