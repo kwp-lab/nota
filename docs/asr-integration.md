@@ -71,15 +71,20 @@ For each new FunASR generation, Nota creates a persistent UUID
 
 Language remains automatic and diarization remains enabled. Before a manual
 FunASR start or retranscription, the desktop asks whether the server should
-detect the speaker count automatically or use a known count from 1 through 64.
-Automatic detection is the default. The selected nullable value is a per-job
-snapshot, not a global preference. Automatic transcription always stores and
-sends `speaker_count=null` without showing the dialog.
+detect the speaker count automatically or use a known count from 1 through 64
+as a safety target. Automatic detection is the default. The selected nullable
+value is a per-job snapshot, not a global preference. Automatic transcription
+always stores and sends `speaker_count=null` without showing the dialog.
 
 OpenAI-compatible manual transcription does not show speaker-count controls
-and rejects a non-null count at the Rust boundary. An incorrect known count can
-merge different speakers or split one speaker; the client validates only the
-1–64 range and does not silently replace an accepted value.
+and rejects a non-null count at the Rust boundary. For FunASR batch jobs, the
+server must prefer over-segmentation to false merging in both modes. A supplied
+count is a target, not an exact output count: the result may contain more
+anonymous speakers when reaching the target would require merging weakly
+similar voices. Automatic and specified-count modes use the same server-owned
+similarity safety line. A target that is too high may split one person into
+multiple labels. The client validates only the 1–64 range and does not silently
+replace an accepted value.
 
 The server-provided upload chunk size is authoritative, with a defensive
 client-side maximum of 16 MiB. Nota also rejects a recording that exceeds the
@@ -203,6 +208,32 @@ Starting a new transcription creates a new local generation and idempotency
 key. Any previous remote job is cleaned up best-effort and must never be reused
 as the new generation.
 
+## Server-Owned Speaker Turn Refinement
+
+For whole-meeting jobs, segment boundaries are server-owned implementation
+details. SenseVoice and Fun-ASR-Nano may return several speaker-labeled
+segments inside one original VAD region when the server can reconcile CAM++
+turns with exact ASR token timestamps. Paraformer continues to use its
+punctuation-sentence strategy.
+
+Nota does not request a second recognition pass, parse CAM++ data, or split
+text locally. It consumes the same `verbose_json 1.0` result and persists the
+finer segments exactly as returned. The server must preserve the original
+transcript text and fall back to its original VAD segment whenever timestamped
+tokens cannot reproduce that segment exactly. Extremely short turns may keep a
+neighboring stable speaker label, and simultaneous speakers remain outside the
+single-speaker segment contract.
+
+Whole-meeting clustering is conservative in both automatic and specified-count
+modes: an updated server may return multiple anonymous labels for one real
+participant rather than merge two weakly related participants into one label.
+Nota must preserve those raw labels independently; local speaker identification
+may bind more than one raw label to the same confirmed participant name.
+
+This behavior does not change batch capability version 1, client SQLite, IPC,
+resume, result commit, or remote cleanup semantics. Existing completed
+transcripts remain unchanged until the user starts a new transcription.
+
 ## OpenAI-Compatible Legacy Flow
 
 The legacy flow remains available only for `openAiCompatible` providers:
@@ -228,6 +259,9 @@ must not be described as meeting-wide identities.
 - `TranscriptDocument` and `TranscriptionSummary` remain provider-independent.
 - Final transcript segments use milliseconds locally and optional anonymous
   speaker labels.
+- Segment boundaries are not stable identifiers. UI actions and local speaker
+  assignments must use the stored generation result rather than assuming one
+  segment per VAD region.
 - Optional speaker identification is a separate post-transcription request.
   It requires `speaker_sample_analysis_version=1`, sends repeated bounded
   candidates for one anonymous speaker to

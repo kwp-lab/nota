@@ -23,9 +23,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Preserved conservative deterministic speaker clusters returned by updated
+  Nota ASR Servers, allowing multiple anonymous labels to resolve to one local
+  participant instead of requiring unsafe cross-window speaker merges.
+- Clarified that a manually supplied speaker count is a safety target and may
+  return additional anonymous speakers rather than force weakly similar people
+  into one label, using the same server-side safety line as automatic mode.
+- Accepted finer meeting-wide speaker turns returned by updated Nota ASR
+  Servers for SenseVoice and Fun-ASR-Nano while keeping the batch protocol,
+  local transcript schema, and existing completed recordings unchanged.
 - Persisted the selected FunASR speaker count with each transcription
   generation so cancellation, restart, resume, and expired remote-job
-  recreation preserve the original clustering constraint.
+  recreation preserve the original clustering safety target.
 - Made `package.json` the unified contributor command entry point, separated
   frontend-only hooks from full Tauri development and build commands, and
   added explicit project-check, raw executable, and Windows release commands.

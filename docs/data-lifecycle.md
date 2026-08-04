@@ -53,7 +53,7 @@ There is at most one current row per recording. Important fields are:
 | `generation` | Monotonic local attempt number |
 | `provider_id` | Provider used to resolve current credentials |
 | `provider_name`, `model_id` | Snapshot used for stable display and execution |
-| `speaker_count` | Nullable per-generation FunASR whole-meeting clustering constraint |
+| `speaker_count` | Nullable per-generation FunASR whole-meeting clustering safety target |
 | `status` | Local lifecycle status |
 | `protocol` | `nota_batch_v1` or `legacy_chunks` |
 | `remote_job_id` | Current FunASR server task, if acknowledged |

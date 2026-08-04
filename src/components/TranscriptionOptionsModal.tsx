@@ -45,7 +45,7 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
               />
               <span>
                 <strong>自动判断</strong>
-                <small>由服务端根据整场会议的声纹自动聚类</small>
+                <small>由服务端保守聚类，允许多拆但避免合并弱相似度声音</small>
               </span>
             </label>
             <label className={mode === "specified" ? "selected" : ""}>
@@ -56,8 +56,8 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
                 onChange={() => setMode("specified")}
               />
               <span>
-                <strong>指定人数</strong>
-                <small>用于已知参会人数的会议，范围为 1–64 人</small>
+                <strong>指定目标人数</strong>
+                <small>用于已知参会人数的会议，范围为 1–64 人；结果可能更多</small>
               </span>
               <input
                 aria-label="说话人数"
@@ -77,7 +77,7 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
           )}
           <div className="transcription-options-warning">
             <AlertTriangle size={17} />
-            <span>指定错误的人数可能导致不同说话人被合并，或同一说话人被拆分。</span>
+            <span>准确性优先：人数仅作为安全聚类目标，相似度不足时不会为凑人数强行合并。</span>
           </div>
         </div>
 
