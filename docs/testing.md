@@ -111,9 +111,19 @@ scenarios on Windows 11:
 8. For the four-hour limit, confirm working memory remains bounded by the
    server window and verify disk-full errors are explicit.
 9. With Paraformer, retranscribe a controlled rapid-turn recording once with a
-   known speaker count and once with automatic detection. Confirm the known
-   count reaches whole-meeting clustering, sentence timestamps remain ordered,
-   and automatic mode does not change the response schema.
+   known speaker-count target and once with automatic detection. Confirm the
+   target reaches whole-meeting clustering, weakly similar speakers are not
+   merged merely to reach it, sentence timestamps remain ordered, and automatic
+   mode does not change the response schema.
+10. With SenseVoice and Fun-ASR-Nano, retranscribe a rapid-turn region that has
+    little silence. Confirm a multi-speaker VAD may become finer segments,
+    concatenated text is unchanged, speaker timestamps remain ordered, and the
+    client needs no protocol or local-database migration.
+11. Use a meeting that produces at least 20 local window centroids. Confirm
+    whole-meeting clustering is deterministic in automatic and specified-count
+    modes, weakly similar people are not merged at a window boundary, a target
+    may return additional safe clusters, and multiple raw labels can still be
+    resolved to one local participant name.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not

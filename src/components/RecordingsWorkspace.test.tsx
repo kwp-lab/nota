@@ -166,7 +166,7 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
 
     expect(screen.getByRole("dialog", { name: "重新转写" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: /指定人数/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /指定目标人数/ }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "说话人数" }), {
       target: { value: "3" },
     });
@@ -196,7 +196,7 @@ describe("RecordingsWorkspace", () => {
       },
     };
     renderWorkspace([specified], specified.id);
-    expect(screen.getByText(/指定 3 人/)).toBeInTheDocument();
+    expect(screen.getByText(/目标 3 人（安全优先）/)).toBeInTheDocument();
   });
 
   it("shows whole-meeting upload and server processing progress for FunASR", () => {

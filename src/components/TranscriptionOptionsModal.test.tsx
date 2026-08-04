@@ -29,7 +29,7 @@ describe("TranscriptionOptionsModal", () => {
 
   it("accepts the 1 and 64 speaker boundaries", () => {
     const { onConfirm } = renderModal();
-    fireEvent.click(screen.getByRole("radio", { name: /指定人数/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /指定目标人数/ }));
     const input = screen.getByRole("spinbutton", { name: "说话人数" });
 
     fireEvent.change(input, { target: { value: "1" } });
@@ -43,7 +43,7 @@ describe("TranscriptionOptionsModal", () => {
 
   it("rejects invalid values and supports cancellation", () => {
     const { onCancel, onConfirm } = renderModal();
-    fireEvent.click(screen.getByRole("radio", { name: /指定人数/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /指定目标人数/ }));
     const input = screen.getByRole("spinbutton", { name: "说话人数" });
     const submit = screen.getByRole("button", { name: "开始转写" });
 
@@ -54,5 +54,12 @@ describe("TranscriptionOptionsModal", () => {
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("explains that a specified count is a safety target", () => {
+    renderModal();
+
+    expect(screen.getByText(/结果可能更多/)).toBeInTheDocument();
+    expect(screen.getByText(/不会为凑人数强行合并/)).toBeInTheDocument();
   });
 });

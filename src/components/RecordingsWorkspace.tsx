@@ -542,7 +542,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                     {transcription.protocol === "nota_batch_v1"
                       ? ` · ${transcription.speakerCount === null
                         ? "自动判断人数"
-                        : `指定 ${transcription.speakerCount} 人`}`
+                        : `目标 ${transcription.speakerCount} 人（安全优先）`}`
                       : ""}
                   </small>
                 )}
