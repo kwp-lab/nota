@@ -12,13 +12,12 @@ const settings: AppSettings = {
   outputDirectory: "C:\\Recordings",
   aecMode: "auto",
   microphoneEnabled: true,
-  consentTemplate: "已告知",
   firstRunComplete: true,
-  recordingNoticeAcknowledged: true,
   shortcutsEnabled: true,
   toggleShortcut: "Ctrl+Alt+F9",
   stopShortcut: "Ctrl+Alt+F10",
   activeAsrProviderId: "lan",
+  voiceprintProviderId: null,
   autoTranscribe: false,
 };
 

@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -32,6 +32,42 @@ const OVERLAP_SAMPLES: usize = ASR_SAMPLE_RATE as usize * 2;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const BATCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+#[derive(Debug, Clone)]
+pub struct SpeakerEmbeddingCapabilities {
+    pub max_bytes: u64,
+    pub analysis_max_files: usize,
+    pub analysis_min_clip_seconds: u64,
+    pub analysis_max_clip_seconds: u64,
+    pub analysis_max_total_seconds: u64,
+    pub analysis_min_accepted_seconds: u64,
+    pub analysis_min_purity: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CleanSpeakerSampleRange {
+    pub file_index: usize,
+    pub start_ms: u64,
+    pub end_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpeakerSampleAnalysisResult {
+    pub outcome: SpeakerSampleAnalysisOutcome,
+    pub fingerprint: String,
+    pub embedding: Option<Vec<f32>>,
+    pub accepted_audio_ms: u64,
+    pub purity_score: f32,
+    pub preview: CleanSpeakerSampleRange,
+    pub accepted_ranges: Vec<CleanSpeakerSampleRange>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerSampleAnalysisOutcome {
+    Enrollable,
+    PreviewOnly,
+}
 
 #[derive(Clone)]
 struct TranscriptionJob {
@@ -97,6 +133,7 @@ impl AsrManager {
         app: AppHandle,
         recording_id: &str,
         provider_id: &str,
+        speaker_count: Option<u32>,
     ) -> Result<TranscriptionSummary> {
         self.reserve(recording_id)?;
         let result = (|| {
@@ -105,6 +142,9 @@ impl AsrManager {
                 bail!("录音文件不存在或已被移动");
             }
             let credentials = self.storage.find_asr_provider(provider_id)?;
+            if speaker_count.is_some() && credentials.provider.kind != AsrProviderKind::FunAsr {
+                bail!("只有 FunASR 服务支持指定说话人数");
+            }
             if credentials.provider.kind == AsrProviderKind::FunAsr {
                 fetch_batch_capabilities(&credentials)
                     .context("当前 FunASR Server 不支持整场会议转写，请升级 Nota ASR Server")?;
@@ -116,9 +156,11 @@ impl AsrManager {
                 );
             }
             remove_temporary_chunks(&self.storage.paths().recovery, recording_id)?;
-            let generation = self
-                .storage
-                .begin_transcription(recording_id, &credentials.provider)?;
+            let generation = self.storage.begin_transcription(
+                recording_id,
+                &credentials.provider,
+                speaker_count,
+            )?;
             self.enqueue(app, recording_id, generation)?;
             self.storage.transcription_summary(recording_id)
         })();
@@ -444,6 +486,28 @@ struct BatchCapabilities {
     max_upload_bytes: u64,
     max_audio_seconds: u64,
     audio_formats: Vec<String>,
+    #[serde(default)]
+    speaker_embedding_version: Option<String>,
+    #[serde(default)]
+    speaker_embedding_max_bytes: Option<u64>,
+    #[serde(default)]
+    speaker_embedding_min_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_embedding_max_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_sample_analysis_version: Option<String>,
+    #[serde(default)]
+    speaker_sample_analysis_max_files: Option<usize>,
+    #[serde(default)]
+    speaker_sample_analysis_min_clip_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_sample_analysis_max_clip_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_sample_analysis_max_total_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_sample_analysis_min_accepted_seconds: Option<u64>,
+    #[serde(default)]
+    speaker_sample_analysis_min_purity: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -520,6 +584,7 @@ fn process_batch_job(
                     recording_path,
                     actual_size,
                     &execution.idempotency_key,
+                    execution.speaker_count,
                 )?;
                 storage.set_remote_transcription_job(
                     &job.recording_id,
@@ -535,6 +600,7 @@ fn process_batch_job(
                 recording_path,
                 actual_size,
                 &execution.idempotency_key,
+                execution.speaker_count,
             )?;
             storage.set_remote_transcription_job(
                 &job.recording_id,
@@ -671,11 +737,207 @@ fn fetch_batch_capabilities(credentials: &AsrProviderCredentials) -> Result<Batc
     Ok(capabilities)
 }
 
+pub fn fetch_speaker_embedding_capabilities(
+    credentials: &AsrProviderCredentials,
+) -> Result<SpeakerEmbeddingCapabilities> {
+    if credentials.provider.kind != AsrProviderKind::FunAsr {
+        bail!("说话人识别需要 Nota ASR Server（FunASR 类型）");
+    }
+    let capabilities = fetch_batch_capabilities(credentials)?;
+    if capabilities.speaker_embedding_version.as_deref() != Some("1") {
+        bail!("当前 Nota ASR Server 版本不支持说话人声纹提取，请升级服务端");
+    }
+    if capabilities.speaker_sample_analysis_version.as_deref() != Some("1") {
+        bail!("当前 Nota ASR Server 版本不支持 CAM++ 纯净声纹样本筛选，请升级服务端");
+    }
+    let max_bytes = capabilities
+        .speaker_embedding_max_bytes
+        .context("服务端未返回声纹样本字节限制")?;
+    let min_seconds = capabilities
+        .speaker_embedding_min_seconds
+        .context("服务端未返回声纹样本最短时长")?;
+    let max_seconds = capabilities
+        .speaker_embedding_max_seconds
+        .context("服务端未返回声纹样本最长时长")?;
+    let analysis_max_files = capabilities
+        .speaker_sample_analysis_max_files
+        .context("服务端未返回纯净样本候选数量限制")?;
+    let analysis_min_clip_seconds = capabilities
+        .speaker_sample_analysis_min_clip_seconds
+        .context("服务端未返回纯净样本最短片段限制")?;
+    let analysis_max_clip_seconds = capabilities
+        .speaker_sample_analysis_max_clip_seconds
+        .context("服务端未返回纯净样本最长片段限制")?;
+    let analysis_max_total_seconds = capabilities
+        .speaker_sample_analysis_max_total_seconds
+        .context("服务端未返回纯净样本累计时长限制")?;
+    let analysis_min_accepted_seconds = capabilities
+        .speaker_sample_analysis_min_accepted_seconds
+        .context("服务端未返回纯净样本最短有效时长")?;
+    let analysis_min_purity = capabilities
+        .speaker_sample_analysis_min_purity
+        .context("服务端未返回纯净样本最低纯度")?;
+    if max_bytes == 0
+        || min_seconds == 0
+        || max_seconds <= min_seconds
+        || analysis_max_files == 0
+        || analysis_min_clip_seconds == 0
+        || analysis_max_clip_seconds < analysis_min_clip_seconds
+        || analysis_max_total_seconds < analysis_min_clip_seconds
+        || analysis_min_accepted_seconds < analysis_min_clip_seconds
+        || analysis_min_accepted_seconds > analysis_max_total_seconds
+        || !analysis_min_purity.is_finite()
+        || analysis_min_purity <= 0.0
+        || analysis_min_purity > 1.0
+    {
+        bail!("服务端返回了无效的声纹样本限制");
+    }
+    Ok(SpeakerEmbeddingCapabilities {
+        max_bytes,
+        analysis_max_files,
+        analysis_min_clip_seconds,
+        analysis_max_clip_seconds,
+        analysis_max_total_seconds,
+        analysis_min_accepted_seconds,
+        analysis_min_purity,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCleanSpeakerSampleRange {
+    file_index: usize,
+    start: f64,
+    end: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSpeakerSampleAnalysisResponse {
+    schema_version: String,
+    outcome: SpeakerSampleAnalysisOutcome,
+    embedding_model: String,
+    embedding_fingerprint: String,
+    dimension: usize,
+    accepted_audio_duration: f64,
+    purity_score: f32,
+    preview: RawCleanSpeakerSampleRange,
+    accepted_ranges: Vec<RawCleanSpeakerSampleRange>,
+    embedding: Option<Vec<f32>>,
+}
+
+pub fn analyze_speaker_samples(
+    credentials: &AsrProviderCredentials,
+    paths: &[PathBuf],
+) -> Result<SpeakerSampleAnalysisResult> {
+    if paths.is_empty() {
+        bail!("没有可供 CAM++ 分析的候选声音片段");
+    }
+    let base = normalize_base_url(&credentials.provider.base_url)?;
+    let mut form = Form::new();
+    for (index, path) in paths.iter().enumerate() {
+        let file = File::open(path)?;
+        let file_length = std::fs::metadata(path)?.len();
+        let part = Part::reader_with_length(file, file_length)
+            .file_name(format!("nota-candidate-{index}.wav"))
+            .mime_str("audio/wav")?;
+        form = form.part("files", part);
+    }
+    let client = http_client()?;
+    let mut request = client
+        .post(format!("{base}/nota/speaker-samples/analyze"))
+        .timeout(REQUEST_TIMEOUT)
+        .multipart(form);
+    if !credentials.api_key.is_empty() {
+        request = request.bearer_auth(&credentials.api_key);
+    }
+    let response = request
+        .send()
+        .context("无法连接 CAM++ 纯净声音样本分析接口")?;
+    let status = response.status();
+    let body = response.text().context("无法读取纯净声音样本分析响应")?;
+    if !status.is_success() {
+        bail!(redact_secret(
+            &http_error("纯净声音样本分析接口", status, &body),
+            &credentials.api_key
+        ));
+    }
+    let raw: RawSpeakerSampleAnalysisResponse =
+        serde_json::from_str(&body).context("纯净声音样本分析接口返回了无效 JSON")?;
+    if raw.schema_version != "1"
+        || raw.embedding_model != "cam++"
+        || raw.embedding_fingerprint.trim().is_empty()
+        || !raw.accepted_audio_duration.is_finite()
+        || raw.accepted_audio_duration < 0.0
+        || !raw.purity_score.is_finite()
+        || !(0.0..=1.0).contains(&raw.purity_score)
+    {
+        bail!("纯净声音样本分析接口返回了不兼容的数据");
+    }
+    match (&raw.outcome, &raw.embedding) {
+        (SpeakerSampleAnalysisOutcome::Enrollable, Some(embedding))
+            if raw.dimension > 0
+                && embedding.len() == raw.dimension
+                && embedding.iter().all(|value| value.is_finite())
+                && raw.accepted_audio_duration > 0.0
+                && !raw.accepted_ranges.is_empty() => {}
+        (SpeakerSampleAnalysisOutcome::PreviewOnly, None)
+            if raw.dimension == 0 && raw.accepted_ranges.is_empty() => {}
+        _ => bail!("纯净声音样本分析接口返回了互相矛盾的分析结果"),
+    }
+    let parse_range = |value: RawCleanSpeakerSampleRange| -> Result<CleanSpeakerSampleRange> {
+        if value.file_index >= paths.len()
+            || !value.start.is_finite()
+            || !value.end.is_finite()
+            || value.start < 0.0
+            || value.end <= value.start
+        {
+            bail!("纯净声音样本分析接口返回了无效的时间范围");
+        }
+        Ok(CleanSpeakerSampleRange {
+            file_index: value.file_index,
+            start_ms: seconds_to_ms(value.start),
+            end_ms: seconds_to_ms(value.end),
+        })
+    };
+    let preview = parse_range(raw.preview)?;
+    let accepted_ranges = raw
+        .accepted_ranges
+        .into_iter()
+        .map(parse_range)
+        .collect::<Result<Vec<_>>>()?;
+    let embedding = raw
+        .embedding
+        .map(|embedding| {
+            let norm = embedding
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+            if !norm.is_finite() || norm <= f32::EPSILON {
+                bail!("纯净声音样本分析接口返回了空向量");
+            }
+            Ok(embedding
+                .into_iter()
+                .map(|value| value / norm)
+                .collect::<Vec<_>>())
+        })
+        .transpose()?;
+    Ok(SpeakerSampleAnalysisResult {
+        outcome: raw.outcome,
+        fingerprint: raw.embedding_fingerprint,
+        embedding,
+        accepted_audio_ms: seconds_to_ms(raw.accepted_audio_duration),
+        purity_score: raw.purity_score,
+        preview,
+        accepted_ranges,
+    })
+}
+
 fn create_batch_job(
     credentials: &AsrProviderCredentials,
     recording_path: &Path,
     size_bytes: u64,
     idempotency_key: &str,
+    speaker_count: Option<u32>,
 ) -> Result<BatchJobStatus> {
     let file_name = recording_path
         .file_name()
@@ -690,7 +952,7 @@ fn create_batch_job(
         language: "auto",
         response_format: "verbose_json",
         diarization: true,
-        speaker_count: None,
+        speaker_count,
     };
     let client = http_client()?;
     let mut request = client
@@ -1451,7 +1713,7 @@ pub fn clean_stale_temporary_chunks(recovery_directory: &Path) -> Result<()> {
     Ok(())
 }
 
-struct OggPcm16Reader {
+pub(crate) struct OggPcm16Reader {
     packets: PacketReader<BufReader<File>>,
     decoder: Decoder,
     pending: VecDeque<i16>,
@@ -1462,7 +1724,7 @@ struct OggPcm16Reader {
 }
 
 impl OggPcm16Reader {
-    fn open(path: &Path, duration_ms: u64) -> Result<Self> {
+    pub(crate) fn open(path: &Path, duration_ms: u64) -> Result<Self> {
         let file =
             File::open(path).with_context(|| format!("无法打开录音文件 {}", path.display()))?;
         Ok(Self {
@@ -1480,7 +1742,7 @@ impl OggPcm16Reader {
         })
     }
 
-    fn read_samples(&mut self, wanted: usize) -> Result<Vec<i16>> {
+    pub(crate) fn read_samples(&mut self, wanted: usize) -> Result<Vec<i16>> {
         while self.pending.len() < wanted && !self.reached_end {
             self.decode_next_packet()?;
         }
@@ -1533,12 +1795,12 @@ impl OggPcm16Reader {
         Ok(())
     }
 
-    fn finished(&self) -> bool {
+    pub(crate) fn finished(&self) -> bool {
         self.reached_end && self.pending.is_empty()
     }
 }
 
-fn write_pcm16_wav(path: &Path, samples: &[i16]) -> Result<()> {
+pub(crate) fn write_pcm16_wav(path: &Path, samples: &[i16]) -> Result<()> {
     let data_size = samples
         .len()
         .checked_mul(2)
@@ -1700,6 +1962,89 @@ mod tests {
     }
 
     #[test]
+    fn discovers_clean_speaker_sample_capabilities() {
+        let (base_url, requests, server) = mock_server(vec![(
+            200,
+            r#"{"batch_transcription_version":"1","upload_chunk_bytes":8388608,"max_upload_bytes":100000000,"max_audio_seconds":14400,"audio_formats":["ogg"],"speaker_embedding_version":"1","speaker_embedding_max_bytes":2097152,"speaker_embedding_min_seconds":5,"speaker_embedding_max_seconds":30,"speaker_sample_analysis_version":"1","speaker_sample_analysis_max_files":8,"speaker_sample_analysis_min_clip_seconds":3,"speaker_sample_analysis_max_clip_seconds":12,"speaker_sample_analysis_max_total_seconds":30,"speaker_sample_analysis_min_accepted_seconds":5,"speaker_sample_analysis_min_purity":0.7}"#,
+        )]);
+        let credentials = funasr_credentials(base_url, "local-secret");
+        let capabilities = fetch_speaker_embedding_capabilities(&credentials).unwrap();
+        server.join().unwrap();
+
+        assert_eq!(capabilities.analysis_max_files, 8);
+        assert_eq!(capabilities.analysis_min_accepted_seconds, 5);
+        assert_eq!(capabilities.analysis_min_purity, 0.7);
+        let requests = requests.lock().unwrap();
+        assert!(requests[0].starts_with("GET /v1/nota/capabilities "));
+        assert!(requests[0].contains("authorization: Bearer local-secret"));
+    }
+
+    #[test]
+    fn calls_the_clean_speaker_sample_analysis_extension() {
+        let (base_url, requests, server) = mock_server(vec![(
+            200,
+            r#"{"schema_version":"1","outcome":"enrollable","embedding_model":"cam++","embedding_fingerprint":"cam++:test:v1","dimension":2,"audio_duration":10.0,"accepted_audio_duration":7.5,"purity_score":0.9,"preview":{"file_index":1,"start":0.5,"end":4.0},"accepted_ranges":[{"file_index":0,"start":0.25,"end":4.25},{"file_index":1,"start":0.5,"end":4.0}],"embedding":[3.0,4.0]}"#,
+        )]);
+        let first = test_wav();
+        let second = test_wav();
+
+        let result = analyze_speaker_samples(
+            &funasr_credentials(base_url, "local-secret"),
+            &[first.clone(), second.clone()],
+        )
+        .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(result.outcome, SpeakerSampleAnalysisOutcome::Enrollable);
+        assert_eq!(result.embedding, Some(vec![0.6, 0.8]));
+        assert_eq!(result.accepted_audio_ms, 7_500);
+        assert_eq!(result.preview.file_index, 1);
+        assert_eq!(result.preview.start_ms, 500);
+        assert_eq!(result.accepted_ranges.len(), 2);
+        let request = &requests.lock().unwrap()[0];
+        assert!(request.starts_with("POST /v1/nota/speaker-samples/analyze "));
+        assert_eq!(request.matches("name=\"files\"").count(), 2);
+        std::fs::remove_file(first).unwrap();
+        std::fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn accepts_preview_only_speaker_sample_analysis() {
+        let (base_url, _, server) = mock_server(vec![(
+            200,
+            r#"{"schema_version":"1","outcome":"preview_only","embedding_model":"cam++","embedding_fingerprint":"cam++:test:v1","dimension":0,"audio_duration":6.0,"accepted_audio_duration":0.0,"purity_score":0.45,"preview":{"file_index":0,"start":0.25,"end":4.25},"accepted_ranges":[],"embedding":null}"#,
+        )]);
+        let sample = test_wav();
+
+        let result = analyze_speaker_samples(
+            &funasr_credentials(base_url, "local-secret"),
+            std::slice::from_ref(&sample),
+        )
+        .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(result.outcome, SpeakerSampleAnalysisOutcome::PreviewOnly);
+        assert_eq!(result.embedding, None);
+        assert_eq!(result.preview.start_ms, 250);
+        assert!(result.accepted_ranges.is_empty());
+        std::fs::remove_file(sample).unwrap();
+    }
+
+    #[test]
+    fn rejects_a_server_without_the_speaker_embedding_capability() {
+        let (base_url, _, server) = mock_server(vec![(
+            200,
+            r#"{"batch_transcription_version":"1","upload_chunk_bytes":8388608,"max_upload_bytes":100000000,"max_audio_seconds":14400,"audio_formats":["ogg"]}"#,
+        )]);
+
+        let error =
+            fetch_speaker_embedding_capabilities(&funasr_credentials(base_url, "")).unwrap_err();
+        server.join().unwrap();
+
+        assert!(format!("{error:#}").contains("不支持说话人声纹提取"));
+    }
+
+    #[test]
     fn funasr_connection_warns_when_the_server_lacks_batch_v1() {
         let (base_url, requests, server) = mock_server(vec![
             (200, r#"{"status":"ok"}"#),
@@ -1730,6 +2075,7 @@ mod tests {
             &path,
             3,
             "stable-idempotency-key",
+            Some(3),
         )
         .unwrap();
         server.join().unwrap();
@@ -1740,6 +2086,7 @@ mod tests {
         assert!(request.contains("idempotency-key: stable-idempotency-key"));
         assert!(request.contains(r#""diarization":true"#));
         assert!(request.contains(r#""response_format":"verbose_json""#));
+        assert!(request.contains(r#""speaker_count":3"#));
         std::fs::remove_file(path).unwrap();
     }
 

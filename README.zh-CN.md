@@ -59,6 +59,7 @@ Nota 为 Windows 提供一条专注的本地录音工作流：
 | **崩溃安全** | 先写入恢复文件，校验完整 Ogg 页，并在应用重启后恢复中断的会话。 |
 | **紧凑的输出文件** | 默认生成 48 kHz 单声道、64 kbps 的 Ogg Opus，通常约 30 MB/小时。 |
 | **可选语音转写** | 仅在手动点击转写或明确开启自动转写后发送录音；可使用局域网 FunASR 或其他 OpenAI-compatible 服务。 |
+| **本地说话人身份** | 手动提取匿名 CAM++ 声纹、确认真实姓名，并在后续会议中复用；姓名、匹配过程和生物特征向量留在本机 Rust 后端。 |
 | **离线录音** | 无需账号和网络即可完成录音、播放、恢复与文件管理。 |
 
 ## 支持你正在使用的会议工具
@@ -123,7 +124,15 @@ Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases
 - **FunASR**：适合运行在本机或局域网中的服务；
 - **OpenAI-compatible**：适合实现了兼容音频转写接口的其他服务商。
 
-API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。FunASR 要求服务端支持 Nota 批处理协议 v1：原始 Ogg 可断点续传，服务端按音频窗口恢复处理，最终说话人标签采用整场会议作用域。其他 OpenAI-compatible Provider 继续使用可恢复的 10 分钟 WAV 分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
+API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模型 ID 可以手工填写，也可以从 `/v1/models` 获取。FunASR 要求服务端支持 Nota 批处理协议 v1：原始 Ogg 可断点续传，服务端按音频窗口恢复处理，最终说话人标签采用整场会议作用域。手动开始或重新转写 FunASR 任务时，可以保留默认的“自动判断人数”，也可以指定 1–64 位已知说话人；自动转写始终使用自动判断。其他 OpenAI-compatible Provider 继续使用可恢复的 10 分钟 WAV 分块，相邻分块重叠 2 秒；原始 48 kHz Ogg Opus 录音始终保留。
+
+完成后的转写可以复制或导出为 UTF-8 TXT。Provider 返回说话人标签时，两种输出都会按每个分段一行的 `speaker_N：转写文字` 格式生成；已有本地确认姓名时会用真实姓名替换显示，原始标签仍保留；没有说话人标签时则保留 Provider 的纯文本全文。
+
+说话人识别是独立、由用户主动触发的功能。先在 **声纹管理** 中选择兼容的
+Nota ASR Server，再到已完成转写的录音详情点击 **说话人识别**。Nota 只发送
+有界语音样本，请服务端提取匿名 CAM++ 向量；姓名库、相似度匹配和确认记录都
+保存在客户端本机。用户确认后，详情、复制全文和 TXT 导出会统一显示真实姓名，
+而原始转写里的 `speaker_N` 不会被改写。
 
 默认快捷键：
 
@@ -149,7 +158,7 @@ API 根地址统一以 `/v1` 结尾，例如 `http://192.168.1.20:8000/v1`。模
 
 所有 Provider HTTP 请求都由 Rust 后端发起，界面没有任意联网权限。为了保持开源实现简单、易用、易维护，API Key 会以明文保存在本机 Nota SQLite 数据库中。已保存密钥在界面中始终掩码，普通 IPC 读取只返回是否存在密钥，日志、错误与导出内容不会包含密钥，也不提供 Provider 配置整体导出。能够读取你 Windows 账户文件的人仍可能取得密钥，因此服务商支持时建议使用权限受限的 Key。
 
-Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵守所在地法律、会议规则和组织政策。
+Nota 不内置参会者告知或同意确认流程。发行者和二次开发者可以根据具体部署要求自行增加相应功能。
 
 ## 可靠性与恢复
 
@@ -163,7 +172,7 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 - 磁盘空间低于 200 MB 时警告，低于 50 MB 时安全停止。
 - 暂停和系统休眠时间不会写入最终录音。
 
-默认输出目录为 `文档\Nota\Recordings`。设置与录音索引保存在本地 SQLite WAL 数据库中；滚动技术日志最多保留 3 × 10 MB。
+默认输出目录为 `文档\Nota\Recordings`。设置、录音索引、转写、参会人姓名、声纹和会议确认映射保存在本地 SQLite WAL 数据库中；滚动技术日志最多保留 3 × 10 MB。
 
 ## 当前限制
 
@@ -172,7 +181,7 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 - 浏览器录音无法限制到单个标签页
 - 只输出一个混合文件，不保留独立麦克风与系统音轨
 - 不包含视频、摘要、翻译、转写文本编辑或实时流式转写
-- 只有 Provider 返回说话人标签时才显示；Nota 本身不进行说话人识别
+- 说话人识别依赖 Provider 返回的匿名分离标签和兼容的 Nota ASR Server；系统建议是概率结果，必须由用户确认
 - 转写需要用户自行配置 FunASR 或 OpenAI-compatible 服务
 - 回声消除效果会受到麦克风、扬声器、房间和设备模式影响
 - 预览版尚未进行代码签名
@@ -200,28 +209,37 @@ Nota 会在首次录音前显示一次参会者告知提醒。使用者仍应遵
 - Windows 11 SDK
 - CMake
 
-### 开发运行
+### 统一命令入口
+
+开发者从仓库根目录通过 `package.json` 中的 npm scripts 运行 Nota。复杂的
+Windows 检查和发布编排保留在 `scripts/*.ps1`，但同样通过 npm 暴露，因而
+无需记忆单独的 PowerShell 或 Cargo 命令。
+
+首次检出代码后安装锁定依赖：
 
 ```powershell
 npm ci
-npm run tauri dev
 ```
 
-### 测试
+| 命令 | 用途 | 主要输出 |
+|---|---|---|
+| `npm run dev` | 启动完整的 Tauri 桌面开发环境，包括 Vite 前端与 Rust 后端 | `src-tauri\target\debug\nota.exe` |
+| `npm test` | 单次运行全部前端测试 | 终端测试报告 |
+| `npm run test:watch` | 监听文件变化并重复运行相关前端测试 | 交互式测试进程 |
+| `npm run check` | 执行版本一致性、前端构建与测试、Rust 格式、测试和 Clippy 检查 | 不生成发布包 |
+| `npm run build:exe` | 构建优化后的桌面程序，但跳过安装包封装 | `src-tauri\target\release\nota.exe` |
+| `npm run build` | 构建优化后的桌面程序和按当前用户安装的 NSIS 安装包 | `src-tauri\target\release\nota.exe` 与 `src-tauri\target\release\bundle\nsis\` |
+| `npm run release:windows` | 从锁文件重新安装依赖，执行完整检查，生成许可证报告、NSIS、便携 ZIP 和 SHA-256 | 根目录 `release\` |
 
-```powershell
-npm test
-cd src-tauri
-cargo test --locked
-```
+`npm run dev:web`、`npm run build:web` 和 `npm run preview:web` 是纯前端入口，
+主要供 Tauri 的 `beforeDevCommand`/`beforeBuildCommand` 钩子和界面调试使用；
+它们不提供录音、SQLite、文件系统或 ASR Rust 后端。`npm run tauri -- <命令>`
+保留为高级 Tauri CLI 透传入口。
 
-### 发布构建
-
-```powershell
-.\scripts\build-windows.ps1
-```
-
-发布脚本会执行前端与 Rust 测试、生成第三方依赖许可证清单、构建 NSIS 安装包，并制作便携 ZIP。Cargo 与 npm 依赖版本均已锁定在仓库中。
+普通开发构建与发布级构建有意分开：`npm run build` 只完成生成桌面程序和
+NSIS 所需的构建步骤，不先运行完整测试，也不制作便携包和校验文件；
+`npm run release:windows` 面向发布验收，会从干净依赖开始执行全部质量门禁，
+然后调用同一个桌面构建并生成可分发资产。
 
 维护者可以按照[发布指南](docs/releasing.md)同步版本、创建发布标签，并由 GitHub Actions 生成待审核的草稿 Release。
 
@@ -234,11 +252,12 @@ src-tauri/src/audio/dsp.rs         对齐、重采样、AEC、混音与限制
 src-tauri/src/audio/encoder.rs     Opus 编码与 Ogg 封装
 src-tauri/src/audio/recovery.rs    校验、修复与安全完成录音
 src-tauri/src/asr.rs               Provider 客户端、FunASR 持久任务、兼容分块与结果合并
+src-tauri/src/voiceprints.rs       有界语音采样、本地声纹匹配与确认会话
 src-tauri/src/storage.rs           SQLite 设置、录音索引与转写数据
 src-tauri/src/controller.rs        录音状态、IPC、托盘与文件操作
 ```
 
-前端只接收状态、健康度、故障和电平事件，原始 PCM 始终保留在 Rust 音频管线中。
+前端只接收类型化状态与确认元数据；原始 PCM、已保存 API Key 和声纹向量始终留在 Rust 后端。
 
 ## 工程文档
 

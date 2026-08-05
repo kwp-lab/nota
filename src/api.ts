@@ -12,11 +12,14 @@ import type {
   CaptureTarget,
   DeviceSelection,
   LevelEvent,
+  ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
   StartRecordingRequest,
   SaveAsrProviderRequest,
   TranscriptDocument,
+  SpeakerIdentificationAssignment,
+  SpeakerIdentificationSession,
   TranscriptionEvent,
   TranscriptionSummary,
 } from "./types";
@@ -52,8 +55,6 @@ export const api = {
   deleteRecording: (id: string, permanent: boolean) =>
     invoke<void>("delete_recording", { id, permanent }),
   openMicrophoneSettings: () => invoke<void>("open_microphone_settings"),
-  copyConsentTemplate: (text: string) =>
-    invoke<void>("copy_consent_template", { text }),
   quitApplication: (stopAndSave: boolean) =>
     invoke<void>("quit_application", { stopAndSave }),
   listAsrProviders: () => invoke<AsrProvider[]>("list_asr_providers"),
@@ -67,10 +68,15 @@ export const api = {
     invoke<AsrConnectionTest>("test_asr_provider", { request }),
   listAsrModels: (request: AsrProviderProbeRequest) =>
     invoke<AsrModel[]>("list_asr_models", { request }),
-  startTranscription: (recordingId: string, providerId?: string | null) =>
+  startTranscription: (
+    recordingId: string,
+    providerId?: string | null,
+    speakerCount: number | null = null,
+  ) =>
     invoke<TranscriptionSummary>("start_transcription", {
       recordingId,
       providerId: providerId ?? null,
+      speakerCount,
     }),
   cancelTranscription: (recordingId: string) =>
     invoke<TranscriptionSummary>("cancel_transcription", { recordingId }),
@@ -82,6 +88,29 @@ export const api = {
     invoke<void>("copy_transcript", { recordingId }),
   exportTranscript: (recordingId: string, path: string) =>
     invoke<void>("export_transcript", { recordingId, path }),
+  revealTranscriptExport: (path: string) =>
+    invoke<void>("reveal_transcript_export", { path }),
+  identifyRecordingSpeakers: (recordingId: string, providerId?: string | null) =>
+    invoke<SpeakerIdentificationSession>("identify_recording_speakers", {
+      recordingId,
+      providerId: providerId ?? null,
+    }),
+  saveSpeakerIdentification: (
+    sessionId: string,
+    assignments: SpeakerIdentificationAssignment[],
+  ) => invoke<TranscriptDocument>("save_speaker_identification", {
+    sessionId,
+    assignments,
+  }),
+  discardSpeakerIdentification: (sessionId: string) =>
+    invoke<void>("discard_speaker_identification", { sessionId }),
+  listParticipants: () => invoke<ParticipantProfile[]>("list_participants"),
+  renameParticipant: (id: string, displayName: string) =>
+    invoke<ParticipantProfile[]>("rename_participant", { id, displayName }),
+  deleteParticipant: (id: string) =>
+    invoke<ParticipantProfile[]>("delete_participant", { id }),
+  deleteVoiceprint: (id: string) =>
+    invoke<ParticipantProfile[]>("delete_voiceprint", { id }),
   hasActiveTranscription: () =>
     invoke<boolean>("has_active_transcription"),
   onSnapshot: (handler: (snapshot: RecordingSnapshot) => void) =>

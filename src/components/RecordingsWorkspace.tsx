@@ -5,6 +5,7 @@ import {
   Clipboard,
   Download,
   FileAudio,
+  Fingerprint,
   FolderOpen,
   LoaderCircle,
   MoreHorizontal,
@@ -18,11 +19,17 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AsrProviderKind,
+  ParticipantProfile,
   RecordingItem,
+  SpeakerIdentificationAssignment,
+  SpeakerIdentificationSession,
   TranscriptDocument,
   TranscriptionStatus,
   TranscriptionSummary,
 } from "../types";
+import { SpeakerIdentificationModal } from "./SpeakerIdentificationModal";
+import { TranscriptionOptionsModal } from "./TranscriptionOptionsModal";
 
 interface RecordingsWorkspaceProps {
   items: RecordingItem[];
@@ -32,15 +39,24 @@ interface RecordingsWorkspaceProps {
   transcriptLoading: boolean;
   recordingActive: boolean;
   hasProvider: boolean;
+  activeProviderKind: AsrProviderKind | null;
+  hasVoiceprintProvider: boolean;
+  participants: ParticipantProfile[];
   onSelect: (id: string) => void;
   onReturnToRecorder: () => void;
   onPreparePlayback: (id: string) => Promise<string>;
   onPlaybackError: (message: string) => void;
-  onStartTranscription: (id: string) => void;
+  onStartTranscription: (id: string, speakerCount: number | null) => void;
   onResumeTranscription: (id: string) => void;
   onCancelTranscription: (id: string) => void;
   onCopyTranscript: (id: string) => void;
   onExportTranscript: (id: string, title: string) => void;
+  onIdentifySpeakers: (id: string) => Promise<SpeakerIdentificationSession>;
+  onSaveSpeakerIdentification: (
+    sessionId: string,
+    assignments: SpeakerIdentificationAssignment[],
+  ) => Promise<void>;
+  onDiscardSpeakerIdentification: (sessionId: string) => void;
   onReveal: (id: string) => void;
   onDelete: (id: string) => void;
   onRecover: (id: string) => void;
@@ -48,6 +64,33 @@ interface RecordingsWorkspaceProps {
   onRename: (id: string, currentTitle: string) => void;
   onPermanentDelete: (id: string) => void;
 }
+
+interface RecordingActionMenu {
+  recordingId: string;
+  left: number;
+  top: number;
+  source: "context" | "detail";
+}
+
+const actionMenuWidth = 148;
+const actionMenuMargin = 8;
+const actionMenuHeight = (source: RecordingActionMenu["source"]) =>
+  source === "context" ? 164 : 126;
+
+const constrainActionMenuPosition = (
+  left: number,
+  top: number,
+  source: RecordingActionMenu["source"],
+) => ({
+  left: Math.max(
+    actionMenuMargin,
+    Math.min(left, window.innerWidth - actionMenuWidth - actionMenuMargin),
+  ),
+  top: Math.max(
+    actionMenuMargin,
+    Math.min(top, window.innerHeight - actionMenuHeight(source) - actionMenuMargin),
+  ),
+});
 
 const formatDuration = (milliseconds: number) => {
   const seconds = Math.round(milliseconds / 1000);
@@ -57,6 +100,16 @@ const formatDuration = (milliseconds: number) => {
   return hours > 0
     ? `${hours}:${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`
     : `${minutes}:${rest.toString().padStart(2, "0")}`;
+};
+
+const formatTranscriptTimestamp = (milliseconds: number) => {
+  const seconds = Math.floor(Math.max(milliseconds, 0) / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return [hours, minutes, rest]
+    .map((value) => value.toString().padStart(2, "0"))
+    .join(":");
 };
 
 const formatSize = (bytes: number) =>
@@ -137,14 +190,72 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [pendingPlayId, setPendingPlayId] = useState<string | null>(null);
   const [pendingSeekMs, setPendingSeekMs] = useState<number | null>(null);
+  const [actionMenu, setActionMenu] = useState<RecordingActionMenu | null>(null);
+  const [identification, setIdentification] = useState<SpeakerIdentificationSession | null>(null);
+  const [identificationLoading, setIdentificationLoading] = useState(false);
+  const [identificationSaving, setIdentificationSaving] = useState(false);
+  const [transcriptionOptions, setTranscriptionOptions] = useState<{
+    recordingId: string;
+    recordingTitle: string;
+    retranscription: boolean;
+  } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const previewEndMsRef = useRef<number | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const detailMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const selected = props.items.find((item) => item.id === props.selectedId) ?? null;
+  const actionMenuItem = props.items.find((item) => item.id === actionMenu?.recordingId) ?? null;
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return normalized
       ? props.items.filter((item) => item.title.toLocaleLowerCase().includes(normalized))
       : props.items;
   }, [props.items, query]);
+
+  useEffect(() => {
+    setIdentification((current) => {
+      if (current) props.onDiscardSpeakerIdentification(current.id);
+      return null;
+    });
+    // A different recording cannot reuse the previous extraction session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.selectedId]);
+
+  useEffect(() => {
+    if (!actionMenu) return;
+    if (!actionMenuItem) {
+      setActionMenu(null);
+      return;
+    }
+
+    const closeMenu = () => setActionMenu(null);
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !actionMenuRef.current?.contains(target)
+        && !detailMenuButtonRef.current?.contains(target)
+      ) {
+        closeMenu();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeMenu();
+      if (actionMenu.source === "detail") detailMenuButtonRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    actionMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [actionMenu, actionMenuItem]);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,6 +323,77 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     void audio.play().catch((error) => props.onPlaybackError(String(error)));
   };
 
+  const previewSpeaker = (startMs: number, endMs: number) => {
+    previewEndMsRef.current = endMs;
+    seekTo(startMs);
+  };
+
+  const identifySpeakers = async () => {
+    if (!selected) return;
+    setIdentificationLoading(true);
+    try {
+      setIdentification(await props.onIdentifySpeakers(selected.id));
+    } catch (error) {
+      props.onPlaybackError(String(error));
+    } finally {
+      setIdentificationLoading(false);
+    }
+  };
+
+  const requestTranscription = (item: RecordingItem, retranscription: boolean) => {
+    if (props.activeProviderKind === "funAsr") {
+      setTranscriptionOptions({
+        recordingId: item.id,
+        recordingTitle: item.title,
+        retranscription,
+      });
+      return;
+    }
+    if (props.activeProviderKind === "openAiCompatible") {
+      props.onStartTranscription(item.id, null);
+      return;
+    }
+    props.onPlaybackError("请先在设置中选择可用的语音转写服务");
+  };
+
+  const openContextMenu = (
+    item: RecordingItem,
+    clientX: number,
+    clientY: number,
+  ) => {
+    setActionMenu({
+      recordingId: item.id,
+      ...constrainActionMenuPosition(clientX, clientY, "context"),
+      source: "context",
+    });
+  };
+
+  const toggleDetailMenu = () => {
+    if (!selected) return;
+    if (actionMenu?.source === "detail" && actionMenu.recordingId === selected.id) {
+      setActionMenu(null);
+      return;
+    }
+    const bounds = detailMenuButtonRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setActionMenu({
+      recordingId: selected.id,
+      ...constrainActionMenuPosition(
+        bounds.right - actionMenuWidth,
+        bounds.bottom + 6,
+        "detail",
+      ),
+      source: "detail",
+    });
+  };
+
+  const runMenuAction = (action: (item: RecordingItem) => void) => {
+    if (!actionMenuItem) return;
+    const item = actionMenuItem;
+    setActionMenu(null);
+    action(item);
+  };
+
   const transcription = selected?.transcription;
   const isProcessing = !!transcription && processingStatuses.includes(transcription.status);
 
@@ -262,7 +444,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             filtered.map((item) => (
               <article
                 key={item.id}
-                className={`history-item ${item.id === props.selectedId ? "selected" : ""}`}
+                className={`history-item ${item.id === props.selectedId ? "selected" : ""} ${item.id === actionMenu?.recordingId ? "menu-target" : ""}`}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  openContextMenu(item, event.clientX, event.clientY);
+                }}
               >
                 <button className="history-select" onClick={() => props.onSelect(item.id)}>
                   <span className="history-item-icon">
@@ -326,72 +512,104 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <button className="icon-button" title="打开所在文件夹" onClick={() => props.onReveal(selected.id)}>
                   <FolderOpen size={17} />
                 </button>
-                <details className="row-menu">
-                  <summary className="icon-button" title="更多"><MoreHorizontal size={17} /></summary>
-                  <div className="row-menu-popover">
-                    <button onClick={() => props.onRename(selected.id, selected.title)}>重命名</button>
-                    <button onClick={() => props.onDelete(selected.id)}>移入回收站</button>
-                    <button className="danger" onClick={() => props.onPermanentDelete(selected.id)}>永久删除</button>
-                  </div>
-                </details>
+                <button
+                  ref={detailMenuButtonRef}
+                  className="icon-button"
+                  title="更多"
+                  aria-haspopup="menu"
+                  aria-expanded={actionMenu?.source === "detail" && actionMenu.recordingId === selected.id}
+                  onClick={toggleDetailMenu}
+                >
+                  <MoreHorizontal size={17} />
+                </button>
               </div>
             </header>
 
-            <div className="unified-player">
-              {audioLoading && <LoaderCircle className="spin player-loader" size={18} />}
-              <audio
-                ref={audioRef}
-                src={audioSource || undefined}
-                controls
-                preload="metadata"
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onEnded={() => setPlaying(false)}
-                onError={() => audioSource && props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。")}
-              />
-            </div>
-
-            <div className="transcript-toolbar">
-              <div>
-                <strong>文字转写</strong>
-                {transcription && (
-                  <span className={`transcription-badge status-${transcription.status}`}>
-                    {transcriptionLabel(transcription)}
-                  </span>
-                )}
-                {transcription?.providerName && (
-                  <small>{transcription.providerName} · {transcription.modelId}</small>
-                )}
+            <div className="record-detail-sticky-controls">
+              <div className="unified-player">
+                {audioLoading && <LoaderCircle className="spin player-loader" size={18} />}
+                <audio
+                  ref={audioRef}
+                  src={audioSource || undefined}
+                  controls
+                  preload="metadata"
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => setPlaying(false)}
+                  onEnded={() => setPlaying(false)}
+                  onTimeUpdate={() => {
+                    const audio = audioRef.current;
+                    const previewEnd = previewEndMsRef.current;
+                    if (audio && previewEnd !== null && audio.currentTime * 1_000 >= previewEnd) {
+                      previewEndMsRef.current = null;
+                      audio.pause();
+                    }
+                  }}
+                  onError={() => audioSource && props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。")}
+                />
               </div>
-              <div className="transcript-actions">
-                {isProcessing ? (
-                  <button className="button secondary" onClick={() => props.onCancelTranscription(selected.id)}>
-                    <Square size={13} fill="currentColor" />中断
-                  </button>
-                ) : transcription && resumableStatuses.includes(transcription.status) ? (
-                  <button className="button primary" onClick={() => props.onResumeTranscription(selected.id)}>
-                    <RotateCcw size={15} />继续转写
-                  </button>
-                ) : transcription?.status === "completed" ? (
-                  <>
-                    <button className="button secondary" onClick={() => props.onCopyTranscript(selected.id)}>
-                      <Clipboard size={15} />复制全文
+
+              <div className="transcript-toolbar">
+                <div>
+                  <strong>文字转写</strong>
+                  {transcription && (
+                    <span className={`transcription-badge status-${transcription.status}`}>
+                      {transcriptionLabel(transcription)}
+                    </span>
+                  )}
+                  {transcription?.providerName && (
+                    <small>
+                      {transcription.providerName} · {transcription.modelId}
+                      {transcription.protocol === "nota_batch_v1"
+                        ? ` · ${transcription.speakerCount === null
+                          ? "自动判断人数"
+                          : `目标 ${transcription.speakerCount} 人（安全优先）`}`
+                        : ""}
+                    </small>
+                  )}
+                </div>
+                <div className="transcript-actions">
+                  {isProcessing ? (
+                    <button className="button secondary" onClick={() => props.onCancelTranscription(selected.id)}>
+                      <Square size={13} fill="currentColor" />中断
                     </button>
-                    <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
-                      <Download size={15} />导出 TXT
+                  ) : transcription && resumableStatuses.includes(transcription.status) ? (
+                    <button className="button primary" onClick={() => props.onResumeTranscription(selected.id)}>
+                      <RotateCcw size={15} />继续转写
                     </button>
-                    <button className="text-button" onClick={() => props.onStartTranscription(selected.id)}>重新转写</button>
-                  </>
-                ) : (
-                  <button
-                    className="button primary"
-                    disabled={!props.hasProvider}
-                    title={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
-                    onClick={() => props.onStartTranscription(selected.id)}
-                  >
-                    <Sparkles size={15} />开始转写
-                  </button>
-                )}
+                  ) : transcription?.status === "completed" ? (
+                    <>
+                      <button className="button secondary" onClick={() => props.onCopyTranscript(selected.id)}>
+                        <Clipboard size={15} />复制全文
+                      </button>
+                      <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
+                        <Download size={15} />导出 TXT
+                      </button>
+                      <button
+                        className="button secondary"
+                        disabled={identificationLoading || !props.hasVoiceprintProvider}
+                        title={props.hasVoiceprintProvider
+                          ? "提取匿名声纹并在本地匹配参会人"
+                          : "请先在声纹管理中选择 Nota ASR Server"}
+                        onClick={() => void identifySpeakers()}
+                      >
+                        {identificationLoading
+                          ? <LoaderCircle className="spin" size={15} />
+                          : <Fingerprint size={15} />}
+                        说话人识别
+                      </button>
+                      <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
+                    </>
+                  ) : (
+                    <button
+                      className="button primary"
+                      disabled={!props.hasProvider}
+                      title={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
+                      onClick={() => requestTranscription(selected, false)}
+                    >
+                      <Sparkles size={15} />开始转写
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -432,10 +650,12 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 props.transcript.segments.map((segment, index) => (
                   <div className="transcript-segment" key={`${segment.startMs}-${index}`}>
                     <button onClick={() => seekTo(segment.startMs)}>
-                      {formatDuration(segment.startMs)}
+                      {formatTranscriptTimestamp(segment.startMs)}
                     </button>
                     <div>
-                      {segment.speaker && <strong>{segment.speaker}</strong>}
+                      {segment.speaker && (
+                        <strong>{props.transcript?.speakerNames?.[segment.speaker] ?? segment.speaker}</strong>
+                      )}
                       <p>{segment.text}</p>
                     </div>
                   </div>
@@ -457,6 +677,80 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
           </>
         )}
       </article>
+      {actionMenu && actionMenuItem && (
+        <div
+          ref={actionMenuRef}
+          className="recording-actions-menu"
+          role="menu"
+          aria-label={`${actionMenuItem.title} 操作`}
+          style={{ left: actionMenu.left, top: actionMenu.top }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {actionMenu.source === "context" && (
+            <>
+              <button
+                role="menuitem"
+                onClick={() => runMenuAction((item) => props.onReveal(item.id))}
+              >
+                打开所在文件夹
+              </button>
+              <div className="recording-actions-separator" role="separator" />
+            </>
+          )}
+          <button
+            role="menuitem"
+            onClick={() => runMenuAction((item) => props.onRename(item.id, item.title))}
+          >
+            重命名
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => runMenuAction((item) => props.onDelete(item.id))}
+          >
+            移至回收站
+          </button>
+          <button
+            className="danger"
+            role="menuitem"
+            onClick={() => runMenuAction((item) => props.onPermanentDelete(item.id))}
+          >
+            永久删除
+          </button>
+        </div>
+      )}
+      {identification && (
+        <SpeakerIdentificationModal
+          session={identification}
+          participants={props.participants}
+          saving={identificationSaving}
+          onPreview={previewSpeaker}
+          onCancel={() => {
+            previewEndMsRef.current = null;
+            props.onDiscardSpeakerIdentification(identification.id);
+            setIdentification(null);
+          }}
+          onSave={(assignments) => {
+            setIdentificationSaving(true);
+            void props
+              .onSaveSpeakerIdentification(identification.id, assignments)
+              .then(() => setIdentification(null))
+              .catch((error) => props.onPlaybackError(String(error)))
+              .finally(() => setIdentificationSaving(false));
+          }}
+        />
+      )}
+      {transcriptionOptions && (
+        <TranscriptionOptionsModal
+          recordingTitle={transcriptionOptions.recordingTitle}
+          retranscription={transcriptionOptions.retranscription}
+          onCancel={() => setTranscriptionOptions(null)}
+          onConfirm={(speakerCount) => {
+            const recordingId = transcriptionOptions.recordingId;
+            setTranscriptionOptions(null);
+            props.onStartTranscription(recordingId, speakerCount);
+          }}
+        />
+      )}
     </section>
   );
 }

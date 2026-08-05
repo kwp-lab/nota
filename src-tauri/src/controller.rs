@@ -12,6 +12,7 @@ use crate::models::*;
 use crate::paths::AppPaths;
 use crate::state_machine::{RecordingEvent, transition};
 use crate::storage::Storage;
+use crate::voiceprints::VoiceprintManager;
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{Local, Utc};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
@@ -38,6 +39,7 @@ struct AppState {
     storage: Arc<Storage>,
     recorder: Arc<RecordingController>,
     asr: Arc<AsrManager>,
+    voiceprints: Arc<VoiceprintManager>,
     tray_state: Mutex<Option<RecordingState>>,
 }
 
@@ -126,9 +128,6 @@ impl RecordingController {
 
     fn start(&self, app: AppHandle, request: StartRecordingRequest) -> Result<RecordingSnapshot> {
         self.reap_finalizer()?;
-        if !request.consent_confirmed {
-            bail!("开始录音前必须确认已告知参会者");
-        }
         if self.is_active() {
             return Ok(self.snapshot());
         }
@@ -265,9 +264,6 @@ impl RecordingController {
         ));
         let microphone_enabled = Arc::new(AtomicBool::new(microphone_expected));
         let output_path = unique_recording_path(&output_directory);
-
-        self.storage
-            .record_consent(&session_id, &self.storage.settings()?.consent_template)?;
 
         {
             let mut snapshot = self.snapshot.lock();
@@ -1154,14 +1150,6 @@ fn open_microphone_settings() -> std::result::Result<(), String> {
 }
 
 #[tauri::command]
-fn copy_consent_template(text: String) -> std::result::Result<(), String> {
-    command_result((|| {
-        arboard::Clipboard::new()?.set_text(text)?;
-        Ok(())
-    })())
-}
-
-#[tauri::command]
 fn delete_recoverable_recording(
     state: State<AppState>,
     id: String,
@@ -1290,6 +1278,7 @@ fn start_transcription(
     state: State<AppState>,
     recording_id: String,
     provider_id: Option<String>,
+    speaker_count: Option<u32>,
 ) -> std::result::Result<TranscriptionSummary, String> {
     command_result((|| {
         let provider_id = match provider_id.filter(|value| !value.trim().is_empty()) {
@@ -1300,7 +1289,9 @@ fn start_transcription(
                 .active_asr_provider_id
                 .context("请先在设置中选择默认语音转写服务")?,
         };
-        state.asr.start(app, &recording_id, &provider_id)
+        state
+            .asr
+            .start(app, &recording_id, &provider_id, speaker_count)
     })())
 }
 
@@ -1337,10 +1328,11 @@ fn copy_transcript(
 ) -> std::result::Result<(), String> {
     command_result((|| {
         let transcript = state.storage.transcript(&recording_id)?;
-        if transcript.text.trim().is_empty() {
+        let text = format_transcript_text(&transcript);
+        if text.is_empty() {
             bail!("当前没有可复制的转写文字");
         }
-        arboard::Clipboard::new()?.set_text(transcript.text)?;
+        arboard::Clipboard::new()?.set_text(text)?;
         Ok(())
     })())
 }
@@ -1353,17 +1345,161 @@ fn export_transcript(
 ) -> std::result::Result<(), String> {
     command_result((|| {
         let transcript = state.storage.transcript(&recording_id)?;
-        if transcript.text.trim().is_empty() {
+        let text = format_transcript_text(&transcript);
+        if text.is_empty() {
             bail!("当前没有可导出的转写文字");
         }
         let destination = PathBuf::from(path);
-        if destination.extension().and_then(|value| value.to_str()) != Some("txt") {
+        if !destination
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("txt"))
+        {
             bail!("转写结果仅支持导出为 .txt 文件");
         }
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(destination, transcript.text.as_bytes())?;
+        std::fs::write(destination, text.as_bytes())?;
+        Ok(())
+    })())
+}
+
+fn format_transcript_text(transcript: &TranscriptDocument) -> String {
+    let has_speaker = transcript.segments.iter().any(|segment| {
+        segment
+            .speaker
+            .as_deref()
+            .is_some_and(|speaker| !speaker.trim().is_empty())
+    });
+    if !has_speaker {
+        return transcript.text.trim().to_owned();
+    }
+
+    let lines = transcript
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let text = segment.text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            let speaker = segment
+                .speaker
+                .as_deref()
+                .map(str::trim)
+                .filter(|speaker| !speaker.is_empty());
+            Some(match speaker {
+                Some(speaker) => {
+                    let display = transcript
+                        .speaker_names
+                        .get(speaker)
+                        .map(String::as_str)
+                        .unwrap_or(speaker);
+                    format!("{display}：{text}")
+                }
+                None => text.to_owned(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        transcript.text.trim().to_owned()
+    } else {
+        lines.join("\r\n")
+    }
+}
+
+#[tauri::command]
+async fn identify_recording_speakers(
+    state: State<'_, AppState>,
+    recording_id: String,
+    provider_id: Option<String>,
+) -> std::result::Result<SpeakerIdentificationSession, String> {
+    let manager = Arc::clone(&state.voiceprints);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        manager.identify(&recording_id, provider_id.as_deref())
+    })
+    .await
+    .map_err(|error| format!("说话人识别任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+fn save_speaker_identification(
+    state: State<AppState>,
+    session_id: String,
+    assignments: Vec<SpeakerIdentificationAssignment>,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result((|| {
+        let recording_id = state.voiceprints.save(&session_id, assignments)?;
+        state.storage.transcript(&recording_id)
+    })())
+}
+
+#[tauri::command]
+fn discard_speaker_identification(state: State<AppState>, session_id: String) {
+    state.voiceprints.discard(&session_id);
+}
+
+#[tauri::command]
+fn list_participants(
+    state: State<AppState>,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result(state.voiceprints.list_participants())
+}
+
+#[tauri::command]
+fn rename_participant(
+    state: State<AppState>,
+    id: String,
+    display_name: String,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result((|| {
+        state.storage.rename_participant(&id, &display_name)?;
+        state.voiceprints.list_participants()
+    })())
+}
+
+#[tauri::command]
+fn delete_participant(
+    state: State<AppState>,
+    id: String,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result((|| {
+        state.storage.delete_participant(&id)?;
+        state.voiceprints.list_participants()
+    })())
+}
+
+#[tauri::command]
+fn delete_voiceprint(
+    state: State<AppState>,
+    id: String,
+) -> std::result::Result<Vec<ParticipantProfile>, String> {
+    command_result((|| {
+        state.storage.delete_voiceprint(&id)?;
+        state.voiceprints.list_participants()
+    })())
+}
+
+#[tauri::command]
+fn reveal_transcript_export(path: String) -> std::result::Result<(), String> {
+    command_result((|| {
+        let destination = PathBuf::from(path);
+        if !destination.is_file() {
+            bail!("找不到已导出的转写文件");
+        }
+        if !destination
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("txt"))
+        {
+            bail!("只能打开 TXT 转写文件所在的文件夹");
+        }
+        let directory = destination.parent().context("无法确定导出文件夹")?;
+        std::process::Command::new("explorer.exe")
+            .arg(directory)
+            .spawn()?;
         Ok(())
     })())
 }
@@ -1643,6 +1779,8 @@ pub fn run_app() {
                 .is_some_and(|recorder| recorder.is_active())
         }),
     ));
+    let voiceprints =
+        Arc::new(VoiceprintManager::new(Arc::clone(&storage)).expect("无法初始化 Nota 声纹管理"));
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -1656,6 +1794,7 @@ pub fn run_app() {
             storage,
             recorder,
             asr,
+            voiceprints,
             tray_state: Mutex::new(Some(RecordingState::Idle)),
         })
         .setup(|app| {
@@ -1700,7 +1839,6 @@ pub fn run_app() {
             delete_recording,
             delete_recoverable_recording,
             open_microphone_settings,
-            copy_consent_template,
             list_asr_providers,
             save_asr_provider,
             delete_asr_provider,
@@ -1713,6 +1851,14 @@ pub fn run_app() {
             get_transcript,
             copy_transcript,
             export_transcript,
+            reveal_transcript_export,
+            identify_recording_speakers,
+            save_speaker_identification,
+            discard_speaker_identification,
+            list_participants,
+            rename_participant,
+            delete_participant,
+            delete_voiceprint,
             has_active_transcription,
             quit_application,
         ])
@@ -1729,6 +1875,94 @@ pub fn run_app() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod transcript_export_tests {
+    use super::*;
+
+    fn transcript(text: &str, segments: Vec<TranscriptSegment>) -> TranscriptDocument {
+        TranscriptDocument {
+            recording_id: "recording".into(),
+            status: TranscriptionStatus::Completed,
+            provider_name: "FunASR".into(),
+            model_id: "sensevoice".into(),
+            language: Some("zh".into()),
+            text: text.into(),
+            segments,
+            speaker_names: std::collections::BTreeMap::new(),
+            completed_chunks: 1,
+            total_chunks: 1,
+            error_message: None,
+            updated_at: "2026-08-02T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn formats_speaker_segments_for_copy_and_txt_export() {
+        let value = transcript(
+            "大家好。收到。继续。",
+            vec![
+                TranscriptSegment {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    text: " 大家好。 ".into(),
+                    speaker: Some("speaker_0".into()),
+                },
+                TranscriptSegment {
+                    start_ms: 1_000,
+                    end_ms: 2_000,
+                    text: "收到。".into(),
+                    speaker: Some("speaker_1".into()),
+                },
+                TranscriptSegment {
+                    start_ms: 2_000,
+                    end_ms: 3_000,
+                    text: "继续。".into(),
+                    speaker: None,
+                },
+            ],
+        );
+
+        assert_eq!(
+            format_transcript_text(&value),
+            "speaker_0：大家好。\r\nspeaker_1：收到。\r\n继续。"
+        );
+    }
+
+    #[test]
+    fn preserves_plain_transcript_when_no_speaker_labels_exist() {
+        let value = transcript(
+            " 完整的纯文本转写。 ",
+            vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "分段文本".into(),
+                speaker: None,
+            }],
+        );
+
+        assert_eq!(format_transcript_text(&value), "完整的纯文本转写。");
+    }
+
+    #[test]
+    fn resolved_participant_names_are_used_for_copy_and_export() {
+        let mut value = transcript(
+            "大家好。",
+            vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "大家好。".into(),
+                speaker: Some("speaker_0".into()),
+            }],
+        );
+        value
+            .speaker_names
+            .insert("speaker_0".into(), "小明".into());
+
+        assert_eq!(format_transcript_text(&value), "小明：大家好。");
+        assert_eq!(value.segments[0].speaker.as_deref(), Some("speaker_0"));
+    }
 }
 
 #[cfg(test)]

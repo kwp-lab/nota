@@ -68,6 +68,29 @@ describe("ToastRegion", () => {
     expect(screen.queryByText("无法写入录音文件")).not.toBeInTheDocument();
   });
 
+  it("runs an optional text action and dismisses the toast", () => {
+    vi.useFakeTimers();
+    const openFolder = vi.fn();
+    render(
+      <ToastHarness
+        initial={[
+          {
+            id: 3,
+            message: "转写文字已导出",
+            tone: "success",
+            durationMs: 8_000,
+            action: { label: "打开文件夹", onClick: openFolder },
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹" }));
+    expect(openFolder).toHaveBeenCalledOnce();
+    act(() => vi.advanceTimersByTime(161));
+    expect(screen.queryByText("转写文字已导出")).not.toBeInTheDocument();
+  });
+
   it("deduplicates faults and preserves persistent messages over transient ones", () => {
     const errors: AppToast[] = [1, 2, 3].map((id) => ({
       id,

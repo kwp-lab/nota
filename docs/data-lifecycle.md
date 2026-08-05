@@ -1,7 +1,7 @@
 # Recording and Transcription Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-04
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
@@ -16,6 +16,9 @@
 | Settings and recording index | Local SQLite | Application lifetime |
 | ASR provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
 | Local transcript and segments | Local SQLite | Until retranscription or recording deletion |
+| Participant names and confirmed meeting assignments | Local SQLite, Rust access only | Until participant, assignment, or recording deletion |
+| CAM++ voiceprint embeddings | Local SQLite BLOB, Rust access only | Until sample or participant deletion |
+| Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
 
@@ -50,6 +53,7 @@ There is at most one current row per recording. Important fields are:
 | `generation` | Monotonic local attempt number |
 | `provider_id` | Provider used to resolve current credentials |
 | `provider_name`, `model_id` | Snapshot used for stable display and execution |
+| `speaker_count` | Nullable per-generation FunASR whole-meeting clustering safety target |
 | `status` | Local lifecycle status |
 | `protocol` | `nota_batch_v1` or `legacy_chunks` |
 | `remote_job_id` | Current FunASR server task, if acknowledged |
@@ -59,9 +63,24 @@ There is at most one current row per recording. Important fields are:
 | `text`, `segments_json`, `language` | Current durable result |
 | `error_message` | Bounded user-facing failure detail |
 
+### `participants`, `voiceprints`, and `recording_speaker_assignments`
+
+`participants` owns the stable local display name. `voiceprints` stores
+little-endian f32 vectors with their model fingerprint, dimension, source
+recording reference, raw speaker, and preview timestamps. React never receives
+the vector BLOB.
+
+`recording_speaker_assignments` maps a raw speaker label to a participant for
+one recording and transcription generation. `segments_json` remains raw.
+Renaming a participant updates historical display at read time. Deleting one
+sample preserves assignments; deleting a participant cascades samples and
+assignments so affected transcripts fall back to `speaker_N`. Recording
+deletion removes assignments and nulls voiceprint source references, leaving
+the embedding usable but its preview unavailable.
+
 Beginning a new transcription increments `generation`, snapshots the selected
-provider, creates a new idempotency key, resets execution progress, and removes
-legacy chunk checkpoints. Previous transcript text may remain visible while a
+provider and optional FunASR speaker count, creates a new idempotency key,
+resets execution progress, and removes legacy chunk checkpoints. Previous transcript text may remain visible while a
 replacement is in progress, but completion atomically replaces the final
 result fields.
 
@@ -132,8 +151,8 @@ server deletes the only completed result.
 
 ## Migration Rules
 
-Schema migration is additive. Missing transcription execution columns are added
-at database open:
+Transcription schema migration is additive. Missing transcription execution
+columns are added at database open:
 
 - `protocol`;
 - `remote_job_id`;
@@ -141,15 +160,27 @@ at database open:
 - `progress_phase`;
 - `progress_current`;
 - `progress_total`;
-- `progress_unit`.
+- `progress_unit`;
+- `speaker_count`.
 
 Existing rows default to `legacy_chunks` so previously completed or resumable
-work preserves its original semantics. A migration must not reinterpret old
+work preserves its original semantics; their speaker count remains null. A migration must not reinterpret old
 independent chunks as a meeting-wide speaker scope.
 
 Rust and TypeScript serialization names are part of the Tauri IPC contract.
 Changing a field requires updating both sides and adding migration or default
 behavior for persisted rows.
+
+### Removed recording-notice feature
+
+Nota does not own a participant-notification or consent-acknowledgement
+workflow. New databases do not create acknowledgement tables or settings, and
+the application does not read, write, migrate, or export the legacy
+`consents`, `consent_template`, or `recording_notice_acknowledged` data. Those
+objects may remain inert in databases created by older builds.
+
+Downstream distributions that require a policy-specific workflow must
+implement and document their own storage and retention model.
 
 ## Deletion and Retention
 

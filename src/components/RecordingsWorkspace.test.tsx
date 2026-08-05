@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RecordingItem, TranscriptDocument } from "../types";
+import type { AsrProviderKind, RecordingItem, TranscriptDocument } from "../types";
 import "../styles.css";
 import { RecordingsWorkspace } from "./RecordingsWorkspace";
 
@@ -22,6 +22,7 @@ const completed: RecordingItem = {
     totalChunks: 1,
     providerName: "Local FunASR",
     modelId: "sensevoice",
+    speakerCount: null,
     errorMessage: null,
     hasText: true,
     protocol: "legacy_chunks",
@@ -61,6 +62,7 @@ const transcript: TranscriptDocument = {
       speaker: "speaker_1",
     },
   ],
+  speakerNames: {},
   completedChunks: 1,
   totalChunks: 1,
   errorMessage: null,
@@ -71,6 +73,7 @@ const renderWorkspace = (
   items: RecordingItem[] = [completed, failed],
   selectedId: string | null = completed.id,
   document: TranscriptDocument | null = transcript,
+  activeProviderKind: AsrProviderKind | null = "funAsr",
 ) => {
   const actions = {
     onSelect: vi.fn(),
@@ -82,6 +85,9 @@ const renderWorkspace = (
     onCancelTranscription: vi.fn(),
     onCopyTranscript: vi.fn(),
     onExportTranscript: vi.fn(),
+    onIdentifySpeakers: vi.fn(),
+    onSaveSpeakerIdentification: vi.fn(),
+    onDiscardSpeakerIdentification: vi.fn(),
     onReveal: vi.fn(),
     onDelete: vi.fn(),
     onRecover: vi.fn(),
@@ -98,6 +104,9 @@ const renderWorkspace = (
       transcriptLoading={false}
       recordingActive={false}
       hasProvider
+      activeProviderKind={activeProviderKind}
+      hasVoiceprintProvider
+      participants={[]}
       {...actions}
     />,
   );
@@ -122,9 +131,46 @@ describe("RecordingsWorkspace", () => {
   it("shows provider speaker labels and timestamp controls without inventing roles", () => {
     renderWorkspace();
     expect(screen.getByText("speaker_1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "0:12" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "00:00:12" })).toBeInTheDocument();
     expect(screen.queryByText("我")).not.toBeInTheDocument();
     expect(screen.queryByText("参会者")).not.toBeInTheDocument();
+  });
+
+  it("renders transcript timestamps as zero-padded hours, minutes, and seconds", () => {
+    renderWorkspace(undefined, undefined, {
+      ...transcript,
+      segments: [
+        { startMs: 0, endMs: 1_000, text: "first", speaker: "speaker_0" },
+        { startMs: 62_000, endMs: 63_000, text: "second", speaker: "speaker_0" },
+        { startMs: 3_723_999, endMs: 3_724_999, text: "third", speaker: "speaker_0" },
+      ],
+    });
+
+    expect(screen.getByRole("button", { name: "00:00:00" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "00:01:02" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "01:02:03" })).toBeInTheDocument();
+  });
+
+  it("keeps the player and transcription toolbar in one sticky control region", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+
+    const sticky = document.querySelector(".record-detail-sticky-controls");
+    expect(sticky).not.toBeNull();
+    expect(sticky?.querySelector("audio")).not.toBeNull();
+    expect(sticky?.querySelector(".transcript-toolbar")).not.toBeNull();
+    expect(sticky?.querySelector(".transcript-body")).toBeNull();
+  });
+
+  it("renders confirmed participant names without changing the raw segment", () => {
+    renderWorkspace(undefined, undefined, {
+      ...transcript,
+      speakerNames: { speaker_1: "小明" },
+    });
+
+    expect(screen.getByText("小明")).toBeInTheDocument();
+    expect(screen.queryByText("speaker_1")).not.toBeInTheDocument();
+    expect(transcript.segments[0].speaker).toBe("speaker_1");
   });
 
   it("offers copy, export, and resume actions for their respective states", () => {
@@ -139,6 +185,44 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续转写" }));
     expect(failedActions.onResumeTranscription).toHaveBeenCalledWith(failed.id);
     expect(screen.getByText("服务暂时不可用")).toBeInTheDocument();
+  });
+
+  it("asks for FunASR speaker options before manual retranscription", () => {
+    const actions = renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
+
+    expect(screen.getByRole("dialog", { name: "重新转写" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /指定目标人数/ }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "说话人数" }), {
+      target: { value: "3" },
+    });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {
+      name: "重新转写",
+    }));
+
+    expect(actions.onStartTranscription).toHaveBeenCalledWith(completed.id, 3);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps OpenAI-compatible retranscription as a one-click action", () => {
+    const actions = renderWorkspace(undefined, undefined, undefined, "openAiCompatible");
+    fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
+
+    expect(actions.onStartTranscription).toHaveBeenCalledWith(completed.id, null);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows the snapshotted speaker-count mode for batch jobs", () => {
+    const specified: RecordingItem = {
+      ...completed,
+      transcription: {
+        ...completed.transcription!,
+        protocol: "nota_batch_v1",
+        speakerCount: 3,
+      },
+    };
+    renderWorkspace([specified], specified.id);
+    expect(screen.getByText(/目标 3 人（安全优先）/)).toBeInTheDocument();
   });
 
   it("shows whole-meeting upload and server processing progress for FunASR", () => {
@@ -192,5 +276,58 @@ describe("RecordingsWorkspace", () => {
     const list = screen.getByLabelText("录音列表");
     expect(getComputedStyle(list).overflowY).toBe("auto");
     expect(list.closest(".history-pane")).toHaveClass("history-pane");
+  });
+
+  it("replaces the native row context menu with the shared recording actions", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+    const row = within(screen.getByLabelText("录音列表"))
+      .getByText("产品周会")
+      .closest("article");
+    expect(row).not.toBeNull();
+
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      clientY: 120,
+    });
+    fireEvent(row!, contextMenuEvent);
+
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+    expect(actions.onSelect).not.toHaveBeenCalled();
+    const menu = screen.getByRole("menu", { name: "产品周会 操作" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "打开所在文件夹",
+      "重命名",
+      "移至回收站",
+      "永久删除",
+    ]);
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "打开所在文件夹" }));
+    expect(actions.onReveal).toHaveBeenCalledWith(completed.id);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent(row!, new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      clientY: 120,
+    }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "重命名" }));
+    expect(actions.onRename).toHaveBeenCalledWith(completed.id, completed.title);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("uses the same controlled menu in details and closes it before deletion", () => {
+    const actions = renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+
+    const menu = screen.getByRole("menu", { name: "产品周会 操作" });
+    expect(within(menu).queryByRole("menuitem", { name: "打开所在文件夹" })).not.toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "永久删除" }));
+
+    expect(actions.onPermanentDelete).toHaveBeenCalledWith(completed.id);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

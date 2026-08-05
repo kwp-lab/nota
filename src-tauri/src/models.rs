@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +68,6 @@ pub struct StartRecordingRequest {
     pub microphone: Option<DeviceSelection>,
     pub aec_mode: AecMode,
     pub output_directory: String,
-    pub consent_confirmed: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -177,15 +177,14 @@ pub struct AppSettings {
     pub output_directory: String,
     pub aec_mode: AecMode,
     pub microphone_enabled: bool,
-    pub consent_template: String,
     pub first_run_complete: bool,
-    #[serde(default)]
-    pub recording_notice_acknowledged: bool,
     pub shortcuts_enabled: bool,
     pub toggle_shortcut: String,
     pub stop_shortcut: String,
     #[serde(default)]
     pub active_asr_provider_id: Option<String>,
+    #[serde(default)]
+    pub voiceprint_provider_id: Option<String>,
     #[serde(default)]
     pub auto_transcribe: bool,
 }
@@ -425,6 +424,7 @@ pub struct TranscriptionSummary {
     pub total_chunks: u32,
     pub provider_name: String,
     pub model_id: String,
+    pub speaker_count: Option<u32>,
     pub error_message: Option<String>,
     pub has_text: bool,
     pub protocol: TranscriptionProtocol,
@@ -458,6 +458,7 @@ pub struct TranscriptionExecution {
     pub protocol: TranscriptionProtocol,
     pub remote_job_id: Option<String>,
     pub idempotency_key: String,
+    pub speaker_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -470,10 +471,80 @@ pub struct TranscriptDocument {
     pub language: Option<String>,
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
+    #[serde(default)]
+    pub speaker_names: BTreeMap<String, String>,
     pub completed_chunks: u32,
     pub total_chunks: u32,
     pub error_message: Option<String>,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceprintSample {
+    pub id: String,
+    pub participant_id: String,
+    pub embedding_fingerprint: String,
+    pub source_recording_id: Option<String>,
+    pub source_recording_title: Option<String>,
+    pub source_speaker: String,
+    pub preview_start_ms: u64,
+    pub preview_end_ms: u64,
+    pub preview_available: bool,
+    pub speech_duration_ms: u64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantProfile {
+    pub id: String,
+    pub display_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub samples: Vec<VoiceprintSample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerIdentificationCandidate {
+    pub raw_speaker: String,
+    pub total_speech_ms: u64,
+    pub preview_start_ms: u64,
+    pub preview_end_ms: u64,
+    pub embedding_extracted: bool,
+    pub sample_status: SpeakerSampleStatus,
+    pub status_message: Option<String>,
+    pub error_message: Option<String>,
+    pub suggested_participant_id: Option<String>,
+    pub suggested_participant_name: Option<String>,
+    pub match_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerSampleStatus {
+    Enrollable,
+    PreviewOnly,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerIdentificationSession {
+    pub id: String,
+    pub recording_id: String,
+    pub speaker_count: u32,
+    pub voiceprint_count: u32,
+    pub candidates: Vec<SpeakerIdentificationCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerIdentificationAssignment {
+    pub raw_speaker: String,
+    pub participant_id: Option<String>,
+    pub new_display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -499,8 +570,7 @@ mod tests {
                 "kind": "followDefaultCommunications"
             },
             "aecMode": "auto",
-            "outputDirectory": "C:\\Recordings",
-            "consentConfirmed": true
+            "outputDirectory": "C:\\Recordings"
         });
 
         let request: StartRecordingRequest = serde_json::from_value(value).unwrap();
@@ -533,8 +603,7 @@ mod tests {
                 "endpointId": "capture-endpoint"
             },
             "aecMode": "on",
-            "outputDirectory": "C:\\Recordings",
-            "consentConfirmed": true
+            "outputDirectory": "C:\\Recordings"
         });
 
         let request: StartRecordingRequest = serde_json::from_value(value).unwrap();

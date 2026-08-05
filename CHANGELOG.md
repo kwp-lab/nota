@@ -7,6 +7,66 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added per-transcription FunASR speaker-count controls: manual jobs default to
+  automatic detection or accept a known 1–64 count, while automatic jobs remain
+  fully automatic and OpenAI-compatible providers keep their one-click flow.
+- Added a custom recording-list context menu with rename, recycle-bin, and
+  permanent-delete actions matching the recording detail menu.
+- Added **Open containing folder** to the recording-list context menu while
+  keeping the recording-detail overflow menu focused on its existing actions.
+- Added explicit post-transcription speaker identification with bounded
+  CAM++ sample extraction, conservative local voiceprint matching, a preview
+  and name-confirmation dialog, and generation-scoped meeting assignments.
+- Added a local **Voiceprints** workspace for choosing an independent Nota ASR
+  Server, replaying available source segments, renaming participants, and
+  deleting participants or individual samples.
+
+### Changed
+
+- Preserved conservative deterministic speaker clusters returned by updated
+  Nota ASR Servers, allowing multiple anonymous labels to resolve to one local
+  participant instead of requiring unsafe cross-window speaker merges.
+- Clarified that a manually supplied speaker count is a safety target and may
+  return additional anonymous speakers rather than force weakly similar people
+  into one label, using the same server-side safety line as automatic mode.
+- Accepted finer meeting-wide speaker turns returned by updated Nota ASR
+  Servers for SenseVoice and Fun-ASR-Nano while keeping the batch protocol,
+  local transcript schema, and existing completed recordings unchanged.
+- Persisted the selected FunASR speaker count with each transcription
+  generation so cancellation, restart, resume, and expired remote-job
+  recreation preserve the original clustering safety target.
+- Made `package.json` the unified contributor command entry point, separated
+  frontend-only hooks from full Tauri development and build commands, and
+  added explicit project-check, raw executable, and Windows release commands.
+- Changed transcript copying and TXT export to share one formatter that
+  includes provider speaker labels as `speaker_N：text` lines when available.
+- Extended the successful TXT export notification with an eight-second
+  **Open folder** action.
+- Resolved confirmed participant names consistently in transcript details,
+  clipboard copying, and TXT export while preserving raw `speaker_N` values.
+- Changed voiceprint enrollment and preview to use CAM++ multi-candidate purity
+  analysis, ignore short or mixed-speaker turns, and keep speakers without a
+  sufficiently clean sample available for preview and meeting-local naming
+  without saving a polluted reusable voiceprint.
+- Kept the recording-detail player and transcription action bar visible while
+  the transcript scrolls, and standardized segment timestamps as zero-padded
+  `HH:MM:SS` values.
+
+### Fixed
+
+- Closed recording action menus before destructive operations and stopped
+  successful deletion of the selected recording from automatically opening
+  the next recording; Nota now shows an explicit success notification and an
+  empty detail state instead.
+
+### Removed
+
+- Removed the built-in pre-recording participant-notification prompt, its IPC
+  fields and backend guard, and all acknowledgement storage from the current
+  schema and runtime code. Legacy database rows, if present, remain inert.
+
 ## [0.3.0] - 2026-07-31
 
 ### Added

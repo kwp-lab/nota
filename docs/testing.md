@@ -1,27 +1,36 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-04
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`
 
 ## Standard Verification
 
-Run the checks appropriate to the changed area from the repository root:
+The repository-level verification entry point is:
+
+```powershell
+npm run check
+```
+
+`check` verifies synchronized versions, builds and tests the frontend, checks
+Rust formatting, runs locked Rust tests, and treats every Clippy warning as an
+error. It delegates the Windows-specific orchestration to `scripts/check.ps1`.
+
+During focused development, the narrower commands remain available:
 
 ```powershell
 npm test
-npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+npm run test:watch
+npm run build:web
 cargo test --locked --manifest-path src-tauri/Cargo.toml
-cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-.\scripts\verify-version.ps1
 ```
 
-Frontend changes require the frontend tests and production build. Rust changes
+Frontend changes require `npm test` and `npm run build:web`. Rust changes
 require formatting, tests, and Clippy. Cross-layer, migration, packaging, or
-release changes require the full set.
+release changes require `npm run check`. `npm run build` is a desktop packaging
+command, not a substitute for the verification suite.
 
 Hardware-dependent Rust tests are ignored by default and document their
 required devices or environment variables in the test name and ignore message.
@@ -34,6 +43,7 @@ required devices or environment variables in the test name and ignore message.
 | IPC serialization | `src-tauri/src/models.rs` tests |
 | SQLite schema and migrations | `src-tauri/src/storage.rs` tests |
 | ASR parsing, capability checks, request construction, chunk merging | `src-tauri/src/asr.rs` tests |
+| Voiceprint candidate planning, clean-range mapping, local matching, and confirmation sessions | `src-tauri/src/voiceprints.rs` tests |
 | Ogg encoding, decoding, and recovery | `src-tauri/src/audio/` tests |
 | Recording state and idempotent controls | `src-tauri/src/state_machine.rs` tests |
 | Tray and controller behavior | `src-tauri/src/controller.rs` tests |
@@ -48,13 +58,28 @@ duplicate the other's internal implementation fixtures.
 
 Automated client coverage must include:
 
+- recording-list context menus exposing **Open containing folder** only for
+  list items while preserving the three-action detail overflow menu;
+- one sticky recording-detail control region containing the audio player and
+  transcription actions, with the transcript body outside that region;
+- transcript segment timestamps rendered as zero-padded `HH:MM:SS`, including
+  meetings longer than one hour;
 - valid batch protocol v1 capability parsing;
 - an old FunASR server producing a visible upgrade warning;
 - authenticated batch request construction with a stable idempotency key;
 - migration of old transcription rows to `legacy_chunks`;
 - persistence of remote job identity and generic progress;
+- FunASR manual speaker-count defaults, 1/64 boundaries, invalid input,
+  cancellation, retranscription, and recovery from the persisted snapshot;
+- automatic transcription always using automatic speaker detection and the
+  OpenAI-compatible path remaining a one-click flow;
 - UI rendering for byte upload, server queue, windows, diarization, and
   finalization;
+- speaker-sample-analysis capability discovery, repeated multipart upload,
+  clean-range validation, and strict response compatibility;
+- local matching threshold plus runner-up margin behavior;
+- raw transcript preservation, generation-scoped assignments, participant
+  rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
 - Ogg Opus decode coverage for the legacy path.
 
@@ -91,6 +116,26 @@ scenarios on Windows 11:
    final meeting.
 8. For the four-hour limit, confirm working memory remains bounded by the
    server window and verify disk-full errors are explicit.
+9. With Paraformer, retranscribe a controlled rapid-turn recording once with a
+   known speaker-count target and once with automatic detection. Confirm the
+   target reaches whole-meeting clustering, weakly similar speakers are not
+   merged merely to reach it, sentence timestamps remain ordered, and automatic
+   mode does not change the response schema.
+10. With SenseVoice and Fun-ASR-Nano, retranscribe a rapid-turn region that has
+    little silence. Confirm a multi-speaker VAD may become finer segments,
+    concatenated text is unchanged, speaker timestamps remain ordered, and the
+    client needs no protocol or local-database migration.
+11. Use a meeting that produces at least 20 local window centroids. Confirm
+    whole-meeting clustering is deterministic in automatic and specified-count
+    modes, weakly similar people are not merged at a window boundary, a target
+    may return additional safe clusters, and multiple raw labels can still be
+    resolved to one local participant name.
+12. In recording management, right-click a list item and open its containing
+    folder. Then scroll a long transcript and confirm the player and
+    transcription actions span the full scroll-viewport width, retain internal
+    spacing around the player, and cast a shadow only below the pinned region.
+    Confirm no transcript content leaks above or beside it and every timestamp
+    keeps the `HH:MM:SS` form.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not
@@ -120,3 +165,8 @@ A behavior change is complete when:
 - affected specifications are updated;
 - an ADR records any long-lived architectural decision;
 - privacy and logging constraints remain intact.
+
+Transcript output changes must additionally verify that clipboard and TXT
+serialization remain identical, speaker labels are preserved without invented
+identities, plain-text fallback is unchanged, and post-export file navigation
+does not expose transcript content in logs.

@@ -59,6 +59,7 @@ Nota gives Windows one focused recording workflow:
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
+| **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
 | **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
 
 ## Works with the meetings you already use
@@ -123,7 +124,16 @@ Open **Settings → Speech transcription**, add one or more providers, and choos
 - **FunASR** for a server on your own computer or LAN;
 - **OpenAI-compatible** for any service implementing the compatible audio-transcription endpoint.
 
-Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
+Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. When manually starting or restarting a FunASR transcript, you can keep automatic speaker detection or specify a known count from 1 to 64; automatic transcription always uses automatic detection. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
+
+Completed transcripts can be copied or exported as UTF-8 TXT. When the provider returns speaker labels, both outputs use one `speaker_N：transcribed text` line per segment, replacing `speaker_N` with a locally confirmed participant name when available; otherwise Nota preserves the provider's plain transcript.
+
+Speaker identification is an independent, user-triggered action. Select a
+compatible Nota ASR Server in **Voiceprints**, then use **Identify speakers**
+from a completed recording. Nota sends only bounded voice samples for
+anonymous CAM++ extraction, performs matching locally, and asks you to confirm
+every name. Confirmed names are used consistently in the detail view, copy,
+and TXT export while raw `speaker_N` labels remain unchanged in the transcript.
 
 Default shortcuts:
 
@@ -149,7 +159,7 @@ Shortcuts can be changed or disabled in Settings. Closing the main window keeps 
 
 Provider HTTP requests are made by the Rust backend; the interface has no general network permission. API keys are intentionally stored in plaintext in the local Nota SQLite database for a simple, maintainable open-source setup. Saved keys are masked in the interface, omitted from normal IPC reads, logs, errors, and exports, and provider configurations cannot be exported as a bundle. Anyone who can read your Windows account files may still be able to recover a saved key, so use a scoped key where your provider supports one.
 
-Nota shows a participant-notification reminder before the first recording. Users remain responsible for complying with applicable laws, meeting rules, and organizational policies.
+Nota does not implement participant-notification or consent-acknowledgement workflows. Distributors and downstream developers may add policy-specific behavior when their deployment requires it.
 
 ## Reliability and recovery
 
@@ -163,7 +173,7 @@ Recording begins in `%LOCALAPPDATA%\Nota\Recovery` before the result is moved to
 - Low disk space triggers a warning below 200 MB and a safe stop below 50 MB.
 - Paused time and system sleep are excluded from the final recording.
 
-The default output directory is `Documents\Nota\Recordings`. Settings and the recording index are stored locally in SQLite WAL mode; rotating technical logs are limited to 3 × 10 MB.
+The default output directory is `Documents\Nota\Recordings`. Settings, the recording index, transcripts, participant names, voiceprints, and confirmed meeting mappings are stored locally in SQLite WAL mode; rotating technical logs are limited to 3 × 10 MB.
 
 ## Current limitations
 
@@ -172,7 +182,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings and the re
 - Browser capture cannot be restricted to one tab
 - One mixed output file; no separate microphone/system tracks
 - No video, summaries, translation, transcript editing, or real-time streaming transcription
-- Speaker labels are displayed only when the configured provider returns them; Nota does not perform diarization itself
+- Speaker identification requires provider-supplied diarization labels and a compatible Nota ASR Server; suggestions remain probabilistic until the user confirms them
 - Transcription requires a user-configured FunASR or OpenAI-compatible service
 - Echo-cancellation quality depends on the microphone, speakers, room, and device mode
 - The preview is not code-signed
@@ -200,28 +210,41 @@ The roadmap intentionally stays focused on reliable local recording. Feature pro
 - Windows 11 SDK
 - CMake
 
-### Development
+### Unified command entry point
+
+Run Nota from the repository root through the npm scripts in `package.json`.
+Complex Windows checks and release orchestration remain in `scripts/*.ps1`, but
+they are exposed through npm so contributors do not need to memorize separate
+PowerShell or Cargo entry points.
+
+Install the locked dependencies after the first checkout:
 
 ```powershell
 npm ci
-npm run tauri dev
 ```
 
-### Tests
+| Command | Purpose | Primary output |
+|---|---|---|
+| `npm run dev` | Start the complete Tauri desktop development environment, including the Vite frontend and Rust backend | `src-tauri\target\debug\nota.exe` |
+| `npm test` | Run all frontend tests once | Terminal test report |
+| `npm run test:watch` | Watch files and rerun affected frontend tests | Interactive test process |
+| `npm run check` | Check version consistency, build and test the frontend, then run Rust formatting, tests, and Clippy | No release package |
+| `npm run build:exe` | Build the optimized desktop executable without installer bundling | `src-tauri\target\release\nota.exe` |
+| `npm run build` | Build the optimized desktop executable and per-user NSIS installer | `src-tauri\target\release\nota.exe` and `src-tauri\target\release\bundle\nsis\` |
+| `npm run release:windows` | Reinstall locked dependencies, run every check, generate licenses, NSIS, portable ZIP, and SHA-256 checksums | Root `release\` directory |
 
-```powershell
-npm test
-cd src-tauri
-cargo test --locked
-```
+`npm run dev:web`, `npm run build:web`, and `npm run preview:web` are
+frontend-only entry points used primarily by Tauri's `beforeDevCommand` and
+`beforeBuildCommand` hooks or for isolated UI work. They do not provide the
+Rust recording, SQLite, filesystem, or ASR backend. Use
+`npm run tauri -- <command>` as the advanced pass-through to the Tauri CLI.
 
-### Release package
-
-```powershell
-.\scripts\build-windows.ps1
-```
-
-The release script runs frontend and Rust tests, generates the third-party license report, builds the NSIS installer, and creates the portable ZIP. Cargo and npm dependency versions are locked in the repository.
+The ordinary and release-grade builds are intentionally separate.
+`npm run build` performs only the work needed to create the desktop executable and NSIS
+installer; it does not first run the full verification suite or create the
+portable/checksum assets. `npm run release:windows` starts from locked
+dependencies, runs all quality gates, invokes the same desktop build, and then
+creates the distributable release assets.
 
 Maintainers can follow the [release guide](docs/releasing.md) to synchronize the version, create a release tag, and let GitHub Actions prepare a reviewed draft Release.
 
@@ -234,11 +257,13 @@ src-tauri/src/audio/dsp.rs         Alignment, resampling, AEC, mixing, limiting
 src-tauri/src/audio/encoder.rs     Opus encoding and Ogg container
 src-tauri/src/audio/recovery.rs    Validation, repair, and safe finalization
 src-tauri/src/asr.rs               Provider clients, durable FunASR jobs, legacy chunking, and merge
+src-tauri/src/voiceprints.rs       Bounded sample extraction, local matching, and confirmation sessions
 src-tauri/src/storage.rs           SQLite settings, recording index, and transcripts
 src-tauri/src/controller.rs        Recording state, IPC, tray, and file actions
 ```
 
-The frontend only receives state, health, fault, and level events. Raw PCM remains in the Rust audio pipeline.
+The frontend receives typed state and confirmation metadata. Raw PCM, stored
+API keys, and voiceprint vectors remain in Rust.
 
 ## Engineering documentation
 

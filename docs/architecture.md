@@ -1,10 +1,11 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-07-31
+- Last updated: 2026-08-03
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
-  `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`
+  `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
+  `src-tauri/src/voiceprints.rs`
 - Related decisions:
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md)
 
@@ -37,6 +38,10 @@ flowchart LR
     K -->|"OpenAI-compatible: temporary WAV chunks"| M["Configured provider"]
     J -->|"typed summaries and transcript"| H
     K -->|"asr://status"| H
+    F --> N["Voiceprint manager"]
+    N -->|"bounded anonymous samples"| L
+    N --> O["Local participants and embeddings"]
+    O --> J
 ```
 
 ## Component Ownership
@@ -48,6 +53,7 @@ flowchart LR
 | Audio pipeline | Capture scope, clock alignment, AEC, mixing, Opus encoding, recovery | Network access or transcript state |
 | Storage | Settings, recording index, provider snapshots, transcription state and results | Audio capture or HTTP retry policy |
 | ASR manager | Queueing, cancellation, provider protocol selection, retry and result normalization | UI rendering or raw credential disclosure |
+| Voiceprint manager | Timestamp candidate planning, bounded Ogg sampling, clean-range response mapping, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
 
 ## Non-Negotiable Invariants
@@ -65,6 +71,8 @@ flowchart LR
 - API keys, authorization headers, audio, and transcript content must not enter
   technical logs.
 - Rust and TypeScript IPC models must change together.
+- Raw transcript speaker labels remain immutable; confirmed real names are
+  resolved from generation-scoped local assignments.
 
 ## Concurrency and Lifecycle
 
