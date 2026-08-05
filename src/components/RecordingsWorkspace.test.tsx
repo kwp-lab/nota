@@ -131,9 +131,35 @@ describe("RecordingsWorkspace", () => {
   it("shows provider speaker labels and timestamp controls without inventing roles", () => {
     renderWorkspace();
     expect(screen.getByText("speaker_1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "0:12" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "00:00:12" })).toBeInTheDocument();
     expect(screen.queryByText("我")).not.toBeInTheDocument();
     expect(screen.queryByText("参会者")).not.toBeInTheDocument();
+  });
+
+  it("renders transcript timestamps as zero-padded hours, minutes, and seconds", () => {
+    renderWorkspace(undefined, undefined, {
+      ...transcript,
+      segments: [
+        { startMs: 0, endMs: 1_000, text: "first", speaker: "speaker_0" },
+        { startMs: 62_000, endMs: 63_000, text: "second", speaker: "speaker_0" },
+        { startMs: 3_723_999, endMs: 3_724_999, text: "third", speaker: "speaker_0" },
+      ],
+    });
+
+    expect(screen.getByRole("button", { name: "00:00:00" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "00:01:02" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "01:02:03" })).toBeInTheDocument();
+  });
+
+  it("keeps the player and transcription toolbar in one sticky control region", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+
+    const sticky = document.querySelector(".record-detail-sticky-controls");
+    expect(sticky).not.toBeNull();
+    expect(sticky?.querySelector("audio")).not.toBeNull();
+    expect(sticky?.querySelector(".transcript-toolbar")).not.toBeNull();
+    expect(sticky?.querySelector(".transcript-body")).toBeNull();
   });
 
   it("renders confirmed participant names without changing the raw segment", () => {
@@ -272,12 +298,23 @@ describe("RecordingsWorkspace", () => {
     expect(actions.onSelect).not.toHaveBeenCalled();
     const menu = screen.getByRole("menu", { name: "产品周会 操作" });
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "打开所在文件夹",
       "重命名",
       "移至回收站",
       "永久删除",
     ]);
 
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "重命名" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "打开所在文件夹" }));
+    expect(actions.onReveal).toHaveBeenCalledWith(completed.id);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent(row!, new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      clientY: 120,
+    }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "重命名" }));
     expect(actions.onRename).toHaveBeenCalledWith(completed.id, completed.title);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
@@ -287,6 +324,7 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
 
     const menu = screen.getByRole("menu", { name: "产品周会 操作" });
+    expect(within(menu).queryByRole("menuitem", { name: "打开所在文件夹" })).not.toBeInTheDocument();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "永久删除" }));
 
     expect(actions.onPermanentDelete).toHaveBeenCalledWith(completed.id);

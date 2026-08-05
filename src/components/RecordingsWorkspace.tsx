@@ -73,17 +73,22 @@ interface RecordingActionMenu {
 }
 
 const actionMenuWidth = 148;
-const actionMenuHeight = 126;
 const actionMenuMargin = 8;
+const actionMenuHeight = (source: RecordingActionMenu["source"]) =>
+  source === "context" ? 164 : 126;
 
-const constrainActionMenuPosition = (left: number, top: number) => ({
+const constrainActionMenuPosition = (
+  left: number,
+  top: number,
+  source: RecordingActionMenu["source"],
+) => ({
   left: Math.max(
     actionMenuMargin,
     Math.min(left, window.innerWidth - actionMenuWidth - actionMenuMargin),
   ),
   top: Math.max(
     actionMenuMargin,
-    Math.min(top, window.innerHeight - actionMenuHeight - actionMenuMargin),
+    Math.min(top, window.innerHeight - actionMenuHeight(source) - actionMenuMargin),
   ),
 });
 
@@ -95,6 +100,16 @@ const formatDuration = (milliseconds: number) => {
   return hours > 0
     ? `${hours}:${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`
     : `${minutes}:${rest.toString().padStart(2, "0")}`;
+};
+
+const formatTranscriptTimestamp = (milliseconds: number) => {
+  const seconds = Math.floor(Math.max(milliseconds, 0) / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return [hours, minutes, rest]
+    .map((value) => value.toString().padStart(2, "0"))
+    .join(":");
 };
 
 const formatSize = (bytes: number) =>
@@ -348,7 +363,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   ) => {
     setActionMenu({
       recordingId: item.id,
-      ...constrainActionMenuPosition(clientX, clientY),
+      ...constrainActionMenuPosition(clientX, clientY, "context"),
       source: "context",
     });
   };
@@ -363,7 +378,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     if (!bounds) return;
     setActionMenu({
       recordingId: selected.id,
-      ...constrainActionMenuPosition(bounds.right - actionMenuWidth, bounds.bottom + 6),
+      ...constrainActionMenuPosition(
+        bounds.right - actionMenuWidth,
+        bounds.bottom + 6,
+        "detail",
+      ),
       source: "detail",
     });
   };
@@ -506,89 +525,91 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               </div>
             </header>
 
-            <div className="unified-player">
-              {audioLoading && <LoaderCircle className="spin player-loader" size={18} />}
-              <audio
-                ref={audioRef}
-                src={audioSource || undefined}
-                controls
-                preload="metadata"
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onEnded={() => setPlaying(false)}
-                onTimeUpdate={() => {
-                  const audio = audioRef.current;
-                  const previewEnd = previewEndMsRef.current;
-                  if (audio && previewEnd !== null && audio.currentTime * 1_000 >= previewEnd) {
-                    previewEndMsRef.current = null;
-                    audio.pause();
-                  }
-                }}
-                onError={() => audioSource && props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。")}
-              />
-            </div>
-
-            <div className="transcript-toolbar">
-              <div>
-                <strong>文字转写</strong>
-                {transcription && (
-                  <span className={`transcription-badge status-${transcription.status}`}>
-                    {transcriptionLabel(transcription)}
-                  </span>
-                )}
-                {transcription?.providerName && (
-                  <small>
-                    {transcription.providerName} · {transcription.modelId}
-                    {transcription.protocol === "nota_batch_v1"
-                      ? ` · ${transcription.speakerCount === null
-                        ? "自动判断人数"
-                        : `目标 ${transcription.speakerCount} 人（安全优先）`}`
-                      : ""}
-                  </small>
-                )}
+            <div className="record-detail-sticky-controls">
+              <div className="unified-player">
+                {audioLoading && <LoaderCircle className="spin player-loader" size={18} />}
+                <audio
+                  ref={audioRef}
+                  src={audioSource || undefined}
+                  controls
+                  preload="metadata"
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => setPlaying(false)}
+                  onEnded={() => setPlaying(false)}
+                  onTimeUpdate={() => {
+                    const audio = audioRef.current;
+                    const previewEnd = previewEndMsRef.current;
+                    if (audio && previewEnd !== null && audio.currentTime * 1_000 >= previewEnd) {
+                      previewEndMsRef.current = null;
+                      audio.pause();
+                    }
+                  }}
+                  onError={() => audioSource && props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。")}
+                />
               </div>
-              <div className="transcript-actions">
-                {isProcessing ? (
-                  <button className="button secondary" onClick={() => props.onCancelTranscription(selected.id)}>
-                    <Square size={13} fill="currentColor" />中断
-                  </button>
-                ) : transcription && resumableStatuses.includes(transcription.status) ? (
-                  <button className="button primary" onClick={() => props.onResumeTranscription(selected.id)}>
-                    <RotateCcw size={15} />继续转写
-                  </button>
-                ) : transcription?.status === "completed" ? (
-                  <>
-                    <button className="button secondary" onClick={() => props.onCopyTranscript(selected.id)}>
-                      <Clipboard size={15} />复制全文
+
+              <div className="transcript-toolbar">
+                <div>
+                  <strong>文字转写</strong>
+                  {transcription && (
+                    <span className={`transcription-badge status-${transcription.status}`}>
+                      {transcriptionLabel(transcription)}
+                    </span>
+                  )}
+                  {transcription?.providerName && (
+                    <small>
+                      {transcription.providerName} · {transcription.modelId}
+                      {transcription.protocol === "nota_batch_v1"
+                        ? ` · ${transcription.speakerCount === null
+                          ? "自动判断人数"
+                          : `目标 ${transcription.speakerCount} 人（安全优先）`}`
+                        : ""}
+                    </small>
+                  )}
+                </div>
+                <div className="transcript-actions">
+                  {isProcessing ? (
+                    <button className="button secondary" onClick={() => props.onCancelTranscription(selected.id)}>
+                      <Square size={13} fill="currentColor" />中断
                     </button>
-                    <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
-                      <Download size={15} />导出 TXT
+                  ) : transcription && resumableStatuses.includes(transcription.status) ? (
+                    <button className="button primary" onClick={() => props.onResumeTranscription(selected.id)}>
+                      <RotateCcw size={15} />继续转写
                     </button>
+                  ) : transcription?.status === "completed" ? (
+                    <>
+                      <button className="button secondary" onClick={() => props.onCopyTranscript(selected.id)}>
+                        <Clipboard size={15} />复制全文
+                      </button>
+                      <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
+                        <Download size={15} />导出 TXT
+                      </button>
+                      <button
+                        className="button secondary"
+                        disabled={identificationLoading || !props.hasVoiceprintProvider}
+                        title={props.hasVoiceprintProvider
+                          ? "提取匿名声纹并在本地匹配参会人"
+                          : "请先在声纹管理中选择 Nota ASR Server"}
+                        onClick={() => void identifySpeakers()}
+                      >
+                        {identificationLoading
+                          ? <LoaderCircle className="spin" size={15} />
+                          : <Fingerprint size={15} />}
+                        说话人识别
+                      </button>
+                      <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
+                    </>
+                  ) : (
                     <button
-                      className="button secondary"
-                      disabled={identificationLoading || !props.hasVoiceprintProvider}
-                      title={props.hasVoiceprintProvider
-                        ? "提取匿名声纹并在本地匹配参会人"
-                        : "请先在声纹管理中选择 Nota ASR Server"}
-                      onClick={() => void identifySpeakers()}
+                      className="button primary"
+                      disabled={!props.hasProvider}
+                      title={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
+                      onClick={() => requestTranscription(selected, false)}
                     >
-                      {identificationLoading
-                        ? <LoaderCircle className="spin" size={15} />
-                        : <Fingerprint size={15} />}
-                      说话人识别
+                      <Sparkles size={15} />开始转写
                     </button>
-                    <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
-                  </>
-                ) : (
-                  <button
-                    className="button primary"
-                    disabled={!props.hasProvider}
-                    title={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
-                    onClick={() => requestTranscription(selected, false)}
-                  >
-                    <Sparkles size={15} />开始转写
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
             </div>
 
@@ -629,7 +650,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 props.transcript.segments.map((segment, index) => (
                   <div className="transcript-segment" key={`${segment.startMs}-${index}`}>
                     <button onClick={() => seekTo(segment.startMs)}>
-                      {formatDuration(segment.startMs)}
+                      {formatTranscriptTimestamp(segment.startMs)}
                     </button>
                     <div>
                       {segment.speaker && (
@@ -665,6 +686,17 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
           style={{ left: actionMenu.left, top: actionMenu.top }}
           onContextMenu={(event) => event.preventDefault()}
         >
+          {actionMenu.source === "context" && (
+            <>
+              <button
+                role="menuitem"
+                onClick={() => runMenuAction((item) => props.onReveal(item.id))}
+              >
+                打开所在文件夹
+              </button>
+              <div className="recording-actions-separator" role="separator" />
+            </>
+          )}
           <button
             role="menuitem"
             onClick={() => runMenuAction((item) => props.onRename(item.id, item.title))}

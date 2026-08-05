@@ -58,6 +58,12 @@ duplicate the other's internal implementation fixtures.
 
 Automated client coverage must include:
 
+- recording-list context menus exposing **Open containing folder** only for
+  list items while preserving the three-action detail overflow menu;
+- one sticky recording-detail control region containing the audio player and
+  transcription actions, with the transcript body outside that region;
+- transcript segment timestamps rendered as zero-padded `HH:MM:SS`, including
+  meetings longer than one hour;
 - valid batch protocol v1 capability parsing;
 - an old FunASR server producing a visible upgrade warning;
 - authenticated batch request construction with a stable idempotency key;
@@ -124,6 +130,12 @@ scenarios on Windows 11:
     modes, weakly similar people are not merged at a window boundary, a target
     may return additional safe clusters, and multiple raw labels can still be
     resolved to one local participant name.
+12. In recording management, right-click a list item and open its containing
+    folder. Then scroll a long transcript and confirm the player and
+    transcription actions span the full scroll-viewport width, retain internal
+    spacing around the player, and cast a shadow only below the pinned region.
+    Confirm no transcript content leaks above or beside it and every timestamp
+    keeps the `HH:MM:SS` form.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not

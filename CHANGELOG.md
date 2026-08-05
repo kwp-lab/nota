@@ -14,6 +14,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   fully automatic and OpenAI-compatible providers keep their one-click flow.
 - Added a custom recording-list context menu with rename, recycle-bin, and
   permanent-delete actions matching the recording detail menu.
+- Added **Open containing folder** to the recording-list context menu while
+  keeping the recording-detail overflow menu focused on its existing actions.
 - Added explicit post-transcription speaker identification with bounded
   CAM++ sample extraction, conservative local voiceprint matching, a preview
   and name-confirmation dialog, and generation-scoped meeting assignments.
@@ -48,6 +50,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   analysis, ignore short or mixed-speaker turns, and keep speakers without a
   sufficiently clean sample available for preview and meeting-local naming
   without saving a polluted reusable voiceprint.
+- Kept the recording-detail player and transcription action bar visible while
+  the transcript scrolls, and standardized segment timestamps as zero-padded
+  `HH:MM:SS` values.
 
 ### Fixed
 
