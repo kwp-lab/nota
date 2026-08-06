@@ -36,8 +36,11 @@ command:
 .\scripts\verify-version.ps1
 ```
 
-Review and commit the manifest and lockfile changes. Let CI pass on the pull
-request before merging it to `main`.
+Review and commit the manifest and lockfile changes, then run `npm run check`
+locally before merging to `main`. The repository CI workflow is manual-only;
+maintainers may dispatch it from GitHub Actions when a clean hosted Windows
+environment is useful, but pull requests and pushes do not start it
+automatically.
 
 Before tagging, produce and inspect the local release-grade assets when the
 change affects packaging or Windows integration:

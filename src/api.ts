@@ -102,6 +102,13 @@ export const api = {
     sessionId,
     assignments,
   }),
+  updateRecordingSpeakerAssignments: (
+    recordingId: string,
+    assignments: SpeakerIdentificationAssignment[],
+  ) => invoke<TranscriptDocument>("update_recording_speaker_assignments", {
+    recordingId,
+    assignments,
+  }),
   discardSpeakerIdentification: (sessionId: string) =>
     invoke<void>("discard_speaker_identification", { sessionId }),
   listParticipants: () => invoke<ParticipantProfile[]>("list_participants"),

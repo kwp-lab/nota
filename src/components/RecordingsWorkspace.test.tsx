@@ -1,6 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AsrProviderKind, RecordingItem, TranscriptDocument } from "../types";
+import type {
+  AsrProviderKind,
+  ParticipantProfile,
+  RecordingItem,
+  SpeakerIdentificationSession,
+  TranscriptDocument,
+} from "../types";
 import "../styles.css";
 import { RecordingsWorkspace } from "./RecordingsWorkspace";
 
@@ -63,10 +69,45 @@ const transcript: TranscriptDocument = {
     },
   ],
   speakerNames: {},
+  speakerAssignments: {},
   completedChunks: 1,
   totalChunks: 1,
   errorMessage: null,
   updatedAt: "2026-07-28T04:02:00Z",
+};
+
+const participantProfiles: ParticipantProfile[] = [{
+  id: "participant-1",
+  displayName: "小明",
+  createdAt: "2026-08-05T00:00:00Z",
+  updatedAt: "2026-08-05T00:00:00Z",
+  samples: [],
+}, {
+  id: "participant-2",
+  displayName: "小红",
+  createdAt: "2026-08-05T00:00:00Z",
+  updatedAt: "2026-08-05T00:00:00Z",
+  samples: [],
+}];
+
+const identificationSession: SpeakerIdentificationSession = {
+  id: "speaker-session",
+  recordingId: completed.id,
+  speakerCount: 1,
+  voiceprintCount: 0,
+  candidates: [{
+    rawSpeaker: "speaker_1",
+    totalSpeechMs: 4_000,
+    previewStartMs: 12_000,
+    previewEndMs: 16_000,
+    embeddingExtracted: false,
+    sampleStatus: "preview_only",
+    statusMessage: "可试听并手动标记姓名",
+    errorMessage: null,
+    suggestedParticipantId: null,
+    suggestedParticipantName: null,
+    matchScore: null,
+  }],
 };
 
 const renderWorkspace = (
@@ -74,6 +115,8 @@ const renderWorkspace = (
   selectedId: string | null = completed.id,
   document: TranscriptDocument | null = transcript,
   activeProviderKind: AsrProviderKind | null = "funAsr",
+  participants: ParticipantProfile[] = [],
+  hasVoiceprintProvider = true,
 ) => {
   const actions = {
     onSelect: vi.fn(),
@@ -85,9 +128,11 @@ const renderWorkspace = (
     onCancelTranscription: vi.fn(),
     onCopyTranscript: vi.fn(),
     onExportTranscript: vi.fn(),
-    onIdentifySpeakers: vi.fn(),
-    onSaveSpeakerIdentification: vi.fn(),
+    onIdentifySpeakers: vi.fn<() => Promise<SpeakerIdentificationSession>>(),
+    onSaveSpeakerIdentification: vi.fn(async () => undefined),
+    onUpdateSpeakerAssignments: vi.fn(async () => undefined),
     onDiscardSpeakerIdentification: vi.fn(),
+    onOpenVoiceprintSettings: vi.fn(),
     onReveal: vi.fn(),
     onDelete: vi.fn(),
     onRecover: vi.fn(),
@@ -105,15 +150,18 @@ const renderWorkspace = (
       recordingActive={false}
       hasProvider
       activeProviderKind={activeProviderKind}
-      hasVoiceprintProvider
-      participants={[]}
+      hasVoiceprintProvider={hasVoiceprintProvider}
+      participants={participants}
       {...actions}
     />,
   );
   return actions;
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("RecordingsWorkspace", () => {
   it("filters recordings and exposes transcription states", async () => {
@@ -171,6 +219,195 @@ describe("RecordingsWorkspace", () => {
     expect(screen.getByText("小明")).toBeInTheDocument();
     expect(screen.queryByText("speaker_1")).not.toBeInTheDocument();
     expect(transcript.segments[0].speaker).toBe("speaker_1");
+  });
+
+  it("opens speaker management without analysis and starts it only after an explicit click", async () => {
+    let resolveAnalysis!: (session: SpeakerIdentificationSession) => void;
+    const actions = renderWorkspace();
+    actions.onIdentifySpeakers.mockReturnValue(new Promise((resolve) => {
+      resolveAnalysis = resolve;
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+
+    expect(screen.getByRole("dialog", { name: "管理说话人" })).toBeInTheDocument();
+    expect(screen.getByText(/声纹分析是可选功能/)).toBeInTheDocument();
+    expect(actions.onIdentifySpeakers).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
+    expect(screen.getByText(/正在分析声纹/)).toBeInTheDocument();
+    expect(actions.onIdentifySpeakers).toHaveBeenCalledOnce();
+    resolveAnalysis(identificationSession);
+    await waitFor(() => expect(screen.getByText(/声纹分析完成/)).toBeInTheDocument());
+  });
+
+  it("keeps meeting-local speaker management available without a voiceprint server", () => {
+    const actions = renderWorkspace(
+      undefined,
+      undefined,
+      undefined,
+      "funAsr",
+      [],
+      false,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+
+    expect(screen.getByRole("dialog", { name: "管理说话人" })).toBeInTheDocument();
+    expect(screen.getByText(/可直接手动设置姓名/)).toBeInTheDocument();
+    expect(actions.onIdentifySpeakers).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "前往声纹管理" }));
+    expect(actions.onOpenVoiceprintSettings).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog", { name: "管理说话人" })).not.toBeInTheDocument();
+  });
+
+  it("edits a confirmed speaker from its transcript label without calling the server", async () => {
+    const assignedTranscript: TranscriptDocument = {
+      ...transcript,
+      speakerNames: { speaker_1: "小明" },
+      speakerAssignments: {
+        speaker_1: { participantId: "participant-1", displayName: "小明" },
+      },
+    };
+    const actions = renderWorkspace(
+      undefined,
+      undefined,
+      assignedTranscript,
+      "funAsr",
+      participantProfiles,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "小明" }));
+
+    expect(actions.onIdentifySpeakers).not.toHaveBeenCalled();
+    expect(screen.getByText(/声纹分析是可选功能/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+      target: { value: "participant-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
+    await waitFor(() => expect(actions.onUpdateSpeakerAssignments).toHaveBeenCalledWith(
+      completed.id,
+      [{
+        rawSpeaker: "speaker_1",
+        participantId: "participant-2",
+        newDisplayName: null,
+      }],
+    ));
+  });
+
+  it("discards a voiceprint session that arrives after the dialog closes", async () => {
+    let resolveAnalysis!: (session: SpeakerIdentificationSession) => void;
+    const actions = renderWorkspace();
+    actions.onIdentifySpeakers.mockReturnValue(new Promise((resolve) => {
+      resolveAnalysis = resolve;
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
+    fireEvent.click(screen.getByRole("button", { name: "稍后继续" }));
+
+    resolveAnalysis(identificationSession);
+    await waitFor(() => expect(actions.onDiscardSpeakerIdentification)
+      .toHaveBeenCalledWith("speaker-session"));
+    expect(screen.queryByRole("dialog", { name: "管理说话人" })).not.toBeInTheDocument();
+  });
+
+  it("saves meeting names locally unless voiceprint enrollment is explicitly enabled", async () => {
+    const enrollableSession: SpeakerIdentificationSession = {
+      ...identificationSession,
+      voiceprintCount: 1,
+      candidates: [{
+        ...identificationSession.candidates[0],
+        embeddingExtracted: true,
+        sampleStatus: "enrollable",
+      }],
+    };
+    const actions = renderWorkspace(
+      undefined,
+      undefined,
+      transcript,
+      "funAsr",
+      participantProfiles,
+    );
+    actions.onIdentifySpeakers.mockResolvedValue(enrollableSession);
+
+    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
+    await screen.findByText(/声纹分析完成/);
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+      target: { value: "participant-1" },
+    });
+    expect(screen.getByRole("checkbox", { name: /同时保存 1 份可用声纹/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
+
+    await waitFor(() => expect(actions.onUpdateSpeakerAssignments).toHaveBeenCalledWith(
+      completed.id,
+      [{
+        rawSpeaker: "speaker_1",
+        participantId: "participant-1",
+        newDisplayName: null,
+      }],
+    ));
+    expect(actions.onSaveSpeakerIdentification).not.toHaveBeenCalled();
+    expect(actions.onDiscardSpeakerIdentification).toHaveBeenCalledWith("speaker-session");
+  });
+
+  it("enrolls available voiceprints only after the optional checkbox is selected", async () => {
+    const enrollableSession: SpeakerIdentificationSession = {
+      ...identificationSession,
+      voiceprintCount: 1,
+      candidates: [{
+        ...identificationSession.candidates[0],
+        embeddingExtracted: true,
+        sampleStatus: "enrollable",
+      }],
+    };
+    const actions = renderWorkspace(
+      undefined,
+      undefined,
+      transcript,
+      "funAsr",
+      participantProfiles,
+    );
+    actions.onIdentifySpeakers.mockResolvedValue(enrollableSession);
+
+    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
+    await screen.findByText(/声纹分析完成/);
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+      target: { value: "participant-1" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /同时保存 1 份可用声纹/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存姓名与 1 份声纹" }));
+
+    await waitFor(() => expect(actions.onSaveSpeakerIdentification).toHaveBeenCalledWith(
+      "speaker-session",
+      [{
+        rawSpeaker: "speaker_1",
+        participantId: "participant-1",
+        newDisplayName: null,
+      }],
+    ));
+    expect(actions.onUpdateSpeakerAssignments).not.toHaveBeenCalled();
+  });
+
+  it("reflects clean-preview play and pause state in the modal", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const actions = renderWorkspace();
+    actions.onIdentifySpeakers.mockResolvedValue(identificationSession);
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
+    await screen.findByText(/声纹分析完成/);
+    fireEvent.click(screen.getByRole("button", { name: "纯净试听" }));
+    const audio = document.querySelector("audio")!;
+    fireEvent.play(audio);
+
+    expect(play).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "暂停纯净试听" }));
+    expect(pause).toHaveBeenCalled();
+    fireEvent.pause(audio);
+    expect(screen.getByRole("button", { name: "纯净试听" })).toBeInTheDocument();
   });
 
   it("offers copy, export, and resume actions for their respective states", () => {

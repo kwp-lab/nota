@@ -17,6 +17,10 @@ npm run check
 `check` verifies synchronized versions, builds and tests the frontend, checks
 Rust formatting, runs locked Rust tests, and treats every Clippy warning as an
 error. It delegates the Windows-specific orchestration to `scripts/check.ps1`.
+This local command is the required routine quality gate. `.github/workflows/ci.yml`
+exposes the same clean-Windows verification as a manual `workflow_dispatch`;
+pull requests and pushes do not start cloud CI automatically. The tag-triggered
+release workflow remains independent and automatic.
 
 During focused development, the narrower commands remain available:
 
@@ -78,6 +82,17 @@ Automated client coverage must include:
 - speaker-sample-analysis capability discovery, repeated multipart upload,
   clean-range validation, and strict response compatibility;
 - local matching threshold plus runner-up margin behavior;
+- speaker management opening without an analysis request, explicit analysis
+  start only with a selected provider, disabled configuration guidance without
+  one, late-session cleanup after close, and no overwrite of a dirty or
+  persisted selection;
+- stable participant-id prefill, unresolved-first ordering, representative
+  utterance playback, active preview/pause feedback, range-end cleanup, and
+  meeting-local edits from transcript speaker labels;
+- name-only saves that never enroll embeddings by default, plus explicit
+  optional enrollment for named candidates with reusable embeddings;
+- incremental assignment upsert and explicit single-speaker clear preserving
+  every omitted current-generation assignment;
 - raw transcript preservation, generation-scoped assignments, participant
   rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
@@ -136,6 +151,17 @@ scenarios on Windows 11:
     spacing around the player, and cast a shadow only below the pinned region.
     Confirm no transcript content leaks above or beside it and every timestamp
     keeps the `HH:MM:SS` form.
+13. Open speaker management on a meeting with at least three raw speakers and
+    confirm no server request starts. Play a clean preview and several
+    representative utterances; verify hover, playing color, pause icon,
+    switching, and range-end cleanup. Reduce the Nota window height and confirm
+    the compact action footer and save button remain visible while both speaker
+    panes scroll independently. Save one name with voiceprint persistence left
+    off, reopen, and confirm the assignment is preselected and no sample was
+    added. Then explicitly run analysis, opt in to saving a reusable sample,
+    and verify only named, eligible speakers are enrolled. Finally assign the
+    last speaker without a configured server and confirm clearing one mapping
+    leaves every omitted mapping untouched.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not

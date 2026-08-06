@@ -473,10 +473,19 @@ pub struct TranscriptDocument {
     pub segments: Vec<TranscriptSegment>,
     #[serde(default)]
     pub speaker_names: BTreeMap<String, String>,
+    #[serde(default)]
+    pub speaker_assignments: BTreeMap<String, RecordingSpeakerAssignment>,
     pub completed_chunks: u32,
     pub total_chunks: u32,
     pub error_message: Option<String>,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingSpeakerAssignment {
+    pub participant_id: String,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

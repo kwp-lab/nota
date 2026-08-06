@@ -1,7 +1,7 @@
 # Recording and Transcription Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-04
+- Last updated: 2026-08-06
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
@@ -72,6 +72,13 @@ the vector BLOB.
 
 `recording_speaker_assignments` maps a raw speaker label to a participant for
 one recording and transcription generation. `segments_json` remains raw.
+The desktop transcript IPC returns both a display-only `speakerNames` map and a
+stable `speakerAssignments` map containing participant ids. Management saves
+are patches: omitted raw speakers remain unchanged and only an explicit clear
+deletes one mapping. This prevents a partial confirmation pass from erasing an
+earlier pass. The default name-save path touches only participants and meeting
+assignments. It must not insert or update `voiceprints`; reusable embeddings are
+upserted only after successful analysis and explicit enrollment opt-in.
 Renaming a participant updates historical display at read time. Deleting one
 sample preserves assignments; deleting a participant cascades samples and
 assignments so affected transcripts fall back to `speaker_N`. Recording
