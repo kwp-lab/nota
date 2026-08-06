@@ -17,6 +17,10 @@ npm run check
 `check` verifies synchronized versions, builds and tests the frontend, checks
 Rust formatting, runs locked Rust tests, and treats every Clippy warning as an
 error. It delegates the Windows-specific orchestration to `scripts/check.ps1`.
+This local command is the required routine quality gate. `.github/workflows/ci.yml`
+exposes the same clean-Windows verification as a manual `workflow_dispatch`;
+pull requests and pushes do not start cloud CI automatically. The tag-triggered
+release workflow remains independent and automatic.
 
 During focused development, the narrower commands remain available:
 

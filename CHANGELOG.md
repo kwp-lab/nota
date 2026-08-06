@@ -44,6 +44,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Made `package.json` the unified contributor command entry point, separated
   frontend-only hooks from full Tauri development and build commands, and
   added explicit project-check, raw executable, and Windows release commands.
+- Changed hosted Windows CI to manual dispatch so routine pull requests and
+  main-branch pushes rely on the required local `npm run check`; tagged release
+  builds remain automatic.
 - Changed transcript copying and TXT export to share one formatter that
   includes provider speaker labels as `speaker_N：text` lines when available.
 - Extended the successful TXT export notification with an eight-second
