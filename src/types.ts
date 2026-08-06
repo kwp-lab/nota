@@ -203,10 +203,16 @@ export interface TranscriptDocument {
   text: string;
   segments: TranscriptSegment[];
   speakerNames: Record<string, string>;
+  speakerAssignments: Record<string, RecordingSpeakerAssignment>;
   completedChunks: number;
   totalChunks: number;
   errorMessage: string | null;
   updatedAt: string;
+}
+
+export interface RecordingSpeakerAssignment {
+  participantId: string;
+  displayName: string;
 }
 
 export interface VoiceprintSample {

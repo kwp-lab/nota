@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-02
-- Last updated: 2026-08-02
+- Last updated: 2026-08-06
 - Decision owners: Nota maintainers
 
 ## Context
@@ -32,6 +32,20 @@ Raw `speaker_N` values remain immutable transcription evidence. Confirmed
 assignments are stored separately by recording and transcription generation,
 and all user-facing transcript renderers resolve names at read time.
 
+Meeting-local assignment is available independently of embedding extraction.
+Clicking a transcript speaker label may patch that generation's assignment
+without contacting an ASR Server or modifying a voiceprint. The full manager
+opens without starting extraction, preserves confirmed identities over
+probabilistic suggestions, and applies only explicit assignment patches.
+CAM++ extraction requires a second explicit action and a locally selected
+compatible provider.
+
+Voiceprint persistence is also a distinct opt-in choice. A normal manager save
+updates meeting-local assignments only. After successful extraction, the user
+may separately choose to upsert named, eligible embeddings into the local
+voiceprint library. Repeated meeting-name edits therefore do not implicitly
+create or update biometric samples.
+
 ## Alternatives Considered
 
 - **Store the participant registry on the ASR Server.** Rejected because it
@@ -57,6 +71,8 @@ and all user-facing transcript renderers resolve names at read time.
 - Source-audio preview can disappear while the stored embedding remains
   usable.
 - Matching thresholds can evolve without rewriting raw transcript data.
+- Progressive confirmation does not require repeating earlier work: partial
+  saves preserve every omitted current-generation assignment.
 
 ## Compatibility and Evolution
 

@@ -1,15 +1,16 @@
 use crate::models::{
     AecMode, AppSettings, AsrApiKeyUpdate, AsrProvider, AsrProviderCredentials, AsrProviderKind,
-    AsrProviderProbeRequest, ParticipantProfile, RecordingItem, SaveAsrProviderRequest,
-    StoredTranscriptionChunk, TranscriptDocument, TranscriptSegment, TranscriptionExecution,
-    TranscriptionProgressPhase, TranscriptionProgressUnit, TranscriptionProtocol,
-    TranscriptionStatus, TranscriptionSummary, VoiceprintSample,
+    AsrProviderProbeRequest, ParticipantProfile, RecordingItem, RecordingSpeakerAssignment,
+    SaveAsrProviderRequest, SpeakerIdentificationAssignment, StoredTranscriptionChunk,
+    TranscriptDocument, TranscriptSegment, TranscriptionExecution, TranscriptionProgressPhase,
+    TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
+    VoiceprintSample,
 };
 use crate::paths::AppPaths;
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use parking_lot::Mutex;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,93 @@ pub struct VoiceprintEnrollment {
     pub preview_start_ms: u64,
     pub preview_end_ms: u64,
     pub speech_duration_ms: u64,
+}
+
+fn resolve_assignment_participant(
+    transaction: &Transaction<'_>,
+    participant_id: Option<&str>,
+    new_display_name: Option<&str>,
+    now: &str,
+) -> Result<Option<String>> {
+    let participant_id = participant_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let new_display_name = new_display_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if participant_id.is_some() && new_display_name.is_some() {
+        bail!("不能同时选择现有说话人并新建姓名");
+    }
+    if let Some(id) = participant_id {
+        let exists = transaction
+            .query_row("SELECT 1 FROM participants WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if !exists {
+            bail!("选择的说话人已经不存在");
+        }
+        return Ok(Some(id.to_owned()));
+    }
+    let Some(name) = new_display_name else {
+        return Ok(None);
+    };
+    if name.chars().count() > 80 {
+        bail!("说话人姓名不能超过 80 个字符");
+    }
+    if let Some(existing) = transaction
+        .query_row(
+            "SELECT id FROM participants WHERE display_name = ?1 COLLATE NOCASE",
+            [name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+    {
+        return Ok(Some(existing));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    transaction.execute(
+        "INSERT INTO participants(id, display_name, created_at, updated_at)
+         VALUES(?1, ?2, ?3, ?3)",
+        params![id, name, now],
+    )?;
+    Ok(Some(id))
+}
+
+struct RecordingSpeakerAssignmentUpsert<'a> {
+    recording_id: &'a str,
+    generation: u32,
+    raw_speaker: &'a str,
+    participant_id: &'a str,
+    match_score: Option<f32>,
+    assignment_source: &'a str,
+    now: &'a str,
+}
+
+fn upsert_recording_speaker_assignment(
+    transaction: &Transaction<'_>,
+    assignment: RecordingSpeakerAssignmentUpsert<'_>,
+) -> Result<()> {
+    transaction.execute(
+        "INSERT INTO recording_speaker_assignments
+         (recording_id, generation, raw_speaker, participant_id,
+          match_score, assignment_source, confirmed_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(recording_id, generation, raw_speaker) DO UPDATE SET
+           participant_id = excluded.participant_id,
+           match_score = excluded.match_score,
+           assignment_source = excluded.assignment_source,
+           confirmed_at = excluded.confirmed_at",
+        params![
+            assignment.recording_id,
+            assignment.generation,
+            assignment.raw_speaker,
+            assignment.participant_id,
+            assignment.match_score,
+            assignment.assignment_source,
+            assignment.now,
+        ],
+    )?;
+    Ok(())
 }
 
 pub struct Storage {
@@ -918,6 +1006,7 @@ impl Storage {
                         text: row.get(4)?,
                         segments: serde_json::from_str(&segments_json).unwrap_or_default(),
                         speaker_names: std::collections::BTreeMap::new(),
+                        speaker_assignments: std::collections::BTreeMap::new(),
                         completed_chunks: row.get::<_, i64>(6)?.max(0) as u32,
                         total_chunks: row.get::<_, i64>(7)?.max(0) as u32,
                         error_message: row.get(8)?,
@@ -927,7 +1016,7 @@ impl Storage {
             )
             .context("该录音还没有转写结果")?;
         let mut statement = connection.prepare(
-            "SELECT a.raw_speaker, p.display_name
+            "SELECT a.raw_speaker, p.id, p.display_name
              FROM recording_speaker_assignments a
              JOIN participants p ON p.id = a.participant_id
              JOIN transcriptions t
@@ -936,9 +1025,20 @@ impl Storage {
              ORDER BY a.raw_speaker",
         )?;
         let rows = statement.query_map([recording_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                RecordingSpeakerAssignment {
+                    participant_id: row.get(1)?,
+                    display_name: row.get(2)?,
+                },
+            ))
         })?;
-        document.speaker_names = rows.filter_map(std::result::Result::ok).collect();
+        document.speaker_assignments = rows.filter_map(std::result::Result::ok).collect();
+        document.speaker_names = document
+            .speaker_assignments
+            .iter()
+            .map(|(speaker, assignment)| (speaker.clone(), assignment.display_name.clone()))
+            .collect();
         Ok(document)
     }
 
@@ -1065,6 +1165,83 @@ impl Storage {
         Ok(())
     }
 
+    pub fn update_recording_speaker_assignments(
+        &self,
+        recording_id: &str,
+        assignments: &[SpeakerIdentificationAssignment],
+    ) -> Result<()> {
+        if assignments.is_empty() {
+            return Ok(());
+        }
+        let now = Utc::now().to_rfc3339();
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        let (generation, status, segments_json) = transaction
+            .query_row(
+                "SELECT generation, status, segments_json
+                 FROM transcriptions WHERE recording_id = ?1",
+                [recording_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .context("该录音还没有转写结果")?;
+        if TranscriptionStatus::from_str(&status) != TranscriptionStatus::Completed {
+            bail!("请先完成这场会议的文字转写");
+        }
+        let generation = generation.max(1).min(u32::MAX as i64) as u32;
+        let segments = serde_json::from_str::<Vec<TranscriptSegment>>(&segments_json)
+            .context("当前转写片段无法读取")?;
+        let valid_speakers = segments
+            .iter()
+            .filter_map(|segment| segment.speaker.as_deref())
+            .map(str::trim)
+            .filter(|speaker| !speaker.is_empty())
+            .collect::<std::collections::HashSet<_>>();
+        let mut seen = std::collections::HashSet::new();
+        for assignment in assignments {
+            let raw_speaker = assignment.raw_speaker.trim();
+            if raw_speaker.is_empty() || !valid_speakers.contains(raw_speaker) {
+                bail!("当前转写结果中不存在 speaker：{raw_speaker}");
+            }
+            if !seen.insert(raw_speaker.to_owned()) {
+                bail!("同一个 speaker 只能更新一次");
+            }
+            let participant_id = resolve_assignment_participant(
+                &transaction,
+                assignment.participant_id.as_deref(),
+                assignment.new_display_name.as_deref(),
+                &now,
+            )?;
+            if let Some(participant_id) = participant_id {
+                upsert_recording_speaker_assignment(
+                    &transaction,
+                    RecordingSpeakerAssignmentUpsert {
+                        recording_id,
+                        generation,
+                        raw_speaker,
+                        participant_id: &participant_id,
+                        match_score: None,
+                        assignment_source: "manual",
+                        now: &now,
+                    },
+                )?;
+            } else {
+                transaction.execute(
+                    "DELETE FROM recording_speaker_assignments
+                     WHERE recording_id = ?1 AND generation = ?2 AND raw_speaker = ?3",
+                    params![recording_id, generation, raw_speaker],
+                )?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn save_speaker_identification(
         &self,
         recording_id: &str,
@@ -1074,61 +1251,33 @@ impl Storage {
         let now = Utc::now().to_rfc3339();
         let mut connection = self.connection.lock();
         let transaction = connection.transaction()?;
-        transaction.execute(
-            "DELETE FROM recording_speaker_assignments
-             WHERE recording_id = ?1 AND generation = ?2",
-            params![recording_id, generation],
-        )?;
         for enrollment in enrollments {
-            let participant_id = if let Some(id) = enrollment.participant_id.as_deref() {
-                let exists = transaction
-                    .query_row("SELECT 1 FROM participants WHERE id = ?1", [id], |_| Ok(()))
-                    .optional()?
-                    .is_some();
-                if !exists {
-                    bail!("选择的说话人已经不存在");
-                }
-                id.to_owned()
-            } else if let Some(name) = enrollment
-                .new_display_name
-                .as_deref()
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-            {
-                if let Some(existing) = transaction
-                    .query_row(
-                        "SELECT id FROM participants WHERE display_name = ?1 COLLATE NOCASE",
-                        [name],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()?
-                {
-                    existing
-                } else {
-                    let id = uuid::Uuid::new_v4().to_string();
-                    transaction.execute(
-                        "INSERT INTO participants(id, display_name, created_at, updated_at)
-                         VALUES(?1, ?2, ?3, ?3)",
-                        params![id, name, now],
-                    )?;
-                    id
-                }
-            } else {
+            let raw_speaker = enrollment.raw_speaker.trim();
+            let participant_id = resolve_assignment_participant(
+                &transaction,
+                enrollment.participant_id.as_deref(),
+                enrollment.new_display_name.as_deref(),
+                &now,
+            )?;
+            let Some(participant_id) = participant_id else {
+                transaction.execute(
+                    "DELETE FROM recording_speaker_assignments
+                     WHERE recording_id = ?1 AND generation = ?2 AND raw_speaker = ?3",
+                    params![recording_id, generation, raw_speaker],
+                )?;
                 continue;
             };
-            transaction.execute(
-                "INSERT INTO recording_speaker_assignments
-                 (recording_id, generation, raw_speaker, participant_id,
-                  match_score, assignment_source, confirmed_at)
-                 VALUES(?1, ?2, ?3, ?4, ?5, 'confirmed', ?6)",
-                params![
+            upsert_recording_speaker_assignment(
+                &transaction,
+                RecordingSpeakerAssignmentUpsert {
                     recording_id,
                     generation,
-                    enrollment.raw_speaker,
-                    participant_id,
-                    enrollment.match_score,
-                    now,
-                ],
+                    raw_speaker,
+                    participant_id: &participant_id,
+                    match_score: enrollment.match_score,
+                    assignment_source: "confirmed",
+                    now: &now,
+                },
             )?;
             let Some(embedding) = enrollment.embedding.as_deref() else {
                 continue;
@@ -1514,12 +1663,20 @@ mod tests {
                 "meeting",
                 generation,
                 "大家好",
-                &[TranscriptSegment {
-                    start_ms: 0,
-                    end_ms: 6_000,
-                    text: "大家好".into(),
-                    speaker: Some("speaker_0".into()),
-                }],
+                &[
+                    TranscriptSegment {
+                        start_ms: 0,
+                        end_ms: 6_000,
+                        text: "大家好".into(),
+                        speaker: Some("speaker_0".into()),
+                    },
+                    TranscriptSegment {
+                        start_ms: 6_000,
+                        end_ms: 10_000,
+                        text: "你好".into(),
+                        speaker: Some("speaker_1".into()),
+                    },
+                ],
                 Some("zh"),
             )
             .unwrap();
@@ -1544,12 +1701,77 @@ mod tests {
         let transcript = storage.transcript("meeting").unwrap();
         assert_eq!(transcript.segments[0].speaker.as_deref(), Some("speaker_0"));
         assert_eq!(transcript.speaker_names.get("speaker_0").unwrap(), "小明");
+        assert_eq!(
+            transcript
+                .speaker_assignments
+                .get("speaker_0")
+                .unwrap()
+                .display_name,
+            "小明"
+        );
         let profiles = storage.list_participants().unwrap();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].samples.len(), 1);
         assert!(profiles[0].samples[0].preview_available);
         let embeddings = storage.voiceprint_embeddings().unwrap();
         assert_eq!(embeddings[0].embedding, vec![0.6, 0.8]);
+
+        storage
+            .update_recording_speaker_assignments(
+                "meeting",
+                &[SpeakerIdentificationAssignment {
+                    raw_speaker: "speaker_1".into(),
+                    participant_id: None,
+                    new_display_name: Some("小红".into()),
+                }],
+            )
+            .unwrap();
+        storage
+            .save_speaker_identification(
+                "meeting",
+                generation,
+                &[VoiceprintEnrollment {
+                    raw_speaker: "speaker_0".into(),
+                    participant_id: Some(profiles[0].id.clone()),
+                    new_display_name: None,
+                    match_score: None,
+                    embedding_fingerprint: String::new(),
+                    embedding: None,
+                    preview_start_ms: 0,
+                    preview_end_ms: 6_000,
+                    speech_duration_ms: 6_000,
+                }],
+            )
+            .unwrap();
+        let transcript = storage.transcript("meeting").unwrap();
+        assert_eq!(transcript.speaker_names.get("speaker_0").unwrap(), "小明");
+        assert_eq!(transcript.speaker_names.get("speaker_1").unwrap(), "小红");
+
+        storage
+            .update_recording_speaker_assignments(
+                "meeting",
+                &[SpeakerIdentificationAssignment {
+                    raw_speaker: "speaker_1".into(),
+                    participant_id: None,
+                    new_display_name: None,
+                }],
+            )
+            .unwrap();
+        let transcript = storage.transcript("meeting").unwrap();
+        assert_eq!(transcript.speaker_names.get("speaker_0").unwrap(), "小明");
+        assert!(!transcript.speaker_names.contains_key("speaker_1"));
+        assert!(
+            storage
+                .update_recording_speaker_assignments(
+                    "meeting",
+                    &[SpeakerIdentificationAssignment {
+                        raw_speaker: "speaker_99".into(),
+                        participant_id: None,
+                        new_display_name: Some("不存在".into()),
+                    }],
+                )
+                .is_err()
+        );
 
         storage
             .rename_participant(&profiles[0].id, "小明同学")

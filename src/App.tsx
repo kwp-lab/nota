@@ -1041,9 +1041,16 @@ export default function App() {
             await refreshParticipants();
             showToast("success", "声纹与当前会议的说话人姓名已保存");
           }}
+          onUpdateSpeakerAssignments={async (recordingId, assignments) => {
+            const updated = await api.updateRecordingSpeakerAssignments(recordingId, assignments);
+            setTranscript(updated);
+            await refreshParticipants();
+            showToast("success", "当前会议的说话人姓名已更新");
+          }}
           onDiscardSpeakerIdentification={(sessionId) => {
             void api.discardSpeakerIdentification(sessionId);
           }}
+          onOpenVoiceprintSettings={() => navigateTo("voiceprints")}
           onReveal={(id) => void api.revealRecording(id).catch(showError)}
           onDelete={(id) => {
             if (!confirm("将此录音移入回收站？")) return;

@@ -28,7 +28,12 @@ import type {
   TranscriptionStatus,
   TranscriptionSummary,
 } from "../types";
-import { SpeakerIdentificationModal } from "./SpeakerIdentificationModal";
+import {
+  SpeakerIdentificationModal,
+  type SpeakerAnalysisStatus,
+  type SpeakerManagementSpeaker,
+  type SpeakerPreviewRequest,
+} from "./SpeakerIdentificationModal";
 import { TranscriptionOptionsModal } from "./TranscriptionOptionsModal";
 
 interface RecordingsWorkspaceProps {
@@ -56,7 +61,12 @@ interface RecordingsWorkspaceProps {
     sessionId: string,
     assignments: SpeakerIdentificationAssignment[],
   ) => Promise<void>;
+  onUpdateSpeakerAssignments: (
+    recordingId: string,
+    assignments: SpeakerIdentificationAssignment[],
+  ) => Promise<void>;
   onDiscardSpeakerIdentification: (sessionId: string) => void;
+  onOpenVoiceprintSettings: () => void;
   onReveal: (id: string) => void;
   onDelete: (id: string) => void;
   onRecover: (id: string) => void;
@@ -70,6 +80,14 @@ interface RecordingActionMenu {
   left: number;
   top: number;
   source: "context" | "detail";
+}
+
+interface SpeakerIdentificationDialog {
+  recordingId: string;
+  initialSpeaker: string | null;
+  session: SpeakerIdentificationSession | null;
+  analysisStatus: SpeakerAnalysisStatus;
+  analysisError: string | null;
 }
 
 const actionMenuWidth = 148;
@@ -116,6 +134,13 @@ const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+const selectRepresentativeUtterances = (
+  utterances: SpeakerManagementSpeaker["utterances"],
+) => [...utterances]
+  .sort((left, right) => (right.endMs - right.startMs) - (left.endMs - left.startMs))
+  .slice(0, 5)
+  .sort((left, right) => left.startMs - right.startMs);
 
 const statusLabels: Record<TranscriptionStatus, string> = {
   queued: "排队中",
@@ -190,9 +215,9 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [pendingPlayId, setPendingPlayId] = useState<string | null>(null);
   const [pendingSeekMs, setPendingSeekMs] = useState<number | null>(null);
+  const [activeSpeakerPreview, setActiveSpeakerPreview] = useState<SpeakerPreviewRequest | null>(null);
   const [actionMenu, setActionMenu] = useState<RecordingActionMenu | null>(null);
-  const [identification, setIdentification] = useState<SpeakerIdentificationSession | null>(null);
-  const [identificationLoading, setIdentificationLoading] = useState(false);
+  const [identification, setIdentification] = useState<SpeakerIdentificationDialog | null>(null);
   const [identificationSaving, setIdentificationSaving] = useState(false);
   const [transcriptionOptions, setTranscriptionOptions] = useState<{
     recordingId: string;
@@ -200,9 +225,9 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     retranscription: boolean;
   } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const previewEndMsRef = useRef<number | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const detailMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const identificationRequestRef = useRef(0);
   const selected = props.items.find((item) => item.id === props.selectedId) ?? null;
   const actionMenuItem = props.items.find((item) => item.id === actionMenu?.recordingId) ?? null;
   const filtered = useMemo(() => {
@@ -211,10 +236,43 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
       ? props.items.filter((item) => item.title.toLocaleLowerCase().includes(normalized))
       : props.items;
   }, [props.items, query]);
+  const managementSpeakers = useMemo(() => {
+    if (!props.transcript || props.transcript.recordingId !== selected?.id) return [];
+    const grouped = new Map<string, SpeakerManagementSpeaker>();
+    for (const segment of props.transcript.segments) {
+      const rawSpeaker = segment.speaker?.trim();
+      if (!rawSpeaker) continue;
+      const assignment = props.transcript.speakerAssignments[rawSpeaker];
+      const current = grouped.get(rawSpeaker) ?? {
+        rawSpeaker,
+        currentParticipantId: assignment?.participantId ?? null,
+        currentDisplayName: assignment?.displayName
+          ?? props.transcript.speakerNames[rawSpeaker]
+          ?? null,
+        totalSpeechMs: 0,
+        utterances: [],
+      };
+      const duration = Math.max(0, segment.endMs - segment.startMs);
+      current.totalSpeechMs += duration;
+      if (duration > 0 && segment.text.trim()) {
+        current.utterances.push({
+          startMs: segment.startMs,
+          endMs: segment.endMs,
+          text: segment.text.trim(),
+        });
+      }
+      grouped.set(rawSpeaker, current);
+    }
+    return [...grouped.values()].map((speaker) => ({
+      ...speaker,
+      utterances: selectRepresentativeUtterances(speaker.utterances),
+    }));
+  }, [props.transcript, selected?.id]);
 
   useEffect(() => {
+    identificationRequestRef.current += 1;
     setIdentification((current) => {
-      if (current) props.onDiscardSpeakerIdentification(current.id);
+      if (current?.session) props.onDiscardSpeakerIdentification(current.session.id);
       return null;
     });
     // A different recording cannot reuse the previous extraction session.
@@ -261,6 +319,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     let cancelled = false;
     setAudioSource("");
     setPlaying(false);
+    setActiveSpeakerPreview(null);
     if (audioRef.current?.getAttribute("src")) {
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
@@ -290,7 +349,10 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     if (pendingSeekMs !== null) {
       audio.currentTime = pendingSeekMs / 1_000;
       setPendingSeekMs(null);
-      void audio.play().catch((error) => props.onPlaybackError(String(error)));
+      void audio.play().catch((error) => {
+        setActiveSpeakerPreview(null);
+        props.onPlaybackError(String(error));
+      });
       return;
     }
     if (pendingPlayId === selected.id) {
@@ -301,6 +363,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
 
   const toggleQuickPlayback = (item: RecordingItem) => {
     const audio = audioRef.current;
+    setActiveSpeakerPreview(null);
     if (selected?.id === item.id && audioSource && audio) {
       if (audio.paused) {
         void audio.play().catch((error) => props.onPlaybackError(String(error)));
@@ -314,6 +377,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   };
 
   const seekTo = (milliseconds: number) => {
+    setActiveSpeakerPreview(null);
     const audio = audioRef.current;
     if (!audio || !audioSource) {
       setPendingSeekMs(milliseconds);
@@ -323,21 +387,83 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     void audio.play().catch((error) => props.onPlaybackError(String(error)));
   };
 
-  const previewSpeaker = (startMs: number, endMs: number) => {
-    previewEndMsRef.current = endMs;
-    seekTo(startMs);
+  const stopSpeakerPreview = () => {
+    if (activeSpeakerPreview && audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    }
+    setActiveSpeakerPreview(null);
   };
 
-  const identifySpeakers = async () => {
-    if (!selected) return;
-    setIdentificationLoading(true);
-    try {
-      setIdentification(await props.onIdentifySpeakers(selected.id));
-    } catch (error) {
-      props.onPlaybackError(String(error));
-    } finally {
-      setIdentificationLoading(false);
+  const toggleSpeakerPreview = (preview: SpeakerPreviewRequest) => {
+    const audio = audioRef.current;
+    const samePreview = activeSpeakerPreview?.id === preview.id;
+    if (samePreview && audio && playing) {
+      audio.pause();
+      return;
     }
+    setActiveSpeakerPreview(preview);
+    if (!audio || !audioSource) {
+      setPendingSeekMs(preview.startMs);
+      return;
+    }
+    const currentMs = audio.currentTime * 1_000;
+    if (!samePreview || currentMs < preview.startMs || currentMs >= preview.endMs) {
+      audio.currentTime = preview.startMs / 1_000;
+    }
+    void audio.play().catch((error) => {
+      setActiveSpeakerPreview((current) => current?.id === preview.id ? null : current);
+      props.onPlaybackError(String(error));
+    });
+  };
+
+  const analyzeSpeakers = async (recordingId: string) => {
+    if (!props.hasVoiceprintProvider) return;
+    const previousSession = identification?.recordingId === recordingId
+      ? identification.session
+      : null;
+    if (previousSession) {
+      props.onDiscardSpeakerIdentification(previousSession.id);
+    }
+    const requestId = ++identificationRequestRef.current;
+    setIdentification((current) => current?.recordingId === recordingId
+      ? { ...current, session: null, analysisStatus: "loading", analysisError: null }
+      : current);
+    try {
+      const session = await props.onIdentifySpeakers(recordingId);
+      if (identificationRequestRef.current !== requestId) {
+        props.onDiscardSpeakerIdentification(session.id);
+        return;
+      }
+      setIdentification((current) => current?.recordingId === recordingId
+        ? { ...current, session, analysisStatus: "ready", analysisError: null }
+        : current);
+    } catch (error) {
+      if (identificationRequestRef.current !== requestId) return;
+      setIdentification((current) => current?.recordingId === recordingId
+        ? { ...current, session: null, analysisStatus: "failed", analysisError: String(error) }
+        : current);
+    }
+  };
+
+  const openSpeakerManagement = (initialSpeaker: string | null) => {
+    if (!selected || managementSpeakers.length === 0) return;
+    identificationRequestRef.current += 1;
+    setIdentification({
+      recordingId: selected.id,
+      initialSpeaker,
+      session: null,
+      analysisStatus: "idle",
+      analysisError: null,
+    });
+  };
+
+  const closeSpeakerManagement = () => {
+    identificationRequestRef.current += 1;
+    stopSpeakerPreview();
+    if (identification?.session) {
+      props.onDiscardSpeakerIdentification(identification.session.id);
+    }
+    setIdentification(null);
   };
 
   const requestTranscription = (item: RecordingItem, retranscription: boolean) => {
@@ -535,16 +661,33 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   preload="metadata"
                   onPlay={() => setPlaying(true)}
                   onPause={() => setPlaying(false)}
-                  onEnded={() => setPlaying(false)}
+                  onEnded={() => {
+                    setPlaying(false);
+                    setActiveSpeakerPreview(null);
+                  }}
+                  onSeeked={() => {
+                    const audio = audioRef.current;
+                    if (!audio || !activeSpeakerPreview) return;
+                    const currentMs = audio.currentTime * 1_000;
+                    if (currentMs < activeSpeakerPreview.startMs
+                      || currentMs >= activeSpeakerPreview.endMs) {
+                      setActiveSpeakerPreview(null);
+                    }
+                  }}
                   onTimeUpdate={() => {
                     const audio = audioRef.current;
-                    const previewEnd = previewEndMsRef.current;
-                    if (audio && previewEnd !== null && audio.currentTime * 1_000 >= previewEnd) {
-                      previewEndMsRef.current = null;
+                    if (audio && activeSpeakerPreview
+                      && audio.currentTime * 1_000 >= activeSpeakerPreview.endMs) {
+                      setActiveSpeakerPreview(null);
                       audio.pause();
                     }
                   }}
-                  onError={() => audioSource && props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。")}
+                  onError={() => {
+                    setActiveSpeakerPreview(null);
+                    if (audioSource) {
+                      props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。");
+                    }
+                  }}
                 />
               </div>
 
@@ -586,16 +729,16 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       </button>
                       <button
                         className="button secondary"
-                        disabled={identificationLoading || !props.hasVoiceprintProvider}
+                        disabled={managementSpeakers.length === 0}
                         title={props.hasVoiceprintProvider
-                          ? "提取匿名声纹并在本地匹配参会人"
-                          : "请先在声纹管理中选择 Nota ASR Server"}
-                        onClick={() => void identifySpeakers()}
+                          ? "管理当前会议说话人并按需分析声纹"
+                          : "可以手动管理姓名；配置 Nota ASR Server 后可分析声纹"}
+                        onClick={() => openSpeakerManagement(null)}
                       >
-                        {identificationLoading
-                          ? <LoaderCircle className="spin" size={15} />
-                          : <Fingerprint size={15} />}
-                        说话人识别
+                        <Fingerprint size={15} />
+                        {Object.keys(props.transcript?.speakerAssignments ?? {}).length > 0
+                          ? "管理说话人"
+                          : "说话人识别"}
                       </button>
                       <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
                     </>
@@ -654,7 +797,13 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                     </button>
                     <div>
                       {segment.speaker && (
-                        <strong>{props.transcript?.speakerNames?.[segment.speaker] ?? segment.speaker}</strong>
+                        <button
+                          className="speaker-label-button"
+                          title={`管理 ${segment.speaker} 的姓名`}
+                          onClick={() => openSpeakerManagement(segment.speaker)}
+                        >
+                          {props.transcript?.speakerNames?.[segment.speaker] ?? segment.speaker}
+                        </button>
                       )}
                       <p>{segment.text}</p>
                     </div>
@@ -720,20 +869,52 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
       )}
       {identification && (
         <SpeakerIdentificationModal
-          session={identification}
+          speakers={managementSpeakers}
+          session={identification.session}
+          analysisStatus={identification.analysisStatus}
+          analysisError={identification.analysisError}
           participants={props.participants}
+          initialSpeaker={identification.initialSpeaker}
           saving={identificationSaving}
-          onPreview={previewSpeaker}
-          onCancel={() => {
-            previewEndMsRef.current = null;
-            props.onDiscardSpeakerIdentification(identification.id);
-            setIdentification(null);
+          canAnalyzeVoiceprints={props.hasVoiceprintProvider}
+          activePreviewId={activeSpeakerPreview?.id ?? null}
+          previewPlaying={Boolean(activeSpeakerPreview && playing)}
+          onAnalyze={() => void analyzeSpeakers(identification.recordingId)}
+          onConfigureVoiceprints={() => {
+            closeSpeakerManagement();
+            props.onOpenVoiceprintSettings();
           }}
-          onSave={(assignments) => {
+          onPreview={toggleSpeakerPreview}
+          onStopPreview={stopSpeakerPreview}
+          onCancel={closeSpeakerManagement}
+          onSave={(request) => {
+            const session = identification.session;
+            if (request.saveVoiceprints && !session) {
+              props.onPlaybackError("声纹分析会话已经失效，请重新分析后再保存声纹。");
+              return;
+            }
+            if (identification.analysisStatus === "loading") {
+              identificationRequestRef.current += 1;
+              setIdentification((current) => current
+                ? { ...current, analysisStatus: "idle", analysisError: null }
+                : current);
+            }
             setIdentificationSaving(true);
-            void props
-              .onSaveSpeakerIdentification(identification.id, assignments)
-              .then(() => setIdentification(null))
+            const save = request.saveVoiceprints && session
+              ? props.onSaveSpeakerIdentification(session.id, request.sessionAssignments)
+              : props.onUpdateSpeakerAssignments(
+                identification.recordingId,
+                request.mappingAssignments,
+              );
+            void save
+              .then(() => {
+                identificationRequestRef.current += 1;
+                stopSpeakerPreview();
+                if (session && !request.saveVoiceprints) {
+                  props.onDiscardSpeakerIdentification(session.id);
+                }
+                setIdentification(null);
+              })
               .catch((error) => props.onPlaybackError(String(error)))
               .finally(() => setIdentificationSaving(false));
           }}

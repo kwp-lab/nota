@@ -1437,6 +1437,20 @@ fn save_speaker_identification(
 }
 
 #[tauri::command]
+fn update_recording_speaker_assignments(
+    state: State<AppState>,
+    recording_id: String,
+    assignments: Vec<SpeakerIdentificationAssignment>,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result((|| {
+        state
+            .storage
+            .update_recording_speaker_assignments(&recording_id, &assignments)?;
+        state.storage.transcript(&recording_id)
+    })())
+}
+
+#[tauri::command]
 fn discard_speaker_identification(state: State<AppState>, session_id: String) {
     state.voiceprints.discard(&session_id);
 }
@@ -1854,6 +1868,7 @@ pub fn run_app() {
             reveal_transcript_export,
             identify_recording_speakers,
             save_speaker_identification,
+            update_recording_speaker_assignments,
             discard_speaker_identification,
             list_participants,
             rename_participant,
@@ -1891,6 +1906,7 @@ mod transcript_export_tests {
             text: text.into(),
             segments,
             speaker_names: std::collections::BTreeMap::new(),
+            speaker_assignments: std::collections::BTreeMap::new(),
             completed_chunks: 1,
             total_chunks: 1,
             error_message: None,

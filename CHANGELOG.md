@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-06
+
 ### Added
 
 - Added per-transcription FunASR speaker-count controls: manual jobs default to
@@ -22,6 +24,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added a local **Voiceprints** workspace for choosing an independent Nota ASR
   Server, replaying available source segments, renaming participants, and
   deleting participants or individual samples.
+- Added continuous speaker management from clickable transcript labels, with
+  stable assignment prefill and multiple representative utterances per speaker.
 
 ### Changed
 
@@ -53,9 +57,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Kept the recording-detail player and transcription action bar visible while
   the transcript scrolls, and standardized segment timestamps as zero-padded
   `HH:MM:SS` values.
+- Changed speaker management to open without a server request, start CAM++
+  analysis only after an explicit action with a selected extraction service,
+  prioritize unresolved speakers, and preserve user edits when late suggestions
+  arrive.
+- Separated meeting-name saves from biometric enrollment: voiceprint storage is
+  now an optional, default-off choice after successful analysis.
 
 ### Fixed
 
+- Made speaker-assignment saves incremental so a later partial confirmation no
+  longer erases names confirmed in an earlier pass.
+- Added hover, active color, pause icons, and range-end cleanup to clean and
+  representative speaker previews so the playing sample is always visible.
+- Simplified the speaker-manager header, promoted analysis actions to visible
+  secondary buttons, added close-button and backdrop dismissal behavior, and
+  kept a compact action footer visible when the application window is short.
 - Closed recording action menus before destructive operations and stopped
   successful deletion of the selected recording from automatically opening
   the next recording; Nota now shows an explicit success notification and an
@@ -161,7 +178,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kwp-lab/nota/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...v0.3.0
 [0.2.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...a9091aaca969bf901e30d32ed55affe43f5efe2a
 [0.1.1]: https://github.com/kwp-lab/nota/compare/v0.1.0...v0.1.1

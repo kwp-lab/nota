@@ -1,7 +1,7 @@
 # Nota Engineering Documentation
 
 - Status: Accepted
-- Last updated: 2026-08-03
+- Last updated: 2026-08-06
 - Owners: Nota maintainers
 
 This directory is the durable engineering context for Nota. It explains the
@@ -20,10 +20,9 @@ that are intentionally too detailed for the project README.
    scenarios.
 5. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-6. [`releasing.md`](releasing.md) — version, tag, package, and release process.
-
-7. [`speaker-identification.md`](speaker-identification.md) - local
+6. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
+7. [`releasing.md`](releasing.md) — version, tag, package, and release process.
 
 ## Sources of Truth
 
