@@ -12,6 +12,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added a selected-meeting-target exit reminder: after a ten-second recovery
   window, Nota shows a portable-compatible Tauri decision prompt and highlights
   the tray so the user can explicitly continue recording or stop and save.
+- Added session-scoped microphone switching during an active recording,
+  including explicit device selection, a switching state, and the option to
+  disable only the current recording's microphone without splitting the Ogg.
 
 ### Changed
 
@@ -21,6 +24,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   recovers and disappears again. The decision prompt now sizes itself to its
   rendered content across DPI and accessibility-text settings while remaining
   anchored above the taskbar.
+- Microphone handoff now starts the replacement before committing it, rejects
+  late packets from the previous device, preserves the meeting-audio buffer,
+  inherits pause state, and reconverges echo cancellation after each switch.
+
+### Fixed
+
+- Fixed a microphone selected while recording was paused remaining inaudible
+  after resume by initializing the replacement in a validated paused state and
+  resetting the mixer before accepting resumed audio packets.
 
 ## [0.4.0] - 2026-08-06
 

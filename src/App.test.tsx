@@ -105,6 +105,16 @@ vi.mock("./api", () => ({
     pauseRecording: vi.fn(async () => snapshot("paused")),
     resumeRecording: vi.fn(async () => snapshot("recording")),
     stopRecording: vi.fn(async () => snapshot("completed")),
+    setMicrophoneEnabled: vi.fn(async (microphone) => ({
+      ...snapshot("recording"),
+      microphone: {
+        healthy: microphone !== null,
+        label: "麦克风",
+        detail: microphone === null ? "已关闭" : "已切换",
+      },
+      microphoneSelection: microphone,
+      aecStatus: microphone === null ? "disabled" : "converging",
+    })),
     onRequestStart: vi.fn(
       async (
         handler: (mode?: "process" | "system" | "current") => void,
@@ -162,6 +172,8 @@ const snapshot = (state: RecordingSnapshot["state"]): RecordingSnapshot => ({
   outputPath: null,
   system: { healthy: true, label: "会议声音" },
   microphone: { healthy: true, label: "麦克风" },
+  microphoneSelection:
+    state === "idle" ? null : { kind: "followDefaultCommunications" },
   aecStatus: "enabled",
   fault: null,
 });
@@ -332,6 +344,106 @@ describe("Nota UI states", () => {
         name: "跟随默认通信设备（扬声器 (Realtek(R) Audio)）",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("switches microphones without stopping the active recording", async () => {
+    testState.snapshot = snapshot("recording");
+    testState.devices = [
+      {
+        id: "capture:built-in",
+        name: "内置麦克风",
+        direction: "capture",
+        isDefaultCommunications: true,
+        formFactor: "Microphone",
+        active: true,
+      },
+      {
+        id: "capture:usb",
+        name: "USB 会议麦克风",
+        direction: "capture",
+        isDefaultCommunications: false,
+        formFactor: "Microphone",
+        active: true,
+      },
+    ];
+    let finishSwitch: ((value: RecordingSnapshot) => void) | undefined;
+    vi.mocked(api.setMicrophoneEnabled).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishSwitch = resolve;
+      }),
+    );
+    render(<App />);
+
+    const selector = await screen.findByRole("combobox", {
+      name: "本次录音麦克风",
+    });
+    fireEvent.change(selector, { target: { value: "capture:usb" } });
+
+    expect(api.setMicrophoneEnabled).toHaveBeenCalledWith({
+      kind: "fixed",
+      endpointId: "capture:usb",
+    });
+    expect(selector).toBeDisabled();
+    expect(screen.getByText("正在切换…")).toBeInTheDocument();
+
+    await act(async () => {
+      finishSwitch?.({
+        ...snapshot("recording"),
+        microphone: { healthy: true, label: "麦克风", detail: "已切换" },
+        microphoneSelection: { kind: "fixed", endpointId: "capture:usb" },
+        aecStatus: "converging",
+      });
+    });
+    await waitFor(() => expect(selector).toHaveValue("capture:usb"));
+    expect(selector).toBeEnabled();
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "麦克风已切换至 USB 会议麦克风",
+    );
+    expect(api.stopRecording).not.toHaveBeenCalled();
+  });
+
+  it("can disable only the current recording microphone", async () => {
+    testState.snapshot = snapshot("recording");
+    render(<App />);
+
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "本次录音麦克风" }),
+      { target: { value: "off" } },
+    );
+
+    await waitFor(() => expect(api.setMicrophoneEnabled).toHaveBeenCalledWith(null));
+    expect(await screen.findByText("本次录音已关闭")).toBeInTheDocument();
+    expect(api.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("keeps the previous microphone selected when a live switch fails", async () => {
+    testState.snapshot = snapshot("recording");
+    testState.devices = [
+      {
+        id: "capture:usb",
+        name: "USB 会议麦克风",
+        direction: "capture",
+        isDefaultCommunications: false,
+        formFactor: "Microphone",
+        active: true,
+      },
+    ];
+    vi.mocked(api.setMicrophoneEnabled).mockRejectedValueOnce(
+      new Error("无法启动所选麦克风"),
+    );
+    render(<App />);
+
+    const selector = await screen.findByRole("combobox", {
+      name: "本次录音麦克风",
+    });
+    fireEvent.change(selector, { target: { value: "capture:usb" } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "无法启动所选麦克风",
+    );
+    await waitFor(() => expect(selector).toHaveValue("default"));
+    expect(api.getSnapshot).toHaveBeenCalled();
+    expect(api.stopRecording).not.toHaveBeenCalled();
   });
 
   it("shows the application version in settings", async () => {
