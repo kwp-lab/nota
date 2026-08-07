@@ -112,6 +112,23 @@ npm run check
 - Git release tags use `vX.Y.Z` and must match the verified application
   version.
 
+## Branch and pull request workflow
+
+- For each new independently deliverable code feature, bug fix, or substantive
+  cross-file change, start from an up-to-date `main` branch and create a
+  dedicated feature branch before editing. Continue related follow-up work on
+  the same branch. Use the `codex/` prefix unless the user requests another
+  naming convention.
+- Do not create a dedicated branch solely for a trivial, low-risk documentation,
+  wording, metadata, or repository-instruction edit unless the user asks for
+  one. Keep the branch workflow proportional to the change.
+- When changes need to be merged into `main`, prefer a GitHub pull request. If
+  the user asks to merge without specifying a method, recommend or create a PR
+  instead of pushing directly to `main`. Push directly to `main` only when the
+  user explicitly requests it.
+- Creating a branch does not authorize committing, pushing, creating a PR, or
+  merging it. Those actions still require explicit user authorization.
+
 ## Git and release hygiene
 
 - Do not commit, push, create tags, or publish releases unless the user asks.
