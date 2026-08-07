@@ -41,6 +41,7 @@ import type {
   AudioDevice,
   CaptureSelection,
   CaptureTarget,
+  DeviceSelection,
   LevelEvent,
   ParticipantProfile,
   RecordingItem,
@@ -57,6 +58,7 @@ const defaultSnapshot: RecordingSnapshot = {
   outputPath: null,
   system: { healthy: false, label: "系统声音" },
   microphone: { healthy: false, label: "麦克风" },
+  microphoneSelection: null,
   aecStatus: "disabled",
   fault: null,
 };
@@ -88,6 +90,20 @@ const isActive = (state: RecordingSnapshot["state"]) =>
 const followDefaultDeviceLabel = (device?: AudioDevice) =>
   `跟随默认通信设备（${device?.name ?? "当前不可用"}）`;
 
+const microphoneSelectionValue = (selection: DeviceSelection | null) => {
+  if (!selection) return "off";
+  return selection.kind === "followDefaultCommunications"
+    ? "default"
+    : selection.endpointId;
+};
+
+const microphoneSelectionFromValue = (value: string): DeviceSelection | null => {
+  if (value === "off") return null;
+  return value === "default"
+    ? { kind: "followDefaultCommunications" }
+    : { kind: "fixed", endpointId: value };
+};
+
 type CaptureMode = "process" | "system";
 type StartRequestMode = CaptureMode | "current";
 type AppPage = "recorder" | "recordings" | "voiceprints" | "settings";
@@ -102,6 +118,7 @@ export default function App() {
   const [renderDeviceId, setRenderDeviceId] = useState("default");
   const [micDeviceId, setMicDeviceId] = useState("default");
   const [snapshot, setSnapshot] = useState(defaultSnapshot);
+  const [microphoneSwitching, setMicrophoneSwitching] = useState(false);
   const [levels, setLevels] = useState<LevelEvent>({ system: 0, microphone: 0 });
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [recoverable, setRecoverable] = useState<RecordingItem[]>([]);
@@ -689,20 +706,35 @@ export default function App() {
     }
   };
 
-  const toggleLiveMicrophone = async () => {
+  const switchLiveMicrophone = async (value: string) => {
+    if (microphoneSwitching) return;
+    setMicrophoneSwitching(true);
     try {
-      const enabled = !settings.microphoneEnabled;
-      const nextSnapshot = await api.setMicrophoneEnabled(
-        enabled
-          ? micDeviceId === "default"
-            ? { kind: "followDefaultCommunications" }
-            : { kind: "fixed", endpointId: micDeviceId }
-          : null,
-      );
+      const selection = microphoneSelectionFromValue(value);
+      const nextSnapshot = await api.setMicrophoneEnabled(selection);
       applySnapshot(nextSnapshot);
-      setSettings((current) => ({ ...current, microphoneEnabled: enabled }));
+      if (value !== "off") {
+        setMicDeviceId(value);
+      }
+      const deviceName =
+        value === "default"
+          ? defaultMicLabel
+          : micDevices.find((device) => device.id === value)?.name;
+      showToast(
+        "success",
+        value === "off"
+          ? "已关闭本次录音的麦克风"
+          : `麦克风已切换至 ${deviceName ?? "所选设备"}`,
+      );
     } catch (error) {
+      try {
+        applySnapshot(await api.getSnapshot());
+      } catch {
+        // Keep the last known snapshot when backend state cannot be refreshed.
+      }
       showError(error);
+    } finally {
+      setMicrophoneSwitching(false);
     }
   };
 
@@ -731,6 +763,17 @@ export default function App() {
     on: "AEC 开启",
     off: "AEC 关闭",
   };
+  const liveMicrophoneValue = microphoneSelectionValue(snapshot.microphoneSelection);
+  const liveFixedMicrophoneId =
+    snapshot.microphoneSelection?.kind === "fixed"
+      ? snapshot.microphoneSelection.endpointId
+      : null;
+  const missingLiveMicrophone =
+    liveFixedMicrophoneId !== null &&
+    !micDevices.some((device) => device.id === liveFixedMicrophoneId);
+  const canSwitchLiveMicrophone = ["recording", "paused", "interrupted"].includes(
+    snapshot.state,
+  );
 
   return (
     <div className="app-shell">
@@ -949,12 +992,40 @@ export default function App() {
                 value={levels.microphone}
                 healthy={snapshot.microphone.healthy}
               />
+              <div className="live-microphone-control">
+                <label htmlFor="live-microphone"><Mic size={15} />本次录音麦克风</label>
+                <div className="select-wrap">
+                  <select
+                    id="live-microphone"
+                    value={liveMicrophoneValue}
+                    disabled={!canSwitchLiveMicrophone || microphoneSwitching}
+                    onChange={(event) => void switchLiveMicrophone(event.target.value)}
+                  >
+                    <option value="default">{defaultMicLabel}</option>
+                    {missingLiveMicrophone && liveFixedMicrophoneId && (
+                      <option value={liveFixedMicrophoneId}>
+                        当前麦克风（设备暂不可用）
+                      </option>
+                    )}
+                    {micDevices.map((device) => (
+                      <option key={device.id} value={device.id}>{device.name}</option>
+                    ))}
+                    <option value="off">不录制麦克风</option>
+                  </select>
+                  <ChevronDown size={16} />
+                </div>
+                <span className={snapshot.microphone.healthy ? "health-ok" : "health-bad"}>
+                  {microphoneSwitching
+                    ? "正在切换…"
+                    : snapshot.microphoneSelection
+                      ? snapshot.microphone.healthy
+                        ? snapshot.microphone.detail ?? "正在录制"
+                        : "设备暂不可用，正在等待恢复"
+                      : "本次录音已关闭"}
+                </span>
+              </div>
               <div className="live-status">
                 <span><Headphones size={16} />{aecLabels[settings.aecMode]}</span>
-                <button className="text-button" onClick={() => void toggleLiveMicrophone()}>
-                  <Mic size={14} />
-                  {settings.microphoneEnabled ? "关闭麦克风" : "开启麦克风"}
-                </button>
                 <span>{(snapshot.bytesWritten / 1024 / 1024).toFixed(1)} MB</span>
               </div>
             </div>

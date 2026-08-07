@@ -135,6 +135,17 @@ pub struct CaptureHandle {
     join: Option<JoinHandle<()>>,
 }
 
+struct CapturePacketSink {
+    packets: Sender<AudioPacket>,
+    source_epoch: u64,
+}
+
+struct CaptureSessionState<'a> {
+    device_changed: &'a AtomicBool,
+    process_target_monitor: ProcessTargetMonitor<'a>,
+    running: bool,
+}
+
 impl CaptureHandle {
     pub fn pause(&self) {
         self.paused.store(true, Ordering::Release);
@@ -169,13 +180,22 @@ impl Drop for CaptureHandle {
     }
 }
 
-pub fn start_capture(source: CaptureSource, packets: Sender<AudioPacket>) -> Result<CaptureHandle> {
+pub fn start_capture(
+    source: CaptureSource,
+    packets: Sender<AudioPacket>,
+    source_epoch: u64,
+    initially_paused: bool,
+) -> Result<CaptureHandle> {
     let stop = Arc::new(AtomicBool::new(false));
-    let paused = Arc::new(AtomicBool::new(false));
+    let paused = Arc::new(AtomicBool::new(initially_paused));
     let healthy = Arc::new(AtomicBool::new(false));
     let thread_stop = Arc::clone(&stop);
     let thread_paused = Arc::clone(&paused);
     let thread_healthy = Arc::clone(&healthy);
+    let packet_sink = CapturePacketSink {
+        packets,
+        source_epoch,
+    };
     let (event_tx, event_rx) = unbounded();
     let (ready_tx, ready_rx) = crossbeam_channel::bounded::<std::result::Result<(), String>>(1);
     let join = thread::Builder::new()
@@ -183,7 +203,7 @@ pub fn start_capture(source: CaptureSource, packets: Sender<AudioPacket>) -> Res
         .spawn(move || {
             let result = capture_thread(
                 source,
-                packets,
+                packet_sink,
                 thread_stop,
                 thread_paused,
                 thread_healthy,
@@ -218,7 +238,7 @@ pub fn start_capture(source: CaptureSource, packets: Sender<AudioPacket>) -> Res
 
 fn capture_thread(
     source: CaptureSource,
-    packets: Sender<AudioPacket>,
+    packet_sink: CapturePacketSink,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     healthy: Arc<AtomicBool>,
@@ -269,6 +289,14 @@ fn capture_thread(
             thread::sleep(Duration::from_secs(1));
             continue;
         }
+        let mut running = true;
+        if paused.load(Ordering::Acquire) {
+            unsafe {
+                setup.client.Stop()?;
+                setup.client.Reset()?;
+            }
+            running = false;
+        }
         healthy.store(true, Ordering::Release);
         if first_attempt {
             let _ = ready.send(Ok(()));
@@ -278,13 +306,16 @@ fn capture_thread(
         if let Err(error) = capture_session(
             &setup,
             &source,
-            &packets,
+            &packet_sink,
             &stop,
             &paused,
-            &device_changed,
-            ProcessTargetMonitor {
-                tracker: &mut process_target_tracker,
-                events: &events,
+            CaptureSessionState {
+                device_changed: &device_changed,
+                process_target_monitor: ProcessTargetMonitor {
+                    tracker: &mut process_target_tracker,
+                    events: &events,
+                },
+                running,
             },
         ) {
             log::warn!(
@@ -401,13 +432,16 @@ fn setup_source(source: &CaptureSource) -> Result<CaptureSetup> {
 fn capture_session(
     setup: &CaptureSetup,
     source: &CaptureSource,
-    packets: &Sender<AudioPacket>,
+    packet_sink: &CapturePacketSink,
     stop: &AtomicBool,
     paused: &AtomicBool,
-    device_changed: &AtomicBool,
-    mut process_target_monitor: ProcessTargetMonitor<'_>,
+    state: CaptureSessionState<'_>,
 ) -> Result<()> {
-    let mut running = true;
+    let CaptureSessionState {
+        device_changed,
+        mut process_target_monitor,
+        mut running,
+    } = state;
     let mut last_default_check = std::time::Instant::now();
     let mut next_packet_timestamp_100ns = None;
     let mut discontinuities = 0u64;
@@ -419,8 +453,8 @@ fn capture_session(
         if paused.load(Ordering::Acquire) {
             if running {
                 unsafe {
-                    let _ = setup.client.Stop();
-                    let _ = setup.client.Reset();
+                    setup.client.Stop()?;
+                    setup.client.Reset()?;
                 }
                 running = false;
             }
@@ -503,7 +537,8 @@ fn capture_session(
                 unsafe { decode_mono(data, frames as usize, &setup.format) }
             };
             unsafe { setup.capture.ReleaseBuffer(frames)? };
-            if packets
+            if packet_sink
+                .packets
                 .send(AudioPacket {
                     samples,
                     sample_rate: setup.format.sample_rate,
@@ -519,6 +554,7 @@ fn capture_session(
                     device_position: matches!(source, CaptureSource::Microphone(_))
                         .then_some(device_position),
                     discontinuity,
+                    source_epoch: packet_sink.source_epoch,
                 })
                 .is_err()
             {
@@ -1552,6 +1588,8 @@ mod tests {
                 window_handle: target.window_handle,
             },
             sender,
+            0,
+            false,
         )
         .unwrap();
 
@@ -1579,6 +1617,8 @@ mod tests {
                 window_handle: None,
             },
             sender,
+            0,
+            false,
         )
         .unwrap();
         let tone = test_tone_wav();
@@ -1617,15 +1657,21 @@ mod tests {
     #[test]
     #[ignore = "requires a Windows microphone endpoint"]
     fn microphone_activation_smoke_test() {
-        let (sender, _receiver) = crossbeam_channel::unbounded();
+        let (sender, receiver) = crossbeam_channel::unbounded();
         let capture = start_capture(
             CaptureSource::Microphone(DeviceSelection::FollowDefaultCommunications),
             sender,
+            1,
+            true,
         )
         .unwrap();
 
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(250));
         assert!(capture.health_flag().load(Ordering::Acquire));
+        assert!(receiver.is_empty());
+        capture.resume();
+        let packet = receiver.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert_eq!(packet.source_epoch, 1);
         capture.stop();
     }
 
@@ -1640,11 +1686,15 @@ mod tests {
         let system_capture = start_capture(
             CaptureSource::System(DeviceSelection::FollowDefaultCommunications),
             system_sender,
+            0,
+            false,
         )
         .unwrap();
         let microphone_capture = start_capture(
             CaptureSource::Microphone(DeviceSelection::FollowDefaultCommunications),
             microphone_sender,
+            1,
+            false,
         )
         .unwrap();
 

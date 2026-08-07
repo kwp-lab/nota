@@ -115,6 +115,7 @@ pub struct RecordingSnapshot {
     pub output_path: Option<String>,
     pub system: SourceStatus,
     pub microphone: SourceStatus,
+    pub microphone_selection: Option<DeviceSelection>,
     pub aec_status: AecStatus,
     pub fault: Option<RecordingFault>,
 }
@@ -138,6 +139,7 @@ impl Default for RecordingSnapshot {
                 label: "麦克风".into(),
                 detail: None,
             },
+            microphone_selection: None,
             aec_status: AecStatus::Disabled,
             fault: None,
         }
@@ -574,7 +576,9 @@ pub struct TranscriptionEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{AecMode, CaptureSelection, DeviceSelection, StartRecordingRequest};
+    use super::{
+        AecMode, CaptureSelection, DeviceSelection, RecordingSnapshot, StartRecordingRequest,
+    };
     use serde_json::json;
 
     #[test]
@@ -639,6 +643,24 @@ mod tests {
             Some(DeviceSelection::Fixed {
                 endpoint_id: "capture-endpoint".into()
             })
+        );
+    }
+
+    #[test]
+    fn recording_snapshot_exposes_the_authoritative_microphone_selection() {
+        let snapshot = RecordingSnapshot {
+            microphone_selection: Some(DeviceSelection::Fixed {
+                endpoint_id: "capture-endpoint".into(),
+            }),
+            ..RecordingSnapshot::default()
+        };
+
+        let value = serde_json::to_value(snapshot).unwrap();
+
+        assert_eq!(value["microphoneSelection"]["kind"], "fixed");
+        assert_eq!(
+            value["microphoneSelection"]["endpointId"],
+            "capture-endpoint"
         );
     }
 }

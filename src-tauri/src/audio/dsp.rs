@@ -22,6 +22,7 @@ pub struct AudioPacket {
     pub timestamp_100ns: u64,
     pub device_position: Option<u64>,
     pub discontinuity: bool,
+    pub source_epoch: u64,
 }
 
 struct AdaptiveStream {
@@ -37,6 +38,7 @@ struct AdaptiveStream {
     first_timestamp_100ns: Option<u64>,
     next_timestamp_100ns: Option<u64>,
     next_device_position: Option<u64>,
+    pending_leading_silence_100ns: u64,
     underflows: u64,
     discontinuities: u64,
     concealed_gap_samples: u64,
@@ -106,6 +108,7 @@ impl AdaptiveStream {
             first_timestamp_100ns: None,
             next_timestamp_100ns: None,
             next_device_position: None,
+            pending_leading_silence_100ns: 0,
             underflows: 0,
             discontinuities: 0,
             concealed_gap_samples: 0,
@@ -153,6 +156,14 @@ impl AdaptiveStream {
             self.first_timestamp_100ns = None;
             self.next_timestamp_100ns = None;
             self.next_device_position = None;
+        }
+        let leading_silence_100ns = std::mem::take(&mut self.pending_leading_silence_100ns);
+        if leading_silence_100ns > 0 {
+            let silence = ((leading_silence_100ns as u128 * self.source_rate as u128) / 10_000_000)
+                .min(usize::MAX as u128) as usize;
+            self.input.extend(std::iter::repeat_n(0.0, silence));
+            self.first_timestamp_100ns
+                .get_or_insert(packet.timestamp_100ns.saturating_sub(leading_silence_100ns));
         }
         let mut samples = packet.samples;
         if self.underflowing {
@@ -481,6 +492,17 @@ impl AdaptiveStream {
         self.first_timestamp_100ns = None;
         self.next_timestamp_100ns = None;
         self.next_device_position = None;
+        self.pending_leading_silence_100ns = 0;
+    }
+
+    fn buffered_duration_100ns(&self) -> u64 {
+        (self.input.len() as u128 * 10_000_000 / self.source_rate.max(1) as u128)
+            .min(u64::MAX as u128) as u64
+    }
+
+    fn clear_for_source_switch(&mut self, leading_silence_100ns: u64) {
+        self.clear();
+        self.pending_leading_silence_100ns = leading_silence_100ns.min(MAX_ALIGNMENT_GAP_100NS);
     }
 }
 
@@ -559,6 +581,28 @@ impl AudioMixer {
 
     pub fn push_microphone(&mut self, packet: AudioPacket) {
         self.microphone.push(packet);
+    }
+
+    pub fn switch_microphone_source(
+        &mut self,
+        aec_mode: AecMode,
+        auto_should_enable: bool,
+        microphone_enabled: bool,
+        align_with_system: bool,
+    ) {
+        let leading_silence_100ns = if align_with_system {
+            self.system.buffered_duration_100ns()
+        } else {
+            0
+        };
+        self.microphone
+            .clear_for_source_switch(leading_silence_100ns);
+        self.aligned = true;
+        self.limiter.reset();
+        let aec_enabled = microphone_enabled
+            && (matches!(aec_mode, AecMode::On)
+                || (matches!(aec_mode, AecMode::Auto) && auto_should_enable));
+        self.aec = aec_enabled.then(create_aec);
     }
 
     pub fn next_frame(
@@ -698,6 +742,7 @@ mod tests {
                 timestamp_100ns: packet * 100_000,
                 device_position: Some(packet * 481),
                 discontinuity: false,
+                source_epoch: 0,
             });
             let output = stream.frame();
             assert_eq!(output.len(), FRAME_SAMPLES);
@@ -715,6 +760,7 @@ mod tests {
             timestamp_100ns: 1_000_000,
             device_position: Some(0),
             discontinuity: false,
+            source_epoch: 0,
         });
         assert!(stream.resampler.is_none());
         let output = stream.frame();
@@ -737,6 +783,7 @@ mod tests {
                 timestamp_100ns: 1_000_000 + packet * 100_000,
                 device_position: Some(packet * 160),
                 discontinuity: false,
+                source_epoch: 0,
             });
         }
         assert!(stream.frame().iter().all(|sample| *sample == 0.0));
@@ -746,6 +793,7 @@ mod tests {
             timestamp_100ns: 1_800_000,
             device_position: Some(8 * 160),
             discontinuity: false,
+            source_epoch: 0,
         });
         stream.push(AudioPacket {
             samples: vec![0.25; 160],
@@ -753,6 +801,7 @@ mod tests {
             timestamp_100ns: 1_900_000,
             device_position: Some(9 * 160),
             discontinuity: false,
+            source_epoch: 0,
         });
         assert!(stream.frame().iter().any(|sample| sample.abs() > 0.01));
     }
@@ -767,6 +816,7 @@ mod tests {
                 timestamp_100ns: 1_000_000 + packet * 100_000,
                 device_position: Some(packet * 160),
                 discontinuity: false,
+                source_epoch: 0,
             });
         }
         let _ = stream.frame();
@@ -782,6 +832,7 @@ mod tests {
             timestamp_100ns: 2_200_000,
             device_position: Some(12 * 160),
             discontinuity: false,
+            source_epoch: 0,
         });
         assert!(stream.input.iter().any(|sample| sample.abs() > 0.01));
     }
@@ -795,6 +846,7 @@ mod tests {
             timestamp_100ns: 2_000_000,
             device_position: Some(0),
             discontinuity: false,
+            source_epoch: 0,
         });
         stream.prepend_silence_to(1_000_000);
         assert_eq!(stream.input.len(), 3_200);
@@ -810,6 +862,7 @@ mod tests {
             timestamp_100ns: 1_000_000,
             device_position: Some(0),
             discontinuity: false,
+            source_epoch: 0,
         });
         stream.push(AudioPacket {
             samples: vec![-1.0; 160],
@@ -817,6 +870,7 @@ mod tests {
             timestamp_100ns: 1_125_000,
             device_position: Some(200),
             discontinuity: true,
+            source_epoch: 0,
         });
         assert_eq!(stream.concealed_gap_samples, 40);
         assert_eq!(stream.discontinuities, 1);
@@ -837,6 +891,7 @@ mod tests {
             timestamp_100ns: 1_000_000,
             device_position: None,
             discontinuity: false,
+            source_epoch: 0,
         });
         let before_gap = stream.input.len();
         stream.push(AudioPacket {
@@ -845,6 +900,7 @@ mod tests {
             timestamp_100ns: 1_200_000,
             device_position: None,
             discontinuity: false,
+            source_epoch: 0,
         });
         assert!(stream.input.len() > before_gap + 480);
 
@@ -855,6 +911,7 @@ mod tests {
             timestamp_100ns: 1_000_000,
             device_position: None,
             discontinuity: false,
+            source_epoch: 0,
         });
         after_sleep.push(AudioPacket {
             samples: vec![1.0; 480],
@@ -862,7 +919,82 @@ mod tests {
             timestamp_100ns: 101_000_000,
             device_position: None,
             discontinuity: false,
+            source_epoch: 0,
         });
         assert_eq!(after_sleep.input.len(), 960);
+    }
+
+    #[test]
+    fn microphone_source_switch_preserves_system_audio_and_rebuilds_aec() {
+        let mut mixer = AudioMixer::new(AecMode::On, true);
+        mixer.push_system(AudioPacket {
+            samples: vec![0.25; 4_800],
+            sample_rate: SAMPLE_RATE,
+            timestamp_100ns: 1_000_000,
+            device_position: None,
+            discontinuity: false,
+            source_epoch: 0,
+        });
+        mixer.push_microphone(AudioPacket {
+            samples: vec![0.5; 960],
+            sample_rate: SAMPLE_RATE,
+            timestamp_100ns: 1_000_000,
+            device_position: Some(0),
+            discontinuity: false,
+            source_epoch: 1,
+        });
+        let buffered_system_samples = mixer.system.input.len();
+
+        mixer.switch_microphone_source(AecMode::On, true, true, true);
+
+        assert_eq!(mixer.system.input.len(), buffered_system_samples);
+        assert!(mixer.microphone.input.is_empty());
+        assert_eq!(mixer.microphone.pending_leading_silence_100ns, 1_000_000);
+        assert!(mixer.aec.is_some());
+
+        mixer.push_microphone(AudioPacket {
+            samples: vec![0.75; 480],
+            sample_rate: SAMPLE_RATE,
+            timestamp_100ns: 2_000_000,
+            device_position: Some(0),
+            discontinuity: false,
+            source_epoch: 2,
+        });
+        assert_eq!(mixer.microphone.input.len(), 5_280);
+        assert!(
+            mixer
+                .microphone
+                .input
+                .iter()
+                .take(4_800)
+                .all(|sample| *sample == 0.0)
+        );
+        assert!(
+            mixer
+                .microphone
+                .input
+                .iter()
+                .skip(4_800)
+                .all(|sample| (*sample - 0.75).abs() < f32::EPSILON)
+        );
+    }
+
+    #[test]
+    fn disabling_microphone_clears_its_buffer_without_recreating_aec() {
+        let mut mixer = AudioMixer::new(AecMode::On, true);
+        mixer.push_microphone(AudioPacket {
+            samples: vec![0.5; 960],
+            sample_rate: SAMPLE_RATE,
+            timestamp_100ns: 1_000_000,
+            device_position: Some(0),
+            discontinuity: false,
+            source_epoch: 1,
+        });
+
+        mixer.switch_microphone_source(AecMode::On, true, false, false);
+
+        assert!(mixer.microphone.input.is_empty());
+        assert_eq!(mixer.microphone.pending_leading_silence_100ns, 0);
+        assert!(mixer.aec.is_none());
     }
 }

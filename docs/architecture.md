@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-07
+- Last updated: 2026-08-08
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -149,6 +149,50 @@ height from Rust; Rust then resizes and re-anchors it at the monitor's lower
 right corner. Content beyond the upper bound remains scrollable, so DPI,
 accessibility text scaling, long target titles, and error details cannot hide
 the decision buttons.
+
+## Live Microphone Switching
+
+An active recording may replace or disable only its microphone source. The
+meeting-audio selection remains immutable for the session: a microphone change
+must not switch the selected application, widen capture to system audio, or
+start a second recording file. `RecordingSnapshot.microphoneSelection` is the
+authoritative current selection exposed to React; changing it is session-scoped
+and does not rewrite the saved default recording preference.
+
+Replacement uses a make-before-break handoff. Each microphone capture instance
+stamps packets with a monotonically changing source epoch. Rust starts and
+validates the requested device before publishing its epoch. The mixer accepts
+only the committed epoch, so packets arriving late from the previous capture
+cannot be mixed into the new device. A failed replacement leaves the previous
+epoch and capture handle unchanged.
+
+```mermaid
+flowchart TD
+    A["User selects another microphone"] --> B["Start replacement WASAPI capture"]
+    B -->|"start fails"| C["Keep previous microphone and report the error"]
+    B -->|"ready"| D["Inherit the recording pause state"]
+    D --> E["Commit the new source epoch and snapshot selection"]
+    E --> F["Mixer rejects packets from older epochs"]
+    F --> G["Reset only microphone buffering and AEC"]
+    G --> H["Pad the new microphone to the queued meeting-audio duration"]
+    H --> I["Stop the previous microphone capture"]
+    I --> J["Continue writing the same Ogg recording"]
+```
+
+Resetting the microphone must not discard already queued meeting audio. The new
+microphone begins with bounded silence matching the current meeting-audio
+buffer, after which both streams resume their normal clock-drift correction.
+AEC returns to `converging` and becomes `enabled` only after two seconds of
+actual post-switch processing. Disabling the microphone clears its pending
+audio and disables AEC. Switching while paused validates the replacement with
+a complete WASAPI `Start`/`Stop`/`Reset` cycle before committing it in the
+paused state. On resume, the mixer and microphone-only DSP state are reset
+before any resumed packets are dequeued, then both captures resume together.
+
+Opening a Bluetooth microphone may change the Windows A2DP/HFP device mode. In
+system-audio recording mode, Rust therefore rebuilds the existing system
+loopback after the microphone handoff while preserving the same selected
+endpoint policy. It must never fall back to another capture scope silently.
 
 ## Trust Boundaries
 

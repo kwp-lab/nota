@@ -60,6 +60,7 @@ export interface RecordingSnapshot {
   outputPath: string | null;
   system: SourceStatus;
   microphone: SourceStatus;
+  microphoneSelection: DeviceSelection | null;
   aecStatus: "disabled" | "enabled" | "converging";
   fault: RecordingFault | null;
 }

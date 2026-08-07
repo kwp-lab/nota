@@ -19,7 +19,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tauri::image::Image;
@@ -68,7 +68,10 @@ struct RecordingRuntime {
     system_health: Arc<Mutex<Arc<AtomicBool>>>,
     microphone_health: Arc<Mutex<Arc<AtomicBool>>>,
     microphone_enabled: Arc<AtomicBool>,
+    microphone_source_epoch: Arc<AtomicU64>,
     capture_selection: CaptureSelection,
+    aec_mode: AecMode,
+    auto_should_enable_aec: bool,
     worker: Option<JoinHandle<()>>,
     process_event_monitor: Option<JoinHandle<()>>,
 }
@@ -180,6 +183,7 @@ impl RecordingController {
                     label: "麦克风".into(),
                     detail: request.microphone.as_ref().map(|_| "正在连接".into()),
                 },
+                microphone_selection: request.microphone.clone(),
                 aec_status: AecStatus::Disabled,
                 fault: (available.min(recovery_available) < 200 * 1024 * 1024).then(|| {
                     RecordingFault {
@@ -211,6 +215,7 @@ impl RecordingController {
         let process_capture = matches!(request.capture, CaptureSelection::Process { .. });
         let (microphone_tx, microphone_rx) = unbounded::<AudioPacket>();
         let (system_tx, system_rx) = unbounded::<AudioPacket>();
+        let initial_microphone_source_epoch = u64::from(request.microphone.is_some());
         let system_source = capture_source_from_selection(&request.capture)?;
         // Attach process loopback before opening a Bluetooth microphone.
         // Switching a headset from A2DP to HFP can make a meeting client move
@@ -219,7 +224,7 @@ impl RecordingController {
         // endpoint instead of the now-silent A2DP endpoint.
         let mut system_capture = if process_capture {
             Some(
-                match start_capture(system_source.clone(), system_tx.clone()) {
+                match start_capture(system_source.clone(), system_tx.clone(), 0, false) {
                     Ok(handle) => handle,
                     Err(error) => {
                         drop(writer);
@@ -234,7 +239,12 @@ impl RecordingController {
         };
         let (mut microphone_capture, microphone_error) = match request.microphone.clone() {
             Some(selection) => {
-                match start_capture(CaptureSource::Microphone(selection), microphone_tx.clone()) {
+                match start_capture(
+                    CaptureSource::Microphone(selection),
+                    microphone_tx.clone(),
+                    initial_microphone_source_epoch,
+                    false,
+                ) {
                     Ok(handle) => (Some(handle), None),
                     Err(error) => (None, Some(format!("{error:#}"))),
                 }
@@ -250,26 +260,27 @@ impl RecordingController {
         }
 
         if system_capture.is_none() {
-            system_capture = Some(match start_capture(system_source, system_tx.clone()) {
-                Ok(handle) => handle,
-                Err(error) => {
-                    if let Some(capture) = microphone_capture.take() {
-                        capture.stop();
+            system_capture = Some(
+                match start_capture(system_source, system_tx.clone(), 0, false) {
+                    Ok(handle) => handle,
+                    Err(error) => {
+                        if let Some(capture) = microphone_capture.take() {
+                            capture.stop();
+                        }
+                        drop(writer);
+                        let _ = std::fs::remove_file(&partial_path);
+                        self.set_error(&app, "system", "CAPTURE_START_FAILED", &error);
+                        bail!("无法启动所选录音来源：{error:#}。可切换到“全部系统声音”后重试")
                     }
-                    drop(writer);
-                    let _ = std::fs::remove_file(&partial_path);
-                    self.set_error(&app, "system", "CAPTURE_START_FAILED", &error);
-                    bail!("无法启动所选录音来源：{error:#}。可切换到“全部系统声音”后重试")
-                }
-            });
+                },
+            );
         }
         let system_capture = system_capture.expect("capture source was initialized");
         let process_events = process_capture.then(|| system_capture.event_receiver());
         let microphone_expected = request.microphone.is_some();
         let auto_should_enable_aec = auto_should_enable_aec(&request.capture);
         let aec_enabled = microphone_capture.is_some()
-            && (matches!(request.aec_mode, AecMode::On)
-                || (matches!(request.aec_mode, AecMode::Auto) && auto_should_enable_aec));
+            && should_enable_aec(request.aec_mode, auto_should_enable_aec);
         let system_health = Arc::new(Mutex::new(system_capture.health_flag()));
         let microphone_health = Arc::new(Mutex::new(
             microphone_capture
@@ -278,7 +289,10 @@ impl RecordingController {
                 .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
         ));
         let microphone_enabled = Arc::new(AtomicBool::new(microphone_expected));
+        let microphone_source_epoch = Arc::new(AtomicU64::new(initial_microphone_source_epoch));
         let output_path = unique_recording_path(&output_directory);
+        let active_microphone_selection =
+            microphone_capture.as_ref().and(request.microphone.clone());
 
         {
             let mut snapshot = self.snapshot.lock();
@@ -296,6 +310,7 @@ impl RecordingController {
                 label: "麦克风".into(),
                 detail: microphone_error,
             };
+            snapshot.microphone_selection = active_microphone_selection;
             snapshot.aec_status = if aec_enabled {
                 AecStatus::Converging
             } else {
@@ -316,6 +331,7 @@ impl RecordingController {
         let worker_system_health = Arc::clone(&system_health);
         let worker_microphone_health = Arc::clone(&microphone_health);
         let worker_microphone_enabled = Arc::clone(&microphone_enabled);
+        let worker_microphone_source_epoch = Arc::clone(&microphone_source_epoch);
         let worker = std::thread::Builder::new()
             .name("nota-mixer".into())
             .spawn(move || {
@@ -331,11 +347,11 @@ impl RecordingController {
                     worker_request,
                     system_rx,
                     microphone_rx,
-                    microphone_expected,
                     auto_should_enable_aec,
                     worker_system_health,
                     worker_microphone_health,
                     worker_microphone_enabled,
+                    worker_microphone_source_epoch,
                     worker_stop,
                     worker_paused,
                 );
@@ -352,7 +368,10 @@ impl RecordingController {
             system_health,
             microphone_health,
             microphone_enabled,
+            microphone_source_epoch,
             capture_selection: request.capture,
+            aec_mode: request.aec_mode,
+            auto_should_enable_aec,
             worker: Some(worker),
             process_event_monitor,
         });
@@ -436,6 +455,7 @@ impl RecordingController {
         if let Some(capture) = runtime.microphone_capture.as_ref() {
             capture.pause();
         }
+        log::info!("recording paused");
         emit_snapshot(app, &self.snapshot);
         Ok(self.snapshot())
     }
@@ -463,6 +483,7 @@ impl RecordingController {
         if let Some(capture) = runtime.microphone_capture.as_ref() {
             capture.resume();
         }
+        log::info!("recording resumed");
         emit_snapshot(app, &self.snapshot);
         Ok(self.snapshot())
     }
@@ -563,7 +584,12 @@ impl RecordingController {
             return Ok(self.snapshot());
         };
         let source = capture_source_from_selection(&selection)?;
-        let replacement = start_capture(source, runtime.system_sender.clone())?;
+        let replacement = start_capture(
+            source,
+            runtime.system_sender.clone(),
+            0,
+            runtime.paused.load(Ordering::Acquire),
+        )?;
         let replacement_events = matches!(selection, CaptureSelection::Process { .. })
             .then(|| replacement.event_receiver());
         let replacement_health = replacement.health_flag();
@@ -606,22 +632,44 @@ impl RecordingController {
         };
         match selection {
             Some(selection) => {
+                let next_epoch =
+                    next_source_epoch(runtime.microphone_source_epoch.load(Ordering::Acquire));
                 let replacement = start_capture(
-                    CaptureSource::Microphone(selection),
+                    CaptureSource::Microphone(selection.clone()),
                     runtime.microphone_sender.clone(),
+                    next_epoch,
+                    runtime.paused.load(Ordering::Acquire),
                 )?;
                 *runtime.microphone_health.lock() = replacement.health_flag();
                 runtime.microphone_enabled.store(true, Ordering::Release);
+                runtime
+                    .microphone_source_epoch
+                    .store(next_epoch, Ordering::Release);
                 if let Some(previous) = runtime.microphone_capture.replace(replacement) {
                     previous.stop();
                 }
+                log::info!(
+                    "microphone source committed epoch={next_epoch} paused={}",
+                    runtime.paused.load(Ordering::Acquire)
+                );
                 let mut snapshot = self.snapshot.lock();
                 snapshot.microphone.healthy = true;
-                snapshot.microphone.detail = Some("已启用".into());
-                snapshot.aec_status = AecStatus::Converging;
+                snapshot.microphone.detail = Some("已切换".into());
+                snapshot.microphone_selection = Some(selection);
+                snapshot.aec_status =
+                    if should_enable_aec(runtime.aec_mode, runtime.auto_should_enable_aec) {
+                        AecStatus::Converging
+                    } else {
+                        AecStatus::Disabled
+                    };
             }
             None => {
                 runtime.microphone_enabled.store(false, Ordering::Release);
+                let next_epoch =
+                    next_source_epoch(runtime.microphone_source_epoch.load(Ordering::Acquire));
+                runtime
+                    .microphone_source_epoch
+                    .store(next_epoch, Ordering::Release);
                 runtime
                     .microphone_health
                     .lock()
@@ -629,9 +677,11 @@ impl RecordingController {
                 if let Some(previous) = runtime.microphone_capture.take() {
                     previous.stop();
                 }
+                log::info!("microphone disabled epoch={next_epoch}");
                 let mut snapshot = self.snapshot.lock();
                 snapshot.microphone.healthy = false;
                 snapshot.microphone.detail = Some("已关闭".into());
+                snapshot.microphone_selection = None;
                 snapshot.aec_status = AecStatus::Disabled;
             }
         }
@@ -647,7 +697,12 @@ fn restart_system_loopback_after_device_mode_change(runtime: &mut RecordingRunti
     }
     std::thread::sleep(Duration::from_millis(250));
     let source = capture_source_from_selection(&runtime.capture_selection)?;
-    let replacement = start_capture(source, runtime.system_sender.clone())?;
+    let replacement = start_capture(
+        source,
+        runtime.system_sender.clone(),
+        0,
+        runtime.paused.load(Ordering::Acquire),
+    )?;
     *runtime.system_health.lock() = replacement.health_flag();
     if let Some(previous) = runtime.system_capture.replace(replacement) {
         previous.stop();
@@ -668,11 +723,11 @@ fn recording_worker(
     request: StartRecordingRequest,
     system_rx: Receiver<AudioPacket>,
     microphone_rx: Receiver<AudioPacket>,
-    microphone_expected: bool,
     auto_should_enable_aec: bool,
     system_health: Arc<Mutex<Arc<AtomicBool>>>,
     microphone_health: Arc<Mutex<Arc<AtomicBool>>>,
     microphone_enabled: Arc<AtomicBool>,
+    microphone_source_epoch: Arc<AtomicU64>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
 ) {
@@ -682,30 +737,59 @@ fn recording_worker(
     let mut last_emit = Instant::now();
     let mut last_disk_check = Instant::now();
     let mut was_paused = false;
-    let mut microphone_was_enabled = microphone_expected;
+    let mut microphone_epoch = microphone_source_epoch.load(Ordering::Acquire);
+    let mut aec_converging_ms = 0u64;
     let tick = crossbeam_channel::tick(Duration::from_millis(10));
     let mut failure: Option<anyhow::Error> = None;
 
     while !stop.load(Ordering::Acquire) {
         let _ = tick.recv();
-        let _ = drain_packets(&system_rx, |packet| mixer.push_system(packet));
-        system_connected = system_health.lock().load(Ordering::Acquire);
-        let microphone_is_enabled = microphone_enabled.load(Ordering::Acquire);
-        let _ = drain_packets(&microphone_rx, |packet| mixer.push_microphone(packet));
-        microphone_connected =
-            microphone_is_enabled && microphone_health.lock().load(Ordering::Acquire);
-        if microphone_is_enabled != microphone_was_enabled {
-            mixer.reset(request.aec_mode, auto_should_enable_aec);
-            microphone_was_enabled = microphone_is_enabled;
-        }
         if paused.load(Ordering::Acquire) {
+            let _ = drain_packets(&system_rx, |_| {});
+            let _ = drain_packets(&microphone_rx, |_| {});
             was_paused = true;
             continue;
         }
         if was_paused {
             mixer.reset(request.aec_mode, auto_should_enable_aec);
+            let microphone_is_enabled = microphone_enabled.load(Ordering::Acquire);
+            let aec_enabled = microphone_is_enabled
+                && should_enable_aec(request.aec_mode, auto_should_enable_aec);
+            aec_converging_ms = 0;
+            snapshot.lock().aec_status = if aec_enabled {
+                AecStatus::Converging
+            } else {
+                AecStatus::Disabled
+            };
             was_paused = false;
         }
+        let _ = drain_packets(&system_rx, |packet| mixer.push_system(packet));
+        system_connected = system_health.lock().load(Ordering::Acquire);
+        let microphone_is_enabled = microphone_enabled.load(Ordering::Acquire);
+        let current_microphone_epoch = microphone_source_epoch.load(Ordering::Acquire);
+        if current_microphone_epoch != microphone_epoch {
+            mixer.switch_microphone_source(
+                request.aec_mode,
+                auto_should_enable_aec,
+                microphone_is_enabled,
+                microphone_is_enabled && system_connected,
+            );
+            microphone_epoch = current_microphone_epoch;
+            log::info!("mixer accepted microphone source epoch={microphone_epoch}");
+            let aec_enabled = microphone_is_enabled
+                && should_enable_aec(request.aec_mode, auto_should_enable_aec);
+            aec_converging_ms = 0;
+            snapshot.lock().aec_status = if aec_enabled {
+                AecStatus::Converging
+            } else {
+                AecStatus::Disabled
+            };
+        }
+        let _ = drain_current_source_packets(&microphone_rx, microphone_epoch, |packet| {
+            mixer.push_microphone(packet)
+        });
+        microphone_connected =
+            microphone_is_enabled && microphone_health.lock().load(Ordering::Acquire);
         if !system_connected && !microphone_connected {
             let mut value = snapshot.lock();
             value.state = transition(
@@ -740,8 +824,12 @@ fn recording_worker(
             value.bytes_written = writer.bytes_written();
             value.system.healthy = system_connected;
             value.microphone.healthy = microphone_connected;
-            if value.aec_status == AecStatus::Converging && value.active_duration_ms >= 2_000 {
-                value.aec_status = AecStatus::Enabled;
+            if value.aec_status == AecStatus::Converging && system_connected && microphone_connected
+            {
+                aec_converging_ms = aec_converging_ms.saturating_add(10);
+                if aec_converging_ms >= 2_000 {
+                    value.aec_status = AecStatus::Enabled;
+                }
             }
         }
         if last_emit.elapsed() >= Duration::from_millis(100) {
@@ -880,6 +968,22 @@ fn drain_packets(receiver: &Receiver<AudioPacket>, mut consume: impl FnMut(Audio
     true
 }
 
+fn drain_current_source_packets(
+    receiver: &Receiver<AudioPacket>,
+    source_epoch: u64,
+    mut consume: impl FnMut(AudioPacket),
+) -> bool {
+    drain_packets(receiver, |packet| {
+        if packet.source_epoch == source_epoch {
+            consume(packet);
+        }
+    })
+}
+
+fn next_source_epoch(current: u64) -> u64 {
+    current.checked_add(1).unwrap_or(1)
+}
+
 fn amplitude_db(value: f64) -> f64 {
     20.0 * value.max(1.0e-12).log10()
 }
@@ -943,6 +1047,10 @@ fn auto_should_enable_aec(selection: &CaptureSelection) -> bool {
             "Headphones" | "Headset" | "Handset"
         )
     })
+}
+
+fn should_enable_aec(mode: AecMode, auto_should_enable: bool) -> bool {
+    matches!(mode, AecMode::On) || (matches!(mode, AecMode::Auto) && auto_should_enable)
 }
 
 fn emit_snapshot(app: &AppHandle, snapshot: &Arc<Mutex<RecordingSnapshot>>) {
@@ -2294,6 +2402,7 @@ mod tray_tests {
                     timestamp_100ns: timestamp as u64,
                     device_position: Some(timestamp as u64),
                     discontinuity: false,
+                    source_epoch: 0,
                 })
                 .unwrap();
         }
@@ -2302,5 +2411,36 @@ mod tray_tests {
         assert!(drain_packets(&receiver, |_| drained += 1));
         assert_eq!(drained, MAX_PACKETS_PER_TICK);
         assert_eq!(receiver.len(), 10);
+    }
+
+    #[test]
+    fn microphone_packet_drain_accepts_only_the_committed_source_epoch() {
+        let (sender, receiver) = unbounded();
+        for source_epoch in [4, 5, 4, 5] {
+            sender
+                .send(AudioPacket {
+                    samples: vec![source_epoch as f32],
+                    sample_rate: 48_000,
+                    timestamp_100ns: source_epoch,
+                    device_position: Some(source_epoch),
+                    discontinuity: false,
+                    source_epoch,
+                })
+                .unwrap();
+        }
+
+        let mut accepted = Vec::new();
+        assert!(drain_current_source_packets(&receiver, 5, |packet| {
+            accepted.push(packet.source_epoch)
+        }));
+        assert_eq!(accepted, vec![5, 5]);
+        assert!(receiver.is_empty());
+    }
+
+    #[test]
+    fn source_epoch_wraps_without_reusing_the_disabled_epoch() {
+        assert_eq!(next_source_epoch(0), 1);
+        assert_eq!(next_source_epoch(41), 42);
+        assert_eq!(next_source_epoch(u64::MAX), 1);
     }
 }

@@ -56,6 +56,7 @@ Nota gives Windows one focused recording workflow:
 | **Focused application capture** | Record Zoom, Teams, Feishu/Lark, Tencent Meeting, Chrome, Edge, or another selected application without silently widening the scope. |
 | **Universal system mode** | Capture everything playing through a selected Windows output device when you need broader coverage. |
 | **Microphone + remote audio** | Align independent device clocks, apply local echo cancellation, and deliver a single mixed recording. |
+| **Live microphone switching** | Change or disable the microphone during an active recording without stopping, splitting, or replacing the current Ogg file. |
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
@@ -115,6 +116,7 @@ Nota is currently an early preview. Download the latest build from [GitHub Relea
 2. Select the meeting application or Windows output device.
 3. Choose a microphone, or disable microphone recording.
 4. Confirm the destination and start recording.
+   You can change or disable the microphone from the live recording panel without changing the selected meeting-audio scope.
 5. Stop and save from the window, tray menu, or keyboard shortcut.
 6. Open **Recordings** to play the result, manage the file, or start an optional transcription.
 

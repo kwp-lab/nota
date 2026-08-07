@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-04
+- Last updated: 2026-08-08
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`
@@ -101,6 +101,10 @@ Automated client coverage must include:
   liveness, resident-process window disappearance, one reminder per continuous
   absence, reset after recovery, session-scoped stale-action rejection, and
   explicit continue/stop prompt actions without capture-scope mutation;
+- active-recording microphone selection, visible switching state, session-only
+  disable behavior, failed-switch rollback, authoritative snapshot recovery,
+  source-epoch filtering, microphone-only buffer reset, AEC reconvergence, and
+  pause-state inheritance without changing the meeting-audio scope;
 
 Server-side automated coverage must include:
 
@@ -178,6 +182,13 @@ scenarios on Windows 11:
     at 100%, 150%, and 200% display scaling and with enlarged system text;
     confirm the prompt follows its content within the bounded height, remains
     anchored above the taskbar, and keeps both decisions reachable.
+15. During one recording, switch between two physical microphones, disable the
+    microphone, enable it again, and repeat a switch while paused. Confirm the
+    same Ogg file remains active, meeting audio is not interrupted by stale
+    microphone packets, the UI reflects the backend-selected device, AEC shows
+    convergence after each enabled switch, and a deliberately unavailable
+    device leaves the previous microphone selected. Repeat once with a
+    Bluetooth headset to cover A2DP/HFP mode changes.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not
