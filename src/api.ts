@@ -12,6 +12,7 @@ import type {
   CaptureTarget,
   DeviceSelection,
   LevelEvent,
+  MeetingEndPrompt,
   ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
@@ -32,6 +33,15 @@ export const api = {
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
   getSnapshot: () => invoke<RecordingSnapshot>("get_recording_snapshot"),
+  getMeetingEndPrompt: () =>
+    invoke<MeetingEndPrompt | null>("get_meeting_end_prompt"),
+  respondMeetingEndPrompt: (sessionId: string, stopAndSave: boolean) =>
+    invoke<RecordingSnapshot>("respond_meeting_end_prompt", {
+      sessionId,
+      stopAndSave,
+    }),
+  resizeMeetingEndPrompt: (height: number) =>
+    invoke<void>("resize_meeting_end_prompt", { height }),
   startRecording: (request: StartRecordingRequest) =>
     invoke<RecordingSnapshot>("start_recording", { request }),
   pauseRecording: () => invoke<RecordingSnapshot>("pause_recording"),

@@ -9,6 +9,8 @@ pub struct CaptureTarget {
     pub display_name: String,
     pub process_id: u32,
     pub executable_path: String,
+    #[serde(skip)]
+    pub window_handle: Option<isize>,
     pub browser: bool,
     pub priority: i32,
 }
@@ -169,6 +171,13 @@ pub struct RecordingItem {
 pub struct LevelEvent {
     pub system: f32,
     pub microphone: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingEndPrompt {
+    pub session_id: String,
+    pub target_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

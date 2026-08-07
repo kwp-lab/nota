@@ -97,6 +97,10 @@ Automated client coverage must include:
   rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
 - Ogg Opus decode coverage for the legacy path.
+- selected-target exit grace timing, window-bound versus audio-session-only
+  liveness, resident-process window disappearance, one reminder per continuous
+  absence, reset after recovery, session-scoped stale-action rejection, and
+  explicit continue/stop prompt actions without capture-scope mutation;
 
 Server-side automated coverage must include:
 
@@ -162,6 +166,18 @@ scenarios on Windows 11:
     and verify only named, eligible speakers are enrolled. Finally assign the
     last speaker without a configured server and confirm clearing one mapping
     leaves every omitted mapping untouched.
+14. Record an Enterprise WeChat meeting by selecting its meeting window, leave
+    the meeting, and confirm the `wwmapp.exe` warm-up process may remain while
+    the selected window disappears. Confirm no prompt appears during the
+    ten-second recovery window, then confirm the prompt and warning tray state
+    appear. **Continue recording** must leave the current recording and
+    microphone behavior unchanged, and no second prompt may appear while the
+    target remains absent. Reopen and close the same target to confirm a new
+    reminder is allowed; finally choose **Stop and save** and verify normal Ogg
+    finalization, library refresh, and optional automatic transcription. Repeat
+    at 100%, 150%, and 200% display scaling and with enlarged system text;
+    confirm the prompt follows its content within the bounded height, remains
+    anchored above the taskbar, and keeps both decisions reachable.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not

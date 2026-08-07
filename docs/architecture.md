@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-03
+- Last updated: 2026-08-07
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -92,6 +92,63 @@ User cancellation and application shutdown differ:
   local job resumable.
 - Application shutdown interrupts local work without intentionally cancelling
   the remote FunASR job. A later resume can recover server progress.
+
+## Meeting-target Exit Reminder
+
+Selected-application capture monitors the precise target selected at recording
+start, independently from its unrelated host parent. When the target came from
+a visible top-level window, Rust retains its native window handle internally;
+the handle is never exposed through frontend IPC. Once per second, the audio
+thread uses direct window-liveness calls to verify that the handle still exists,
+is visible, and belongs to the selected executable. This is the normal fast
+path and does not enumerate the process tree or audio sessions.
+
+If the original window handle becomes invalid, Nota searches for a visible
+replacement with both the same executable path and the same display identity.
+This accommodates a meeting window being recreated without accepting an
+unrelated long-lived host window. A process that remains resident only for
+warm-up, such as an Enterprise WeChat `wwmapp.exe`, therefore cannot keep a
+closed meeting target falsely alive. Targets discovered only from an audio
+session have no reliable window identity and conservatively retain process-
+liveness monitoring instead of treating silence as meeting completion.
+
+After the chosen target has been absent continuously for ten seconds, the audio
+layer emits one typed target-exit event. Audio recovery may still reattach the
+same executable without widening to system audio. The controller stores a
+session-scoped pending decision, shows a small Tauri always-on-top prompt, and
+changes the tray tooltip, color, and menu. It must not stop recording without
+an explicit user decision.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Recording
+    Recording --> GracePeriod: "selected meeting window or target disappears"
+    GracePeriod --> Recording: "same precise target returns within 10 seconds"
+    GracePeriod --> AwaitingDecision: "still absent after 10 seconds"
+    AwaitingDecision --> Finalizing: "user chooses Stop and save"
+    AwaitingDecision --> RecordingWithoutTarget: "user chooses Continue recording"
+    AwaitingDecision --> Recording: "target recovers before a decision"
+    RecordingWithoutTarget --> RecordingWithoutTarget: "target remains absent; no repeated prompt"
+    RecordingWithoutTarget --> Recording: "target returns"
+    Recording --> GracePeriod: "target disappears again after recovery"
+    Finalizing --> Completed
+```
+
+The **Continue recording** action only clears the pending decision. It must not
+change the selected scope, microphone state, mixer state, or recording state.
+The audio-layer reminder flag resets only after the target is observed again,
+so one continuous absence produces at most one prompt. Prompt actions carry
+the recording session ID; stale actions from an older recording are ignored.
+
+The prompt is intentionally a Tauri window rather than a Windows notification
+API dependency. This keeps NSIS and portable builds behaviorally identical and
+allows both decisions to reach the existing Rust controller. The tray remains
+the durable re-entry point if the prompt is dismissed or obscured. The prompt
+measures its rendered content and requests a bounded `170–320` logical-pixel
+height from Rust; Rust then resizes and re-anchors it at the monitor's lower
+right corner. Content beyond the upper bound remains scrollable, so DPI,
+accessibility text scaling, long target titles, and error details cannot hide
+the decision buttons.
 
 ## Trust Boundaries
 

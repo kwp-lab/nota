@@ -88,6 +88,11 @@ export interface LevelEvent {
   microphone: number;
 }
 
+export interface MeetingEndPrompt {
+  sessionId: string;
+  targetName: string;
+}
+
 export interface AppSettings {
   outputDirectory: string;
   aecMode: AecMode;

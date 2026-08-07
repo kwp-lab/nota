@@ -3,7 +3,7 @@ use crate::asr::{
     normalize_base_url, remove_temporary_chunks, test_connection,
 };
 use crate::audio::{
-    AudioMixer, AudioPacket, CaptureHandle, CaptureSource, OpusOggWriter,
+    AudioMixer, AudioPacket, CaptureEvent, CaptureHandle, CaptureSource, OpusOggWriter,
     list_audio_devices as enumerate_audio_devices,
     list_capture_targets as enumerate_capture_targets, list_recoverable_files, move_verified,
     recover_ogg_file, start_capture,
@@ -25,7 +25,10 @@ use std::time::{Duration, Instant};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl,
+    WebviewWindowBuilder,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
 use windows::Win32::Foundation::HWND;
@@ -34,13 +37,17 @@ use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::PCWSTR;
 
 const MAX_PACKETS_PER_TICK: usize = 64;
+const MEETING_END_PROMPT_WINDOW: &str = "meeting-end-prompt";
+const MEETING_END_PROMPT_WIDTH: f64 = 420.0;
+const MEETING_END_PROMPT_MIN_HEIGHT: f64 = 170.0;
+const MEETING_END_PROMPT_MAX_HEIGHT: f64 = 320.0;
 
 struct AppState {
     storage: Arc<Storage>,
     recorder: Arc<RecordingController>,
     asr: Arc<AsrManager>,
     voiceprints: Arc<VoiceprintManager>,
-    tray_state: Mutex<Option<RecordingState>>,
+    tray_state: Mutex<Option<(RecordingState, bool)>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,12 +70,14 @@ struct RecordingRuntime {
     microphone_enabled: Arc<AtomicBool>,
     capture_selection: CaptureSelection,
     worker: Option<JoinHandle<()>>,
+    process_event_monitor: Option<JoinHandle<()>>,
 }
 
 struct RecordingController {
     snapshot: Arc<Mutex<RecordingSnapshot>>,
     runtime: Mutex<Option<RecordingRuntime>>,
     finalizer: Mutex<Option<JoinHandle<()>>>,
+    meeting_end_prompt: Mutex<Option<MeetingEndPrompt>>,
     storage: Arc<Storage>,
 }
 
@@ -78,6 +87,7 @@ impl RecordingController {
             snapshot: Arc::new(Mutex::new(RecordingSnapshot::default())),
             runtime: Mutex::new(None),
             finalizer: Mutex::new(None),
+            meeting_end_prompt: Mutex::new(None),
             storage,
         }
     }
@@ -126,7 +136,11 @@ impl RecordingController {
             )
     }
 
-    fn start(&self, app: AppHandle, request: StartRecordingRequest) -> Result<RecordingSnapshot> {
+    fn start(
+        self: &Arc<Self>,
+        app: AppHandle,
+        request: StartRecordingRequest,
+    ) -> Result<RecordingSnapshot> {
         self.reap_finalizer()?;
         if self.is_active() {
             return Ok(self.snapshot());
@@ -250,6 +264,7 @@ impl RecordingController {
             });
         }
         let system_capture = system_capture.expect("capture source was initialized");
+        let process_events = process_capture.then(|| system_capture.event_receiver());
         let microphone_expected = request.microphone.is_some();
         let auto_should_enable_aec = auto_should_enable_aec(&request.capture);
         let aec_enabled = microphone_capture.is_some()
@@ -325,6 +340,8 @@ impl RecordingController {
                     worker_paused,
                 );
             })?;
+        let process_event_monitor =
+            process_events.map(|events| self.spawn_process_event_monitor(app.clone(), events));
         *self.runtime.lock() = Some(RecordingRuntime {
             stop,
             paused,
@@ -337,8 +354,61 @@ impl RecordingController {
             microphone_enabled,
             capture_selection: request.capture,
             worker: Some(worker),
+            process_event_monitor,
         });
         Ok(self.snapshot())
+    }
+
+    fn spawn_process_event_monitor(
+        self: &Arc<Self>,
+        app: AppHandle,
+        events: Receiver<CaptureEvent>,
+    ) -> JoinHandle<()> {
+        let recorder = Arc::clone(self);
+        std::thread::spawn(move || {
+            while let Ok(event) = events.recv() {
+                match event {
+                    CaptureEvent::ProcessTargetExited { display_name } => {
+                        recorder.show_meeting_end_prompt(&app, display_name);
+                    }
+                    CaptureEvent::ProcessTargetRecovered { .. } => {
+                        recorder.dismiss_meeting_end_prompt(&app);
+                    }
+                }
+            }
+        })
+    }
+
+    fn show_meeting_end_prompt(&self, app: &AppHandle, target_name: String) {
+        let Some(session_id) = self.snapshot.lock().session_id.clone() else {
+            return;
+        };
+        let mut pending = self.meeting_end_prompt.lock();
+        if pending
+            .as_ref()
+            .is_some_and(|prompt| prompt.session_id == session_id)
+        {
+            return;
+        }
+        *pending = Some(MeetingEndPrompt {
+            session_id,
+            target_name,
+        });
+        drop(pending);
+        show_meeting_end_prompt_window(app);
+        schedule_tray_update(app, self.snapshot().state);
+    }
+
+    fn dismiss_meeting_end_prompt(&self, app: &AppHandle) {
+        if self.meeting_end_prompt.lock().take().is_none() {
+            return;
+        }
+        close_meeting_end_prompt_window(app);
+        schedule_tray_update(app, self.snapshot().state);
+    }
+
+    fn pending_meeting_end_prompt(&self) -> Option<MeetingEndPrompt> {
+        self.meeting_end_prompt.lock().clone()
     }
 
     fn pause(&self, app: &AppHandle) -> Result<RecordingSnapshot> {
@@ -410,6 +480,8 @@ impl RecordingController {
             let mut snapshot = self.snapshot.lock();
             snapshot.state = transition(snapshot.state, RecordingEvent::Stop)?;
         }
+        self.meeting_end_prompt.lock().take();
+        close_meeting_end_prompt_window(app);
         emit_snapshot(app, &self.snapshot);
         runtime.stop.store(true, Ordering::Release);
         log::info!("recording finalizing");
@@ -422,6 +494,9 @@ impl RecordingController {
             log::info!("stopping microphone capture");
             capture.stop();
             log::info!("microphone capture stopped");
+        }
+        if let Some(monitor) = runtime.process_event_monitor.take() {
+            let _ = monitor.join();
         }
         if let Some(worker) = runtime.worker.take() {
             let finalizer_app = app.clone();
@@ -479,7 +554,7 @@ impl RecordingController {
     }
 
     fn switch_capture(
-        &self,
+        self: &Arc<Self>,
         app: &AppHandle,
         selection: CaptureSelection,
     ) -> Result<RecordingSnapshot> {
@@ -489,12 +564,21 @@ impl RecordingController {
         };
         let source = capture_source_from_selection(&selection)?;
         let replacement = start_capture(source, runtime.system_sender.clone())?;
+        let replacement_events = matches!(selection, CaptureSelection::Process { .. })
+            .then(|| replacement.event_receiver());
         let replacement_health = replacement.health_flag();
         *runtime.system_health.lock() = replacement_health;
         if let Some(previous) = runtime.system_capture.replace(replacement) {
             previous.stop();
         }
+        if let Some(previous) = runtime.process_event_monitor.take() {
+            let _ = previous.join();
+        }
+        runtime.process_event_monitor =
+            replacement_events.map(|events| self.spawn_process_event_monitor(app.clone(), events));
         runtime.capture_selection = selection.clone();
+        self.meeting_end_prompt.lock().take();
+        close_meeting_end_prompt_window(app);
         let mut snapshot = self.snapshot.lock();
         snapshot.system = SourceStatus {
             healthy: true,
@@ -828,7 +912,9 @@ fn capture_source_from_selection(selection: &CaptureSelection) -> Result<Capture
                 .context("所选应用已退出，请刷新应用列表后重试")?;
             Ok(CaptureSource::Process {
                 process_id: target.process_id,
+                display_name: target.display_name,
                 executable_path: target.executable_path,
+                window_handle: target.window_handle,
             })
         }
         CaptureSelection::System { device } => Ok(CaptureSource::System(device.clone())),
@@ -913,6 +999,59 @@ fn save_settings(
 #[tauri::command]
 fn get_recording_snapshot(state: State<AppState>) -> RecordingSnapshot {
     state.recorder.snapshot()
+}
+
+#[tauri::command]
+fn get_meeting_end_prompt(state: State<AppState>) -> Option<MeetingEndPrompt> {
+    state.recorder.pending_meeting_end_prompt()
+}
+
+#[tauri::command]
+async fn respond_meeting_end_prompt(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    stop_and_save: bool,
+) -> std::result::Result<RecordingSnapshot, String> {
+    let recorder = Arc::clone(&state.recorder);
+    let is_current = recorder
+        .pending_meeting_end_prompt()
+        .is_some_and(|prompt| prompt.session_id == session_id);
+    if !is_current {
+        return Ok(recorder.snapshot());
+    }
+    recorder.dismiss_meeting_end_prompt(&app);
+    if !stop_and_save {
+        return Ok(recorder.snapshot());
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || recorder.stop(&app))
+        .await
+        .map_err(|error| format!("停止录音任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+fn resize_meeting_end_prompt(app: AppHandle, height: f64) -> std::result::Result<(), String> {
+    let height = normalize_meeting_end_prompt_height(height).map_err(|error| error.to_string())?;
+    let main_thread_app = app.clone();
+    app.run_on_main_thread(move || {
+        let Some(window) = main_thread_app.get_webview_window(MEETING_END_PROMPT_WINDOW) else {
+            return;
+        };
+        if let Err(error) = window.set_size(LogicalSize::new(MEETING_END_PROMPT_WIDTH, height)) {
+            log::warn!("unable to resize meeting-end prompt window: {error}");
+            return;
+        }
+        position_meeting_end_prompt_window_on_main_thread(&main_thread_app);
+    })
+    .map_err(|error| format!("无法调整会议状态提醒窗口：{error}"))
+}
+
+fn normalize_meeting_end_prompt_height(height: f64) -> Result<f64> {
+    if !height.is_finite() {
+        bail!("会议状态提醒窗口高度无效");
+    }
+    Ok(height.clamp(MEETING_END_PROMPT_MIN_HEIGHT, MEETING_END_PROMPT_MAX_HEIGHT))
 }
 
 #[tauri::command]
@@ -1564,9 +1703,9 @@ fn register_shortcuts(app: &AppHandle, settings: &AppSettings) -> Result<()> {
 }
 
 fn create_tray(app: &tauri::App) -> Result<()> {
-    let menu = build_tray_menu(app.handle(), RecordingState::Idle)?;
+    let menu = build_tray_menu(app.handle(), RecordingState::Idle, false)?;
     TrayIconBuilder::with_id("main-tray")
-        .icon(status_icon(RecordingState::Idle))
+        .icon(status_icon(RecordingState::Idle, false))
         .tooltip("Nota · 空闲")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -1586,6 +1725,7 @@ fn create_tray(app: &tauri::App) -> Result<()> {
             let state = app.state::<AppState>();
             match event.id().as_ref() {
                 "show" => show_main_window(app),
+                "meeting_end_prompt" => show_meeting_end_prompt_window(app),
                 "start_process" => {
                     show_main_window(app);
                     let _ = app.emit("recording://request-start", "process");
@@ -1629,11 +1769,75 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+fn show_meeting_end_prompt_window(app: &AppHandle) {
+    let main_thread_app = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        if let Some(window) = main_thread_app.get_webview_window(MEETING_END_PROMPT_WINDOW) {
+            let _ = window.show();
+            return;
+        }
+        if let Err(error) = WebviewWindowBuilder::new(
+            &main_thread_app,
+            MEETING_END_PROMPT_WINDOW,
+            WebviewUrl::App("index.html?view=meeting-end-prompt".into()),
+        )
+        .title("Nota · 会议状态提醒")
+        .inner_size(MEETING_END_PROMPT_WIDTH, MEETING_END_PROMPT_MIN_HEIGHT)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .build()
+        {
+            log::warn!("unable to create meeting-end prompt window: {error:#}");
+            return;
+        }
+        position_meeting_end_prompt_window_on_main_thread(&main_thread_app);
+    }) {
+        log::warn!("unable to schedule meeting-end prompt window: {error}");
+    }
+}
+
+fn position_meeting_end_prompt_window_on_main_thread(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MEETING_END_PROMPT_WINDOW) else {
+        return;
+    };
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|main| main.current_monitor().ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten());
+    if let Some(monitor) = monitor
+        && let Ok(size) = window.outer_size()
+    {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        let x = monitor_position.x + monitor_size.width.saturating_sub(size.width + 24) as i32;
+        let y = monitor_position.y + monitor_size.height.saturating_sub(size.height + 72) as i32;
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
+fn close_meeting_end_prompt_window(app: &AppHandle) {
+    let main_thread_app = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        if let Some(window) = main_thread_app.get_webview_window(MEETING_END_PROMPT_WINDOW) {
+            let _ = window.close();
+        }
+    }) {
+        log::warn!("unable to close meeting-end prompt window: {error}");
+    }
+}
+
 fn is_window_reveal_click(button: MouseButton, button_state: MouseButtonState) -> bool {
     button == MouseButton::Left && button_state == MouseButtonState::Up
 }
 
-fn build_tray_menu(app: &AppHandle, state: RecordingState) -> Result<Menu<tauri::Wry>> {
+fn build_tray_menu(
+    app: &AppHandle,
+    state: RecordingState,
+    meeting_end_pending: bool,
+) -> Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let controls = tray_controls(state);
     let separator = PredefinedMenuItem::separator(app)?;
@@ -1661,6 +1865,19 @@ fn build_tray_menu(app: &AppHandle, state: RecordingState) -> Result<Menu<tauri:
         controls.stop_enabled,
         None::<&str>,
     )?;
+    if meeting_end_pending {
+        let prompt = MenuItem::with_id(
+            app,
+            "meeting_end_prompt",
+            "会议貌似已结束，请确认…",
+            true,
+            None::<&str>,
+        )?;
+        return Ok(Menu::with_items(
+            app,
+            &[&show, &prompt, &toggle, &stop, &separator, &quit],
+        )?);
+    }
     Ok(Menu::with_items(
         app,
         &[&show, &toggle, &stop, &separator, &quit],
@@ -1668,38 +1885,47 @@ fn build_tray_menu(app: &AppHandle, state: RecordingState) -> Result<Menu<tauri:
 }
 
 fn schedule_tray_update(app: &AppHandle, state: RecordingState) {
+    let meeting_end_pending = app
+        .state::<AppState>()
+        .recorder
+        .pending_meeting_end_prompt()
+        .is_some();
     {
         let app_state = app.state::<AppState>();
         let mut previous = app_state.tray_state.lock();
-        if *previous == Some(state) {
+        if *previous == Some((state, meeting_end_pending)) {
             return;
         }
-        *previous = Some(state);
+        *previous = Some((state, meeting_end_pending));
     }
     let main_thread_app = app.clone();
     if let Err(error) = app.run_on_main_thread(move || {
-        update_tray_on_main_thread(&main_thread_app, state);
+        update_tray_on_main_thread(&main_thread_app, state, meeting_end_pending);
     }) {
         app.state::<AppState>().tray_state.lock().take();
         log::warn!("unable to schedule tray update: {error}");
     }
 }
 
-fn update_tray_on_main_thread(app: &AppHandle, state: RecordingState) {
+fn update_tray_on_main_thread(app: &AppHandle, state: RecordingState, meeting_end_pending: bool) {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return;
     };
-    let label = match state {
-        RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
-            "Nota · 正在录音"
+    let label = if meeting_end_pending {
+        "Nota · 请确认会议是否结束"
+    } else {
+        match state {
+            RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
+                "Nota · 正在录音"
+            }
+            RecordingState::Paused => "Nota · 已暂停",
+            RecordingState::Interrupted | RecordingState::Error => "Nota · 音源中断",
+            _ => "Nota · 空闲",
         }
-        RecordingState::Paused => "Nota · 已暂停",
-        RecordingState::Interrupted | RecordingState::Error => "Nota · 音源中断",
-        _ => "Nota · 空闲",
     };
-    let _ = tray.set_icon(Some(status_icon(state)));
+    let _ = tray.set_icon(Some(status_icon(state, meeting_end_pending)));
     let _ = tray.set_tooltip(Some(label));
-    match build_tray_menu(app, state) {
+    match build_tray_menu(app, state, meeting_end_pending) {
         Ok(menu) => {
             let _ = tray.set_menu(Some(menu));
         }
@@ -1750,14 +1976,18 @@ fn tray_controls(state: RecordingState) -> TrayControls {
     }
 }
 
-fn status_icon(state: RecordingState) -> Image<'static> {
-    let color = match state {
-        RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
-            [202, 69, 69, 255]
+fn status_icon(state: RecordingState, meeting_end_pending: bool) -> Image<'static> {
+    let color = if meeting_end_pending {
+        [218, 145, 45, 255]
+    } else {
+        match state {
+            RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
+                [202, 69, 69, 255]
+            }
+            RecordingState::Paused => [198, 145, 62, 255],
+            RecordingState::Interrupted | RecordingState::Error => [164, 61, 61, 255],
+            _ => [58, 128, 116, 255],
         }
-        RecordingState::Paused => [198, 145, 62, 255],
-        RecordingState::Interrupted | RecordingState::Error => [164, 61, 61, 255],
-        _ => [58, 128, 116, 255],
     };
     let mut pixels = vec![0u8; 16 * 16 * 4];
     for y in 1..15 {
@@ -1809,7 +2039,7 @@ pub fn run_app() {
             recorder,
             asr,
             voiceprints,
-            tray_state: Mutex::new(Some(RecordingState::Idle)),
+            tray_state: Mutex::new(Some((RecordingState::Idle, false))),
         })
         .setup(|app| {
             create_tray(app).map_err(|error| anyhow!(error))?;
@@ -1827,7 +2057,9 @@ pub fn run_app() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            if window.label() == "main"
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
                 api.prevent_close();
                 let _ = window.hide();
             }
@@ -1838,6 +2070,9 @@ pub fn run_app() {
             get_settings,
             save_settings,
             get_recording_snapshot,
+            get_meeting_end_prompt,
+            respond_meeting_end_prompt,
+            resize_meeting_end_prompt,
             start_recording,
             pause_recording,
             resume_recording,
@@ -1984,6 +2219,20 @@ mod transcript_export_tests {
 #[cfg(test)]
 mod tray_tests {
     use super::*;
+
+    #[test]
+    fn meeting_end_prompt_height_is_bounded_and_rejects_invalid_values() {
+        assert_eq!(
+            normalize_meeting_end_prompt_height(120.0).unwrap(),
+            MEETING_END_PROMPT_MIN_HEIGHT
+        );
+        assert_eq!(normalize_meeting_end_prompt_height(220.0).unwrap(), 220.0);
+        assert_eq!(
+            normalize_meeting_end_prompt_height(500.0).unwrap(),
+            MEETING_END_PROMPT_MAX_HEIGHT
+        );
+        assert!(normalize_meeting_end_prompt_height(f64::NAN).is_err());
+    }
 
     #[test]
     fn tray_actions_match_recording_state() {

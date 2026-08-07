@@ -7,6 +7,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added a selected-meeting-target exit reminder: after a ten-second recovery
+  window, Nota shows a portable-compatible Tauri decision prompt and highlights
+  the tray so the user can explicitly continue recording or stop and save.
+
+### Changed
+
+- Meeting-window disappearance is detected even when an application keeps its
+  meeting engine resident for warm-up. Continuing preserves the existing
+  recording and capture state and suppresses repeat prompts until that target
+  recovers and disappears again. The decision prompt now sizes itself to its
+  rendered content across DPI and accessibility-text settings while remaining
+  anchored above the taskbar.
+
 ## [0.4.0] - 2026-08-06
 
 ### Added
