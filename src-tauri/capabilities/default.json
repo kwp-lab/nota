@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Minimal permissions for Nota's main window",
-  "windows": ["main"],
+  "windows": ["main", "meeting-end-prompt"],
   "permissions": [
     "core:default",
     "dialog:allow-open",

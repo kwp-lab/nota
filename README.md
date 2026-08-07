@@ -61,6 +61,7 @@ Nota gives Windows one focused recording workflow:
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
 | **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
 | **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
+| **Meeting-end reminder** | When the selected meeting window or application target disappears, Nota asks whether to continue or stop and save instead of ending the recording automatically—even if the meeting engine remains resident for warm-up. |
 
 ## Works with the meetings you already use
 

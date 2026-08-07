@@ -1,13 +1,13 @@
 use crate::models::{AudioDevice, CaptureTarget, DeviceDirection, DeviceSelection};
 use anyhow::{Context, Result, anyhow, bail};
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::collections::{HashMap, HashSet};
 use std::mem::{ManuallyDrop, size_of};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::{
     CloseHandle, HANDLE, HWND, LPARAM, RPC_E_CHANGED_MODE, WAIT_OBJECT_0,
@@ -33,7 +33,8 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::Variant::VT_BLOB;
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
+    IsWindowVisible,
 };
 use windows::core::{BOOL, Interface, PCWSTR, PWSTR, implement};
 
@@ -41,21 +42,96 @@ use super::AudioPacket;
 
 const CAPTURE_WAIT_MS: u32 = 100;
 const ACTIVATION_WAIT_MS: u32 = 5_000;
+const PROCESS_TARGET_EXIT_GRACE: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone)]
 pub enum CaptureSource {
     Process {
         process_id: u32,
         executable_path: String,
+        display_name: String,
+        window_handle: Option<isize>,
     },
     System(DeviceSelection),
     Microphone(DeviceSelection),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CaptureEvent {
+    ProcessTargetExited { display_name: String },
+    ProcessTargetRecovered { display_name: String },
+}
+
+#[derive(Default)]
+struct ProcessTargetTracker {
+    missing_since: Option<Instant>,
+    reminder_emitted: bool,
+    current_window_handle: Option<isize>,
+}
+
+impl ProcessTargetTracker {
+    fn for_source(source: &CaptureSource) -> Self {
+        let current_window_handle = match source {
+            CaptureSource::Process { window_handle, .. } => *window_handle,
+            _ => None,
+        };
+        Self {
+            current_window_handle,
+            ..Self::default()
+        }
+    }
+
+    fn observe_present(&mut self) -> bool {
+        let recovered_after_reminder = self.reminder_emitted;
+        self.missing_since = None;
+        self.reminder_emitted = false;
+        recovered_after_reminder
+    }
+
+    fn observe_absent(&mut self, now: Instant) -> bool {
+        let missing_since = self.missing_since.get_or_insert(now);
+        if self.reminder_emitted || now.duration_since(*missing_since) < PROCESS_TARGET_EXIT_GRACE {
+            return false;
+        }
+        self.reminder_emitted = true;
+        true
+    }
+}
+
+struct ProcessTargetMonitor<'a> {
+    tracker: &'a mut ProcessTargetTracker,
+    events: &'a Sender<CaptureEvent>,
+}
+
+impl ProcessTargetMonitor<'_> {
+    fn update(&mut self, source: &CaptureSource) {
+        let CaptureSource::Process { display_name, .. } = source else {
+            return;
+        };
+        let event = if process_source_is_absent(source, self.tracker) {
+            self.tracker
+                .observe_absent(Instant::now())
+                .then(|| CaptureEvent::ProcessTargetExited {
+                    display_name: display_name.clone(),
+                })
+        } else {
+            self.tracker
+                .observe_present()
+                .then(|| CaptureEvent::ProcessTargetRecovered {
+                    display_name: display_name.clone(),
+                })
+        };
+        if let Some(event) = event {
+            let _ = self.events.try_send(event);
+        }
+    }
 }
 
 pub struct CaptureHandle {
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     healthy: Arc<AtomicBool>,
+    events: Receiver<CaptureEvent>,
     join: Option<JoinHandle<()>>,
 }
 
@@ -70,6 +146,10 @@ impl CaptureHandle {
 
     pub fn health_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.healthy)
+    }
+
+    pub fn event_receiver(&self) -> Receiver<CaptureEvent> {
+        self.events.clone()
     }
 
     pub fn stop(mut self) {
@@ -96,6 +176,7 @@ pub fn start_capture(source: CaptureSource, packets: Sender<AudioPacket>) -> Res
     let thread_stop = Arc::clone(&stop);
     let thread_paused = Arc::clone(&paused);
     let thread_healthy = Arc::clone(&healthy);
+    let (event_tx, event_rx) = unbounded();
     let (ready_tx, ready_rx) = crossbeam_channel::bounded::<std::result::Result<(), String>>(1);
     let join = thread::Builder::new()
         .name("nota-wasapi".into())
@@ -106,6 +187,7 @@ pub fn start_capture(source: CaptureSource, packets: Sender<AudioPacket>) -> Res
                 thread_stop,
                 thread_paused,
                 thread_healthy,
+                event_tx,
                 &ready_tx,
             );
             if let Err(error) = result {
@@ -118,6 +200,7 @@ pub fn start_capture(source: CaptureSource, packets: Sender<AudioPacket>) -> Res
             stop,
             paused,
             healthy,
+            events: event_rx,
             join: Some(join),
         }),
         Ok(Err(error)) => {
@@ -139,6 +222,7 @@ fn capture_thread(
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     healthy: Arc<AtomicBool>,
+    events: Sender<CaptureEvent>,
     ready: &Sender<std::result::Result<(), String>>,
 ) -> Result<()> {
     let _com = initialize_com()?;
@@ -146,16 +230,29 @@ fn capture_thread(
     let device_changed = Arc::new(AtomicBool::new(false));
 
     let mut first_attempt = true;
+    let mut process_target_tracker = ProcessTargetTracker::for_source(&source);
     while !stop.load(Ordering::Acquire) {
         let setup_result = setup_source(&source);
         let setup = match setup_result {
-            Ok(setup) => setup,
+            Ok(setup) => {
+                ProcessTargetMonitor {
+                    tracker: &mut process_target_tracker,
+                    events: &events,
+                }
+                .update(&source);
+                setup
+            }
             Err(error) if first_attempt => {
                 let _ = ready.send(Err(format!("{error:#}")));
                 return Ok(());
             }
             Err(_) => {
                 healthy.store(false, Ordering::Release);
+                ProcessTargetMonitor {
+                    tracker: &mut process_target_tracker,
+                    events: &events,
+                }
+                .update(&source);
                 thread::sleep(Duration::from_secs(1));
                 continue;
             }
@@ -178,9 +275,18 @@ fn capture_thread(
             first_attempt = false;
         }
         device_changed.store(false, Ordering::Release);
-        if let Err(error) =
-            capture_session(&setup, &source, &packets, &stop, &paused, &device_changed)
-        {
+        if let Err(error) = capture_session(
+            &setup,
+            &source,
+            &packets,
+            &stop,
+            &paused,
+            &device_changed,
+            ProcessTargetMonitor {
+                tracker: &mut process_target_tracker,
+                events: &events,
+            },
+        ) {
             log::warn!(
                 "{} capture session is being rebuilt: {error:#}",
                 capture_source_label(&source)
@@ -199,6 +305,64 @@ fn capture_thread(
     Ok(())
 }
 
+fn process_source_is_absent(source: &CaptureSource, tracker: &mut ProcessTargetTracker) -> bool {
+    let CaptureSource::Process {
+        process_id,
+        executable_path,
+        display_name,
+        window_handle,
+    } = source
+    else {
+        return false;
+    };
+
+    if window_handle.is_some() {
+        if tracker
+            .current_window_handle
+            .is_some_and(|handle| window_target_is_present(handle, executable_path))
+        {
+            return false;
+        }
+        let Ok(targets) = list_capture_targets() else {
+            return false;
+        };
+        let replacement = find_replacement_target(targets, executable_path, display_name, true);
+        tracker.current_window_handle = replacement.and_then(|target| target.window_handle);
+        return tracker.current_window_handle.is_none();
+    }
+
+    if process_path(*process_id).is_ok_and(|path| path.eq_ignore_ascii_case(executable_path)) {
+        return false;
+    }
+    list_capture_targets().is_ok_and(|targets| {
+        find_replacement_target(targets, executable_path, display_name, false).is_none()
+    })
+}
+
+fn window_target_is_present(window_handle: isize, executable_path: &str) -> bool {
+    let hwnd = HWND(window_handle as *mut std::ffi::c_void);
+    if unsafe { !IsWindow(Some(hwnd)).as_bool() || !IsWindowVisible(hwnd).as_bool() } {
+        return false;
+    }
+    let mut process_id = 0u32;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut process_id)) };
+    process_id != 0
+        && process_path(process_id).is_ok_and(|path| path.eq_ignore_ascii_case(executable_path))
+}
+
+fn find_replacement_target(
+    targets: Vec<CaptureTarget>,
+    executable_path: &str,
+    display_name: &str,
+    require_window: bool,
+) -> Option<CaptureTarget> {
+    targets.into_iter().find(|target| {
+        (!require_window || target.window_handle.is_some())
+            && target.executable_path.eq_ignore_ascii_case(executable_path)
+            && target.display_name.eq_ignore_ascii_case(display_name)
+    })
+}
+
 fn capture_source_label(source: &CaptureSource) -> &'static str {
     match source {
         CaptureSource::Process { .. } => "process loopback",
@@ -212,6 +376,7 @@ fn setup_source(source: &CaptureSource) -> Result<CaptureSetup> {
         CaptureSource::Process {
             process_id,
             executable_path,
+            ..
         } => {
             let pid = match process_path(*process_id) {
                 Ok(path) if path.eq_ignore_ascii_case(executable_path) => *process_id,
@@ -240,6 +405,7 @@ fn capture_session(
     stop: &AtomicBool,
     paused: &AtomicBool,
     device_changed: &AtomicBool,
+    mut process_target_monitor: ProcessTargetMonitor<'_>,
 ) -> Result<()> {
     let mut running = true;
     let mut last_default_check = std::time::Instant::now();
@@ -258,6 +424,10 @@ fn capture_session(
                 }
                 running = false;
             }
+            if last_default_check.elapsed() >= Duration::from_secs(1) {
+                process_target_monitor.update(source);
+                last_default_check = std::time::Instant::now();
+            }
             thread::sleep(Duration::from_millis(20));
             continue;
         }
@@ -269,6 +439,7 @@ fn capture_session(
         let wait = unsafe { WaitForSingleObject(setup.event, CAPTURE_WAIT_MS) };
         if wait != WAIT_OBJECT_0 {
             if last_default_check.elapsed() >= Duration::from_secs(1) {
+                process_target_monitor.update(source);
                 if default_device_changed(source, setup.endpoint_id.as_deref())? {
                     bail!("默认音频设备已改变");
                 }
@@ -355,6 +526,7 @@ fn capture_session(
             }
         }
         if last_default_check.elapsed() >= Duration::from_secs(1) {
+            process_target_monitor.update(source);
             if default_device_changed(source, setup.endpoint_id.as_deref())? {
                 bail!("默认音频设备已改变");
             }
@@ -1004,9 +1176,14 @@ pub fn list_capture_targets() -> Result<Vec<CaptureTarget>> {
             windows.titles.entry(pid).or_default();
         }
     }
+    let WindowAccumulator {
+        titles,
+        window_handles,
+        ..
+    } = *windows;
     let own_pid = std::process::id();
     let mut targets = Vec::new();
-    for (pid, title) in windows.titles {
+    for (pid, title) in titles {
         if pid == own_pid {
             continue;
         }
@@ -1039,6 +1216,7 @@ pub fn list_capture_targets() -> Result<Vec<CaptureTarget>> {
             },
             process_id: pid,
             executable_path,
+            window_handle: window_handles.get(&pid).copied(),
             browser,
             priority,
         });
@@ -1075,6 +1253,7 @@ fn active_audio_processes() -> Result<Vec<u32>> {
 struct WindowAccumulator {
     titles: HashMap<u32, String>,
     seen: HashSet<u32>,
+    window_handles: HashMap<u32, isize>,
 }
 
 unsafe extern "system" fn enumerate_window(hwnd: HWND, parameter: LPARAM) -> BOOL {
@@ -1098,6 +1277,7 @@ unsafe extern "system" fn enumerate_window(hwnd: HWND, parameter: LPARAM) -> BOO
     let copied = unsafe { GetWindowTextW(hwnd, &mut buffer) };
     let title = String::from_utf16_lossy(&buffer[..copied.max(0) as usize]);
     accumulator.titles.insert(pid, title);
+    accumulator.window_handles.insert(pid, hwnd.0 as isize);
     BOOL(1)
 }
 
@@ -1196,6 +1376,94 @@ fn initialize_com() -> Result<ComGuard> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn process_exit_reminder_is_emitted_once_per_disappearance() {
+        let started = Instant::now();
+        let mut tracker = ProcessTargetTracker::default();
+
+        assert!(!tracker.observe_absent(started));
+        assert!(!tracker.observe_absent(started + Duration::from_secs(9)));
+        assert!(tracker.observe_absent(started + Duration::from_secs(10)));
+        assert!(!tracker.observe_absent(started + Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn process_exit_reminder_resets_only_after_target_recovers() {
+        let started = Instant::now();
+        let mut tracker = ProcessTargetTracker::default();
+
+        assert!(!tracker.observe_absent(started));
+        assert!(tracker.observe_absent(started + PROCESS_TARGET_EXIT_GRACE));
+        assert!(tracker.observe_present());
+        assert!(!tracker.observe_present());
+
+        let disappeared_again = started + Duration::from_secs(30);
+        assert!(!tracker.observe_absent(disappeared_again));
+        assert!(tracker.observe_absent(disappeared_again + PROCESS_TARGET_EXIT_GRACE));
+    }
+
+    #[test]
+    fn window_rebind_requires_the_same_display_identity_and_a_visible_window() {
+        let targets = vec![
+            CaptureTarget {
+                id: "process:0".into(),
+                kind: "process".into(),
+                display_name: "会议".into(),
+                process_id: 0,
+                executable_path: r"C:\Program Files\WXWork\meeting.exe".into(),
+                window_handle: None,
+                browser: false,
+                priority: 0,
+            },
+            CaptureTarget {
+                id: "process:1".into(),
+                kind: "process".into(),
+                display_name: "企业微信".into(),
+                process_id: 1,
+                executable_path: r"C:\Program Files\WXWork\meeting.exe".into(),
+                window_handle: Some(11),
+                browser: false,
+                priority: 0,
+            },
+            CaptureTarget {
+                id: "process:2".into(),
+                kind: "process".into(),
+                display_name: "会议".into(),
+                process_id: 2,
+                executable_path: r"C:\Program Files\WXWork\meeting.exe".into(),
+                window_handle: Some(22),
+                browser: false,
+                priority: 0,
+            },
+        ];
+
+        let replacement = find_replacement_target(
+            targets,
+            r"c:\program files\wxwork\MEETING.EXE",
+            "会议",
+            true,
+        )
+        .expect("the meeting window should be rebound");
+        assert_eq!(replacement.process_id, 2);
+    }
+
+    #[test]
+    fn native_window_handle_is_not_exposed_through_capture_target_json() {
+        let target = CaptureTarget {
+            id: "process:2".into(),
+            kind: "process".into(),
+            display_name: "Meeting".into(),
+            process_id: 2,
+            executable_path: r"C:\Apps\Meeting.exe".into(),
+            window_handle: Some(22),
+            browser: false,
+            priority: 90,
+        };
+
+        let json = serde_json::to_value(target).expect("capture target should serialize");
+        assert!(json.get("windowHandle").is_none());
+    }
+
     fn test_tone_wav() -> Vec<u8> {
         let sample_rate = 48_000u32;
         let sample_count = sample_rate / 2;
@@ -1279,7 +1547,9 @@ mod tests {
         let capture = start_capture(
             CaptureSource::Process {
                 process_id: target.process_id,
+                display_name: target.display_name,
                 executable_path: target.executable_path,
+                window_handle: target.window_handle,
             },
             sender,
         )
@@ -1304,7 +1574,9 @@ mod tests {
         let capture = start_capture(
             CaptureSource::Process {
                 process_id: std::process::id(),
+                display_name: "Nota".into(),
                 executable_path,
+                window_handle: None,
             },
             sender,
         )
