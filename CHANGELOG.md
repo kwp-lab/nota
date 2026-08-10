@@ -9,6 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added Markdown-first AI meeting documents for completed transcripts, with
+  meeting summaries, action items, speaker summaries, and speaker-grouped
+  stand-up action items.
+- Added configurable Responses API and OpenAI-compatible Chat Completions LLM
+  providers, configurable input/output budgets, connection testing, and model
+  discovery.
+- Added custom AI templates, three context layers, immutable generation
+  snapshots, and document/version selectors for create, regenerate, and revise
+  workflows.
 - Added a selected-meeting-target exit reminder: after a ten-second recovery
   window, Nota shows a portable-compatible Tauri decision prompt and highlights
   the tray so the user can explicitly continue recording or stop and save.
@@ -18,6 +27,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Every successful AI generation now creates a new shareable Markdown file;
+  external edits remain authoritative, moved files are reported and can be
+  identity-checked for relinking, and recording deletion preserves AI files by
+  default.
+- AI document commits now use no-replace atomic moves, cancellation is checked
+  at the final commit boundary, incomplete model responses are rejected, and
+  optional deletion verifies each Markdown file's embedded Nota identity.
 - Meeting-window disappearance is detected even when an application keeps its
   meeting engine resident for warm-up. Continuing preserves the existing
   recording and capture state and suppresses repeat prompts until that target

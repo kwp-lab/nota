@@ -1,3 +1,9 @@
+use crate::ai::{
+    AiManager, document_file_matches_identity, estimate_generation_tokens,
+    find_moved_document_version, list_models as list_llm_provider_models,
+    normalize_provider_base_url, read_document_content, relink_document_version,
+    test_connection as test_llm_connection,
+};
 use crate::asr::{
     AsrManager, clean_stale_temporary_chunks, list_models as list_provider_models,
     normalize_base_url, remove_temporary_chunks, test_connection,
@@ -46,6 +52,7 @@ struct AppState {
     storage: Arc<Storage>,
     recorder: Arc<RecordingController>,
     asr: Arc<AsrManager>,
+    ai: Arc<AiManager>,
     voiceprints: Arc<VoiceprintManager>,
     tray_state: Mutex<Option<(RecordingState, bool)>>,
 }
@@ -1219,7 +1226,7 @@ fn set_microphone_enabled(
 
 impl AppState {
     fn runtime_active(&self) -> bool {
-        self.recorder.is_active() || self.asr.has_active()
+        self.recorder.is_active() || self.asr.has_active() || self.ai.has_active()
     }
 }
 
@@ -1357,13 +1364,32 @@ fn delete_recording(
     state: State<AppState>,
     id: String,
     permanent: bool,
+    delete_ai_documents: Option<bool>,
 ) -> std::result::Result<(), String> {
     command_result((|| {
         if state.asr.is_active(&id) {
             bail!("该录音正在转写，请先中断任务后再删除");
         }
+        if state.storage.has_active_ai_generation(&id)? {
+            bail!("该录音仍有 AI 文档正在生成，请先取消任务");
+        }
         let item = state.storage.find_recording(&id)?;
         remove_temporary_chunks(&state.storage.paths().recovery, &id)?;
+        if delete_ai_documents.unwrap_or(false) {
+            for (path, document_id, version_id) in state.storage.ai_document_file_links(&id)? {
+                let path = PathBuf::from(path);
+                if !path.is_file()
+                    || !document_file_matches_identity(&path, &document_id, &version_id)
+                {
+                    continue;
+                }
+                if permanent {
+                    std::fs::remove_file(&path)?;
+                } else {
+                    trash::delete(&path)?;
+                }
+            }
+        }
         if permanent {
             std::fs::remove_file(&item.path)?;
         } else {
@@ -1434,6 +1460,12 @@ async fn quit_application(
             return Err("仍有语音转写任务正在进行".into());
         }
         command_result(state.asr.interrupt_all())?;
+    }
+    if state.ai.has_active() {
+        if !stop_and_save {
+            return Err("仍有 AI 文档正在生成".into());
+        }
+        command_result(state.ai.interrupt_all())?;
     }
     app.exit(0);
     Ok(())
@@ -1517,6 +1549,246 @@ async fn list_asr_models(
     .await
     .map_err(|error| format!("读取模型任务异常结束：{error}"))?;
     command_result(result)
+}
+
+#[tauri::command]
+fn list_llm_providers(state: State<AppState>) -> std::result::Result<Vec<LlmProvider>, String> {
+    command_result(state.storage.list_llm_providers())
+}
+
+#[tauri::command]
+fn save_llm_provider(
+    state: State<AppState>,
+    mut request: SaveLlmProviderRequest,
+) -> std::result::Result<LlmProvider, String> {
+    command_result((|| {
+        request.base_url = normalize_provider_base_url(request.kind, &request.base_url)?;
+        state.storage.save_llm_provider(request)
+    })())
+}
+
+#[tauri::command]
+fn delete_llm_provider(state: State<AppState>, id: String) -> std::result::Result<(), String> {
+    command_result(state.storage.delete_llm_provider(&id))
+}
+
+#[tauri::command]
+fn set_active_llm_provider(
+    state: State<AppState>,
+    id: Option<String>,
+) -> std::result::Result<AppSettings, String> {
+    command_result((|| {
+        if let Some(provider_id) = id.as_deref() {
+            state.storage.find_llm_provider(provider_id)?;
+        }
+        let mut settings = state.storage.settings()?;
+        settings.active_llm_provider_id = id.filter(|value| !value.trim().is_empty());
+        state.storage.save_settings(&settings)?;
+        Ok(settings)
+    })())
+}
+
+#[tauri::command]
+async fn test_llm_provider(
+    state: State<'_, AppState>,
+    mut request: LlmProviderProbeRequest,
+) -> std::result::Result<LlmConnectionTest, String> {
+    let storage = Arc::clone(&state.storage);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        request.base_url = normalize_provider_base_url(request.kind, &request.base_url)?;
+        let credentials = storage.llm_probe_credentials(request)?;
+        test_llm_connection(&credentials)
+    })
+    .await
+    .map_err(|error| format!("AI 连接测试任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+async fn list_llm_models(
+    state: State<'_, AppState>,
+    mut request: LlmProviderProbeRequest,
+) -> std::result::Result<Vec<LlmModel>, String> {
+    let storage = Arc::clone(&state.storage);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        request.base_url = normalize_provider_base_url(request.kind, &request.base_url)?;
+        let credentials = storage.llm_probe_credentials(request)?;
+        list_llm_provider_models(&credentials)
+    })
+    .await
+    .map_err(|error| format!("读取 AI 模型任务异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
+fn list_ai_templates(state: State<AppState>) -> std::result::Result<Vec<AiTemplate>, String> {
+    command_result(state.storage.list_ai_templates())
+}
+
+#[tauri::command]
+fn save_ai_template(
+    state: State<AppState>,
+    request: SaveAiTemplateRequest,
+) -> std::result::Result<AiTemplate, String> {
+    command_result(state.storage.save_ai_template(request))
+}
+
+#[tauri::command]
+fn clone_ai_template(
+    state: State<AppState>,
+    id: String,
+    name: String,
+) -> std::result::Result<AiTemplate, String> {
+    command_result(state.storage.clone_ai_template(&id, &name))
+}
+
+#[tauri::command]
+fn archive_ai_template(state: State<AppState>, id: String) -> std::result::Result<(), String> {
+    command_result(state.storage.archive_ai_template(&id))
+}
+
+#[tauri::command]
+fn get_ai_workspace(
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<AiWorkspace, String> {
+    command_result(state.storage.ai_workspace(&recording_id))
+}
+
+#[tauri::command]
+fn estimate_ai_generation_tokens(
+    state: State<AppState>,
+    request: AiGenerationRequest,
+) -> std::result::Result<u32, String> {
+    command_result(estimate_generation_tokens(&state.storage, &request))
+}
+
+#[tauri::command]
+fn list_ai_document_versions(
+    state: State<AppState>,
+    document_id: String,
+) -> std::result::Result<Vec<AiDocumentVersion>, String> {
+    command_result(state.storage.list_ai_document_versions(&document_id))
+}
+
+#[tauri::command]
+fn generate_ai_document(
+    app: AppHandle,
+    state: State<AppState>,
+    request: AiGenerationRequest,
+) -> std::result::Result<AiDocumentVersion, String> {
+    command_result(state.ai.start(app, request))
+}
+
+#[tauri::command]
+fn cancel_ai_generation(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<AiDocumentVersion, String> {
+    command_result(state.ai.cancel(&version_id))
+}
+
+#[tauri::command]
+fn read_ai_document_version(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<AiDocumentContent, String> {
+    command_result(read_document_content(&state.storage, &version_id))
+}
+
+#[tauri::command]
+fn relink_ai_document_version(
+    state: State<AppState>,
+    version_id: String,
+    path: String,
+) -> std::result::Result<AiDocumentVersion, String> {
+    command_result(relink_document_version(&state.storage, &version_id, &path))
+}
+
+#[tauri::command]
+fn find_ai_document_version(
+    state: State<AppState>,
+    version_id: String,
+    workspace_path: String,
+) -> std::result::Result<AiDocumentVersion, String> {
+    command_result(find_moved_document_version(
+        &state.storage,
+        &version_id,
+        &workspace_path,
+    ))
+}
+
+fn ai_version_path(storage: &Storage, version_id: &str) -> Result<PathBuf> {
+    let version = storage.find_ai_document_version(version_id)?;
+    let path = PathBuf::from(version.file_path.context("该版本没有文件路径")?);
+    if !path.is_file() {
+        bail!("AI Markdown 文件不存在或已被移动");
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+fn open_ai_document_version(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<(), String> {
+    command_result((|| {
+        let path = ai_version_path(&state.storage, &version_id)?;
+        let operation = wide("open");
+        let target = wide(path.to_string_lossy().as_ref());
+        let result = unsafe {
+            ShellExecuteW(
+                Some(HWND::default()),
+                PCWSTR(operation.as_ptr()),
+                PCWSTR(target.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize <= 32 {
+            bail!("无法使用默认应用打开 Markdown 文件");
+        }
+        Ok(())
+    })())
+}
+
+#[tauri::command]
+fn reveal_ai_document_version(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<(), String> {
+    command_result((|| {
+        let path = ai_version_path(&state.storage, &version_id)?;
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()?;
+        Ok(())
+    })())
+}
+
+#[tauri::command]
+fn copy_ai_document_version(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<(), String> {
+    command_result((|| {
+        let content = read_document_content(&state.storage, &version_id)?;
+        arboard::Clipboard::new()?.set_text(content.markdown)?;
+        Ok(())
+    })())
+}
+
+#[tauri::command]
+fn copy_ai_document_path(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<(), String> {
+    command_result((|| {
+        let path = ai_version_path(&state.storage, &version_id)?;
+        arboard::Clipboard::new()?.set_text(path.to_string_lossy().into_owned())?;
+        Ok(())
+    })())
 }
 
 #[tauri::command]
@@ -2121,6 +2393,9 @@ pub fn run_app() {
     storage
         .interrupt_running_transcriptions()
         .expect("无法恢复上次中断的转写任务状态");
+    storage
+        .interrupt_running_ai_generations()
+        .expect("无法恢复上次中断的 AI 文档任务状态");
     let recorder = Arc::new(RecordingController::new(Arc::clone(&storage)));
     let weak_recorder = Arc::downgrade(&recorder);
     let asr = Arc::new(AsrManager::new(
@@ -2131,6 +2406,7 @@ pub fn run_app() {
                 .is_some_and(|recorder| recorder.is_active())
         }),
     ));
+    let ai = Arc::new(AiManager::new(Arc::clone(&storage)));
     let voiceprints =
         Arc::new(VoiceprintManager::new(Arc::clone(&storage)).expect("无法初始化 Nota 声纹管理"));
     let application = tauri::Builder::default()
@@ -2146,6 +2422,7 @@ pub fn run_app() {
             storage,
             recorder,
             asr,
+            ai,
             voiceprints,
             tray_state: Mutex::new(Some((RecordingState::Idle, false))),
         })
@@ -2202,6 +2479,28 @@ pub fn run_app() {
             set_active_asr_provider,
             test_asr_provider,
             list_asr_models,
+            list_llm_providers,
+            save_llm_provider,
+            delete_llm_provider,
+            set_active_llm_provider,
+            test_llm_provider,
+            list_llm_models,
+            list_ai_templates,
+            save_ai_template,
+            clone_ai_template,
+            archive_ai_template,
+            get_ai_workspace,
+            estimate_ai_generation_tokens,
+            list_ai_document_versions,
+            generate_ai_document,
+            cancel_ai_generation,
+            read_ai_document_version,
+            relink_ai_document_version,
+            find_ai_document_version,
+            open_ai_document_version,
+            reveal_ai_document_version,
+            copy_ai_document_version,
+            copy_ai_document_path,
             start_transcription,
             cancel_transcription,
             resume_transcription,
@@ -2230,6 +2529,9 @@ pub fn run_app() {
             }
             if let Err(error) = state.asr.interrupt_all() {
                 log::error!("best-effort ASR interruption failed: {error:#}");
+            }
+            if let Err(error) = state.ai.interrupt_all() {
+                log::error!("best-effort AI interruption failed: {error:#}");
             }
         }
     });

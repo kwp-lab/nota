@@ -186,6 +186,8 @@ pub struct MeetingEndPrompt {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub output_directory: String,
+    #[serde(default)]
+    pub ai_documents_directory: String,
     pub aec_mode: AecMode,
     pub microphone_enabled: bool,
     pub first_run_complete: bool,
@@ -198,6 +200,91 @@ pub struct AppSettings {
     pub voiceprint_provider_id: Option<String>,
     #[serde(default)]
     pub auto_transcribe: bool,
+    #[serde(default)]
+    pub active_llm_provider_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LlmProviderKind {
+    OpenAi,
+    OpenAiCompatible,
+}
+
+impl LlmProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAi => "open_ai",
+            Self::OpenAiCompatible => "open_ai_compatible",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "open_ai" => Self::OpenAi,
+            _ => Self::OpenAiCompatible,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmProvider {
+    pub id: String,
+    pub name: String,
+    pub kind: LlmProviderKind,
+    pub base_url: String,
+    pub model_id: String,
+    pub input_token_budget: u32,
+    pub max_output_tokens: u32,
+    pub has_api_key: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveLlmProviderRequest {
+    pub id: Option<String>,
+    pub name: String,
+    pub kind: LlmProviderKind,
+    pub base_url: String,
+    pub model_id: String,
+    pub input_token_budget: u32,
+    pub max_output_tokens: u32,
+    pub api_key: AsrApiKeyUpdate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmProviderProbeRequest {
+    pub id: Option<String>,
+    pub kind: LlmProviderKind,
+    pub base_url: String,
+    pub model_id: String,
+    pub input_token_budget: u32,
+    pub max_output_tokens: u32,
+    pub api_key: AsrApiKeyUpdate,
+}
+
+#[derive(Debug, Clone)]
+pub struct LlmProviderCredentials {
+    pub provider: LlmProvider,
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmModel {
+    pub id: String,
+    pub owned_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmConnectionTest {
+    pub reachable: bool,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -572,6 +659,191 @@ pub struct SpeakerIdentificationAssignment {
 pub struct TranscriptionEvent {
     pub recording_id: String,
     pub summary: TranscriptionSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub builtin_key: Option<String>,
+    pub task_instructions: String,
+    pub output_requirements: String,
+    pub requires_speaker_labels: bool,
+    pub revision: u32,
+    pub archived: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiTemplateRequest {
+    pub id: Option<String>,
+    pub name: String,
+    pub description: String,
+    pub task_instructions: String,
+    pub output_requirements: String,
+    pub requires_speaker_labels: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiMeetingProfile {
+    pub recording_id: String,
+    pub workspace_path: String,
+    pub meeting_context: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AiGenerationMode {
+    Create,
+    Regenerate,
+    Revise,
+}
+
+impl AiGenerationMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Regenerate => "regenerate",
+            Self::Revise => "revise",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "regenerate" => Self::Regenerate,
+            "revise" => Self::Revise,
+            _ => Self::Create,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AiGenerationStatus {
+    Queued,
+    Generating,
+    Completed,
+    Failed,
+    Cancelled,
+    Interrupted,
+}
+
+impl AiGenerationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Generating => "generating",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "queued" => Self::Queued,
+            "generating" => Self::Generating,
+            "completed" => Self::Completed,
+            "cancelled" => Self::Cancelled,
+            "interrupted" => Self::Interrupted,
+            _ => Self::Failed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AiFileState {
+    Pending,
+    Ready,
+    Modified,
+    Missing,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDocumentVersion {
+    pub id: String,
+    pub document_id: String,
+    pub version_number: u32,
+    pub mode: AiGenerationMode,
+    pub parent_version_id: Option<String>,
+    pub status: AiGenerationStatus,
+    pub file_path: Option<String>,
+    pub file_state: AiFileState,
+    pub provider_name: String,
+    pub provider_kind: LlmProviderKind,
+    pub model_id: String,
+    pub template_name: String,
+    pub template_revision: u32,
+    pub transcription_generation: u32,
+    pub estimated_input_tokens: u32,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDocument {
+    pub id: String,
+    pub recording_id: String,
+    pub template_id: String,
+    pub title: String,
+    pub requirements: String,
+    pub template_name: String,
+    pub template_builtin_key: Option<String>,
+    pub latest_version: Option<AiDocumentVersion>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiWorkspace {
+    pub profile: AiMeetingProfile,
+    pub documents: Vec<AiDocument>,
+    pub templates: Vec<AiTemplate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiGenerationRequest {
+    pub recording_id: String,
+    pub mode: AiGenerationMode,
+    pub document_id: Option<String>,
+    pub template_id: Option<String>,
+    pub title: Option<String>,
+    pub meeting_context: String,
+    pub document_requirements: String,
+    pub run_request: String,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub source_version_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDocumentContent {
+    pub version: AiDocumentVersion,
+    pub markdown: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiGenerationEvent {
+    pub recording_id: String,
+    pub document_id: String,
+    pub version: AiDocumentVersion,
 }
 
 #[cfg(test)]

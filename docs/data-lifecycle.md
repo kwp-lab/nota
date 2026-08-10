@@ -1,10 +1,11 @@
-# Recording and Transcription Data Lifecycle
+# Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-06
+- Last updated: 2026-08-09
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
-  `src-tauri/src/asr.rs`, `src-tauri/src/audio/recovery.rs`
+  `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`,
+  `src-tauri/src/audio/recovery.rs`
 - Related tests: Rust `storage::tests`, `asr::tests`, and `paths::tests`
 
 ## Data Classes
@@ -21,6 +22,10 @@
 | Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
+| LLM provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
+| AI templates, context, document/version ledger, and prompt snapshots | Local SQLite | Until recording or template deletion rules apply |
+| Generated AI document body | Versioned Markdown file in the user-selected AI document directory | Until the user moves or deletes it |
+| AI generation temporary file | Same directory as its target Markdown | One atomic write attempt; removed on failure |
 
 The original Ogg is the durable media source. Transcription must never mutate or
 replace it.
@@ -38,11 +43,54 @@ Deleting a recording cascades its local transcription state and legacy chunk
 rows. Moving a file outside Nota can leave an indexed path that is reported as
 missing rather than silently substituted.
 
+Recording deletion also cascades AI index and version rows. Associated
+Markdown files are preserved by default and remain ordinary standalone user
+documents. If the user explicitly checks **also delete linked AI Markdown**,
+Rust considers only completed version paths and deletes a file only when its
+Nota YAML document and version identities still match the ledger. It must not
+delete failed-attempt reservations, replaced files, or search for moved files.
+
 ### `asr_providers`
 
 Stores provider kind, normalized base URL, model id, and API key. Provider lists
 and settings exposed to React return only `has_api_key`; they do not return the
 stored key.
+
+### `llm_providers`
+
+Stores provider kind, normalized API root, model id, local input-token budget,
+maximum output tokens, and API key. Provider lists exposed to React return only
+`has_api_key`. Native OpenAI rows always use the Nota-owned OpenAI API root;
+compatible rows retain the user-configured HTTP or HTTPS root.
+
+### `ai_templates`
+
+Stores stable built-in templates and user-owned templates. Built-ins have a
+unique `builtin_key` and cannot be edited or archived. Editing a custom
+template increments `revision`; historical generation rows retain snapshots of
+the previous task and output requirements.
+
+### `ai_meeting_profiles`, `ai_documents`, and `ai_document_versions`
+
+`ai_meeting_profiles` stores the meeting folder and reusable meeting context.
+`ai_documents` owns one template scenario within one recording; a unique
+constraint permits at most one row for each `(recording_id, template_id)`.
+
+`ai_document_versions` is append-only generation history. It stores mode,
+optional parent version, status, path and hash, provider/template/transcript
+snapshots, three context layers, token estimates and usage, and bounded failure
+detail. It intentionally does not store the generated Markdown body.
+
+A successful generation first creates and synchronizes a new file, atomically
+moves it without replacement, then marks the row `completed` with its hash. A
+failed, incomplete-provider, or cancelled attempt retains its ledger row and
+does not reuse its version number. At
+startup, `queued` and `generating` rows become `interrupted`.
+
+At read time a missing path is reported as `missing`; a content-hash mismatch
+is reported as `modified`. External edits are valid document content and do not
+rewrite the stored completion hash. Relinking changes only the indexed path and
+requires matching Nota YAML document and version identities.
 
 ### `transcriptions`
 

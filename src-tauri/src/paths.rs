@@ -6,6 +6,7 @@ pub struct AppPaths {
     pub recovery: PathBuf,
     pub logs: PathBuf,
     pub default_recordings: PathBuf,
+    pub default_ai_documents: PathBuf,
     pub legacy_default_recordings: PathBuf,
     pub database: PathBuf,
 }
@@ -20,6 +21,7 @@ impl AppPaths {
         let documents = dirs::document_dir().unwrap_or_else(|| data.clone());
         let legacy_default_recordings = documents.join("Meeting Note").join("Recordings");
         let nota_default_recordings = documents.join("Nota").join("Recordings");
+        let default_ai_documents = documents.join("Nota").join("AI Documents");
         let default_recordings =
             migrate_directory_or_keep_legacy(&legacy_default_recordings, &nota_default_recordings);
 
@@ -42,6 +44,7 @@ impl AppPaths {
             recovery,
             logs,
             default_recordings,
+            default_ai_documents,
             legacy_default_recordings,
             database,
         })

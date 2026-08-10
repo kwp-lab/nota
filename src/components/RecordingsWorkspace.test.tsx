@@ -139,6 +139,7 @@ const renderWorkspace = (
     onDiscardRecovery: vi.fn(),
     onRename: vi.fn(),
     onPermanentDelete: vi.fn(),
+    onAiMessage: vi.fn(),
   };
   render(
     <RecordingsWorkspace
@@ -151,6 +152,8 @@ const renderWorkspace = (
       hasProvider
       activeProviderKind={activeProviderKind}
       hasVoiceprintProvider={hasVoiceprintProvider}
+      llmProviders={[]}
+      activeLlmProviderId={null}
       participants={participants}
       {...actions}
     />,

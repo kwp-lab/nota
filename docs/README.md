@@ -14,15 +14,17 @@ that are intentionally too detailed for the project README.
    boundaries, concurrency, and system-wide invariants.
 2. [`asr-integration.md`](asr-integration.md) — FunASR whole-meeting jobs,
    OpenAI-compatible legacy chunks, state mapping, and recovery rules.
-3. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
+3. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
+   templates, versions, providers, and relinking.
+4. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
    migrations, retention, and deletion ordering.
-4. [`testing.md`](testing.md) — automated checks and hardware acceptance
+5. [`testing.md`](testing.md) — automated checks and hardware acceptance
    scenarios.
-5. [`decisions/README.md`](decisions/README.md) — architectural decision
+6. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-6. [`speaker-identification.md`](speaker-identification.md) — local
+7. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
-7. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+8. [`releasing.md`](releasing.md) — version, tag, package, and release process.
 
 ## Sources of Truth
 

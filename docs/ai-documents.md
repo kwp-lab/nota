@@ -1,0 +1,168 @@
+# AI Meeting Documents
+
+- Status: Accepted
+- Last updated: 2026-08-09
+- Owners: Nota desktop maintainers
+- Related code: `src-tauri/src/ai.rs`, `src-tauri/src/storage.rs`,
+  `src/components/AiDocumentsPanel.tsx`, `src/components/AiSettingsSection.tsx`
+- Related decision:
+  [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md)
+
+## Scope
+
+AI documents are an optional, explicit post-transcription workflow. A user can
+apply a built-in or custom task template to one completed meeting transcript
+and produce a shareable Markdown file. Recording and transcription remain
+independent of this feature and continue to work without an LLM provider.
+
+The first release includes four built-in templates:
+
+- concise meeting summary;
+- meeting action items;
+- summary grouped by speaker;
+- stand-up and action items grouped by speaker.
+
+Speaker templates require diarized transcript segments. Confirmed participant
+names are resolved at generation time without rewriting raw `speaker_N` labels.
+
+## Document and Version Model
+
+An AI document is the stable combination of one recording and one template.
+There may be at most one document for that pair. Users who need two variants of
+the same scenario clone the template first, which gives the variant its own
+document and version selector.
+
+Every generation attempt appends a version ledger row. Every successful
+attempt creates a new `.md` file with a monotonically increasing version number;
+Nota must never overwrite a previous generated file. The UI opens the newest
+completed version by default and lets the user select any earlier version.
+
+Generation modes have distinct semantics:
+
+| Mode | Model input | Parent version |
+|---|---|---|
+| `create` | Current transcript and context | None |
+| `regenerate` | Current transcript and context; no previous AI output | None |
+| `revise` | Current transcript, current on-disk body of the selected version, and revision request | Selected version |
+
+If a selected Markdown file was edited outside Nota, preview and `revise` use
+the current on-disk content. A hash mismatch is displayed as `modified`; it is
+not treated as corruption and the file is never rewritten.
+
+## Context Layers
+
+The generation dialog separates context by lifetime:
+
+| Context | Lifetime | Typical content |
+|---|---|---|
+| Meeting background | Shared by AI documents for this meeting | Project background, acronyms, roles, meeting goal |
+| Document requirements | Shared by all versions of this document | Audience, tone, language, length, focus |
+| This-run request | Only this version | A one-off emphasis or revision instruction |
+
+The fixed Nota safety policy remains owned by the application. Custom templates
+may edit task instructions and output structure, but cannot replace that policy.
+Transcript text, background, and an existing Markdown body are delimited as
+untrusted source data so instructions embedded in them do not become system
+instructions.
+
+## Provider Boundary
+
+Rust owns provider credentials and all LLM HTTP requests. React receives
+provider metadata and `hasApiKey`, never the stored key. Technical logs must not
+contain credentials, prompt bodies, transcript content, or model output.
+
+- Responses API providers use the user-configured API root (OpenAI's
+  `https://api.openai.com/v1` is only the default), append `/responses` when
+  needed, put the fixed policy in `instructions`, put the assembled task in
+  `input`, and send `store: false`. OpenAI's official endpoint requires an API
+  key; third-party endpoints may omit it when their own authentication policy
+  allows that.
+- OpenAI-compatible providers use non-streaming Chat Completions with separate
+  system and user messages.
+- Generation is never automatic. A provider is contacted only after the user
+  explicitly submits the generation dialog.
+- The configured input-token budget is enforced locally before a request. The
+  generation dialog asks Rust to assemble the same prompt and return the same
+  estimate used at submission. The estimate remains guidance rather than
+  provider billing truth.
+- A non-empty but incomplete provider response, including a Responses
+  `incomplete` status or Chat Completions `finish_reason: length`, fails the
+  version instead of publishing a truncated document.
+
+The initial implementation intentionally does not include transcript chunking,
+ACP, autonomous tools, cross-meeting retrieval, or task-system synchronization.
+A transcript that exceeds the configured budget is rejected before network
+access with guidance to select a larger-context model or reduce supplied
+context.
+
+## Lifecycle
+
+The AI manager uses one background worker and prevents concurrent jobs for the
+same document. Cancellation is cooperative: a queued job stops before network
+access, while an in-flight blocking HTTP request is marked cancelled after the
+request returns. The cancellation flag is checked again after the temporary
+file is synchronized and immediately before the final no-replace file commit.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Queued: "reserve document and append version row"
+    Queued --> Generating: "worker starts"
+    Generating --> Completed: "new Markdown is atomically committed without replacement and hash committed"
+    Queued --> Cancelled: "user cancels"
+    Generating --> Cancelled: "cancel observed before file commit"
+    Queued --> Failed: "queue or preparation failure"
+    Generating --> Failed: "provider, validation, or file failure"
+    Queued --> Interrupted: "application exits"
+    Generating --> Interrupted: "application exits"
+    Completed --> Modified: "on-disk hash differs"
+    Completed --> Missing: "indexed path no longer exists"
+    Missing --> Completed: "matching YAML identity is relinked"
+```
+
+Successful file commit ordering is:
+
+1. validate the provider response and normalize a Markdown body;
+2. assemble Nota YAML identity metadata and the body in memory;
+3. write a new same-directory temporary file and call `sync_all`;
+4. atomically move it to a previously unused `.md` path with replacement
+   disabled, so a concurrently created user file is never overwritten;
+5. commit the content hash and `completed` status to SQLite;
+6. emit the typed status event.
+
+The generated YAML front matter contains opaque Nota document, version, and
+recording identities plus generation metadata. It does not contain prompts,
+credentials, transcript text, or the provider response outside the document
+body.
+
+## File Ownership and Relinking
+
+The default root is `Documents\Nota\AI Documents`. Each meeting receives a
+folder based on its title plus a short recording identifier. The directory is
+created only when the first successful generation writes a file.
+
+Markdown is the authoritative document content. SQLite is an index and
+generation ledger containing associations, status, snapshots, hashes, and
+paths, but not a second copy of the generated body. Moving or renaming a file
+makes the indexed version `missing`; Nota may scan the configured meeting
+folder or let the user choose a file, then relink only when its YAML document
+and version identities match.
+
+Deleting a recording preserves associated Markdown files by default. The
+confirmation dialog offers an unchecked option to delete exact completed files
+that Nota can still associate. Immediately before deletion, Rust requires the
+on-disk YAML document and version identities to match the ledger. A moved,
+replaced, failed-attempt, or otherwise unverified path is preserved.
+
+## Template Evolution
+
+Built-in templates are seeded with stable identifiers and are not directly
+editable or archivable. Users may clone one and edit the clone. A clone inherits
+whether diarized speaker labels are required, and custom templates expose that
+requirement explicitly. Updating a custom template increments its revision.
+Each version snapshots the exact task
+instructions, output requirements, provider name/model, speaker-name mapping,
+transcription generation, and all three context layers used for that run.
+
+Regeneration uses the current template revision. Historical versions retain
+their snapshots so future UI and diagnostics can explain how they were made
+without depending on the current template text.

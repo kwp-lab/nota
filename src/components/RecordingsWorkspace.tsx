@@ -20,6 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AsrProviderKind,
+  LlmProvider,
   ParticipantProfile,
   RecordingItem,
   SpeakerIdentificationAssignment,
@@ -28,6 +29,7 @@ import type {
   TranscriptionStatus,
   TranscriptionSummary,
 } from "../types";
+import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import {
   SpeakerIdentificationModal,
   type SpeakerAnalysisStatus,
@@ -46,6 +48,8 @@ interface RecordingsWorkspaceProps {
   hasProvider: boolean;
   activeProviderKind: AsrProviderKind | null;
   hasVoiceprintProvider: boolean;
+  llmProviders: LlmProvider[];
+  activeLlmProviderId: string | null;
   participants: ParticipantProfile[];
   onSelect: (id: string) => void;
   onReturnToRecorder: () => void;
@@ -73,6 +77,7 @@ interface RecordingsWorkspaceProps {
   onDiscardRecovery: (id: string) => void;
   onRename: (id: string, currentTitle: string) => void;
   onPermanentDelete: (id: string) => void;
+  onAiMessage: (type: "success" | "error", message: string) => void;
 }
 
 interface RecordingActionMenu {
@@ -224,6 +229,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     recordingTitle: string;
     retranscription: boolean;
   } | null>(null);
+  const [detailTab, setDetailTab] = useState<"transcript" | "ai">("transcript");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const detailMenuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -270,6 +276,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   }, [props.transcript, selected?.id]);
 
   useEffect(() => {
+    setDetailTab("transcript");
     identificationRequestRef.current += 1;
     setIdentification((current) => {
       if (current?.session) props.onDiscardSpeakerIdentification(current.session.id);
@@ -691,6 +698,26 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 />
               </div>
 
+              <div className="record-detail-tabs" role="tablist" aria-label="会议详情">
+                <button
+                  role="tab"
+                  aria-selected={detailTab === "transcript"}
+                  className={detailTab === "transcript" ? "active" : ""}
+                  onClick={() => setDetailTab("transcript")}
+                >
+                  文字转写
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={detailTab === "ai"}
+                  className={detailTab === "ai" ? "active" : ""}
+                  onClick={() => setDetailTab("ai")}
+                >
+                  AI 文档
+                </button>
+              </div>
+
+              {detailTab === "transcript" && (
               <div className="transcript-toolbar">
                 <div>
                   <strong>文字转写</strong>
@@ -754,8 +781,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   )}
                 </div>
               </div>
+              )}
             </div>
 
+            {detailTab === "transcript" ? (
+            <>
             {isProcessing && (
               <div className="transcription-progress">
                 <LoaderCircle className="spin" size={18} />
@@ -823,6 +853,16 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 </div>
               )}
             </div>
+            </>
+            ) : (
+              <AiDocumentsPanel
+                recording={selected}
+                transcript={props.transcript}
+                providers={props.llmProviders}
+                activeProviderId={props.activeLlmProviderId}
+                onMessage={props.onAiMessage}
+              />
+            )}
           </>
         )}
       </article>

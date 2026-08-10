@@ -43,6 +43,8 @@ import type {
   CaptureTarget,
   DeviceSelection,
   LevelEvent,
+  LlmProvider,
+  LlmProviderProbeRequest,
   ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
@@ -65,6 +67,7 @@ const defaultSnapshot: RecordingSnapshot = {
 
 const defaultSettings: AppSettings = {
   outputDirectory: "",
+  aiDocumentsDirectory: "",
   aecMode: "auto",
   microphoneEnabled: true,
   firstRunComplete: false,
@@ -74,6 +77,7 @@ const defaultSettings: AppSettings = {
   activeAsrProviderId: null,
   voiceprintProviderId: null,
   autoTranscribe: false,
+  activeLlmProviderId: null,
 };
 
 const formatElapsed = (milliseconds: number) => {
@@ -107,6 +111,7 @@ const microphoneSelectionFromValue = (value: string): DeviceSelection | null => 
 type CaptureMode = "process" | "system";
 type StartRequestMode = CaptureMode | "current";
 type AppPage = "recorder" | "recordings" | "voiceprints" | "settings";
+type RecordingDeleteRequest = { id: string; permanent: boolean };
 
 export default function App() {
   const [targets, setTargets] = useState<CaptureTarget[]>([]);
@@ -123,12 +128,16 @@ export default function App() {
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [recoverable, setRecoverable] = useState<RecordingItem[]>([]);
   const [providers, setProviders] = useState<AsrProvider[]>([]);
+  const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([]);
   const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [page, setPage] = useState<AppPage>("recorder");
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptDocument | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [recordingDeleteRequest, setRecordingDeleteRequest] = useState<RecordingDeleteRequest | null>(null);
+  const [deleteAiDocuments, setDeleteAiDocuments] = useState(false);
+  const [recordingDeleteBusy, setRecordingDeleteBusy] = useState(false);
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const [appVersion, setAppVersion] = useState("…");
   const [draftSettings, setDraftSettings] = useState(defaultSettings);
@@ -181,6 +190,11 @@ export default function App() {
     [showToast],
   );
 
+  const handleAiMessage = useCallback(
+    (type: "success" | "error", message: string) => showToast(type, message),
+    [showToast],
+  );
+
   const applySnapshot = useCallback(
     (next: RecordingSnapshot) => {
       setSnapshot(next);
@@ -222,6 +236,12 @@ export default function App() {
   const refreshProviders = useCallback(async () => {
     const next = await api.listAsrProviders();
     setProviders(next);
+    return next;
+  }, []);
+
+  const refreshLlmProviders = useCallback(async () => {
+    const next = await api.listLlmProviders();
+    setLlmProviders(next);
     return next;
   }, []);
 
@@ -291,9 +311,10 @@ export default function App() {
       api.getSnapshot(),
       api.getAppVersion().catch(() => "未知"),
       api.listAsrProviders(),
+      api.listLlmProviders(),
       api.listParticipants(),
     ])
-      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedParticipants]) => {
+      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedLlmProviders, savedParticipants]) => {
         if (!mounted) return;
         applyCaptureTargets(targetList);
         setDevices(deviceList);
@@ -308,13 +329,14 @@ export default function App() {
         applySnapshot(current);
         setAppVersion(version);
         setProviders(savedProviders);
+        setLlmProviders(savedLlmProviders);
         setParticipants(savedParticipants);
         await refreshLibrary();
         unlistenSnapshot = await api.onSnapshot(applySnapshot);
         unlistenLevels = await api.onLevels(setLevels);
         unlistenStart = await api.onRequestStart((mode) => requestStartRef.current(mode));
         unlistenExit = await api.onRequestExit(() => {
-          if (confirm("录音或语音转写任务仍在进行。中断任务（录音会先保存）后退出应用？")) {
+          if (confirm("录音、语音转写或 AI 文档任务仍在进行。中断任务（录音会先保存）后退出应用？")) {
             void api.quitApplication(true);
           }
         });
@@ -540,6 +562,20 @@ export default function App() {
     }
   };
 
+  const chooseDraftAiDocuments = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected === "string") {
+        setDraftSettings((current) => ({
+          ...current,
+          aiDocumentsDirectory: selected,
+        }));
+      }
+    } catch (error) {
+      showError(error);
+    }
+  };
+
   const navigateTo = (nextPage: AppPage) => {
     if (nextPage === page) return;
     if (
@@ -620,6 +656,25 @@ export default function App() {
         current.activeAsrProviderId === id
           ? nextSettings.autoTranscribe
           : current.autoTranscribe,
+    }));
+  };
+
+  const saveLlmProvider = async (request: Parameters<typeof api.saveLlmProvider>[0]) => {
+    const saved = await api.saveLlmProvider(request);
+    await refreshLlmProviders();
+    return saved;
+  };
+
+  const deleteLlmProvider = async (id: string) => {
+    await api.deleteLlmProvider(id);
+    const [nextSettings] = await Promise.all([api.getSettings(), refreshLlmProviders()]);
+    setSettings(nextSettings);
+    setDraftSettings((current) => ({
+      ...current,
+      activeLlmProviderId:
+        current.activeLlmProviderId === id
+          ? nextSettings.activeLlmProviderId
+          : current.activeLlmProviderId,
     }));
   };
 
@@ -1086,6 +1141,8 @@ export default function App() {
             (provider) => provider.id === settings.voiceprintProviderId
               && provider.kind === "funAsr",
           )}
+          llmProviders={llmProviders}
+          activeLlmProviderId={settings.activeLlmProviderId}
           participants={participants}
           onSelect={setSelectedRecordingId}
           onReturnToRecorder={() => navigateTo("recorder")}
@@ -1124,12 +1181,8 @@ export default function App() {
           onOpenVoiceprintSettings={() => navigateTo("voiceprints")}
           onReveal={(id) => void api.revealRecording(id).catch(showError)}
           onDelete={(id) => {
-            if (!confirm("将此录音移入回收站？")) return;
-            void api
-              .deleteRecording(id, false)
-              .then(() => refreshLibrary({ clearSelectionId: id }))
-              .then(() => showToast("success", "录音已移至回收站"))
-              .catch(showError);
+            setDeleteAiDocuments(false);
+            setRecordingDeleteRequest({ id, permanent: false });
           }}
           onRecover={(id) =>
             void api.recoverRecording(id).then(() => refreshLibrary()).catch(showError)
@@ -1147,13 +1200,10 @@ export default function App() {
               .catch(showError);
           }}
           onPermanentDelete={(id) => {
-            if (!confirm("永久删除此录音？此操作无法撤销。")) return;
-            void api
-              .deleteRecording(id, true)
-              .then(() => refreshLibrary({ clearSelectionId: id }))
-              .then(() => showToast("success", "录音已永久删除"))
-              .catch(showError);
+            setDeleteAiDocuments(false);
+            setRecordingDeleteRequest({ id, permanent: true });
           }}
+          onAiMessage={handleAiMessage}
         />
         )}
 
@@ -1199,15 +1249,25 @@ export default function App() {
             recordingActive={isActive(snapshot.state)}
             settings={draftSettings}
             providers={providers}
+            llmProviders={llmProviders}
             microphoneCount={micDevices.length}
             appVersion={appVersion}
             onChange={setDraftSettings}
             onChooseOutput={() => void chooseDraftOutput()}
+            onChooseAiDocuments={() => void chooseDraftAiDocuments()}
             onOpenMicrophoneSettings={() =>
               void api.openMicrophoneSettings().catch(showError)
             }
             onSaveProvider={saveProvider}
             onDeleteProvider={deleteProvider}
+            onSaveLlmProvider={saveLlmProvider}
+            onDeleteLlmProvider={deleteLlmProvider}
+            onTestLlmProvider={(request: LlmProviderProbeRequest) =>
+              api.testLlmProvider(request)
+            }
+            onListLlmModels={(request: LlmProviderProbeRequest) =>
+              api.listLlmModels(request)
+            }
             onTestProvider={(request: AsrProviderProbeRequest) =>
               api.testAsrProvider(request)
             }
@@ -1221,8 +1281,66 @@ export default function App() {
         )}
       </main>
 
+      {recordingDeleteRequest && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal recording-delete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={recordingDeleteRequest.permanent ? "永久删除录音" : "删除录音"}
+          >
+            <div className="modal-icon"><AlertTriangle size={21} /></div>
+            <h3>{recordingDeleteRequest.permanent ? "永久删除这条录音？" : "将这条录音移入回收站？"}</h3>
+            <p>
+              {recordingDeleteRequest.permanent
+                ? "录音文件将被永久删除，无法撤销。"
+                : "录音文件将移入 Windows 回收站。"}
+            </p>
+            <label className="delete-ai-documents-option">
+              <input
+                type="checkbox"
+                checked={deleteAiDocuments}
+                onChange={(event) => setDeleteAiDocuments(event.target.checked)}
+              />
+              <span>
+                <strong>同时删除关联的 AI Markdown 文件</strong>
+                <small>默认保留，便于继续分享；勾选后只删除 Nota 当前仍能关联到的版本文件。</small>
+              </span>
+            </label>
+            <div className="modal-actions">
+              <button
+                className="button secondary"
+                disabled={recordingDeleteBusy}
+                onClick={() => setRecordingDeleteRequest(null)}
+              >
+                取消
+              </button>
+              <button
+                className="button stop"
+                disabled={recordingDeleteBusy}
+                onClick={() => {
+                  const request = recordingDeleteRequest;
+                  setRecordingDeleteBusy(true);
+                  void api
+                    .deleteRecording(request.id, request.permanent, deleteAiDocuments)
+                    .then(() => refreshLibrary({ clearSelectionId: request.id }))
+                    .then(() => {
+                      setRecordingDeleteRequest(null);
+                      showToast("success", request.permanent ? "录音已永久删除" : "录音已移至回收站");
+                    })
+                    .catch(showError)
+                    .finally(() => setRecordingDeleteBusy(false));
+                }}
+              >
+                {recordingDeleteBusy ? "正在删除…" : recordingDeleteRequest.permanent ? "永久删除" : "移入回收站"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <footer className="app-footer">
-        <span><span className="privacy-dot" />本地录音；仅在手动转写或启用自动转写时连接所选服务</span>
+        <span><span className="privacy-dot" />本地录音；仅在转写或手动生成 AI 文档时连接所选服务</span>
         <span>Ctrl + Alt + F9 开始/暂停 · F10 停止</span>
       </footer>
       </div>

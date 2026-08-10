@@ -48,6 +48,7 @@ required devices or environment variables in the test name and ignore message.
 | SQLite schema and migrations | `src-tauri/src/storage.rs` tests |
 | ASR parsing, capability checks, request construction, chunk merging | `src-tauri/src/asr.rs` tests |
 | Voiceprint candidate planning, clean-range mapping, local matching, and confirmation sessions | `src-tauri/src/voiceprints.rs` tests |
+| AI prompt boundaries, provider response parsing, Markdown metadata, version semantics, and SQLite snapshots | `src-tauri/src/ai.rs` and `src-tauri/src/storage.rs` tests |
 | Ogg encoding, decoding, and recovery | `src-tauri/src/audio/` tests |
 | Recording state and idempotent controls | `src-tauri/src/state_machine.rs` tests |
 | Tray and controller behavior | `src-tauri/src/controller.rs` tests |
@@ -116,6 +117,41 @@ Server-side automated coverage must include:
 - explicit `diarization_failed` behavior and valid silent output;
 - duration, upload-size, disk-space, and retention limits;
 - exact `verbose_json 1.0` result compatibility.
+
+## AI Document Regression Matrix
+
+Automated coverage for AI documents must include:
+
+- four deterministic built-in templates and immutable built-in behavior;
+- custom-template clone, revision increment, and archive behavior;
+- LLM provider API-key masking plus keep, replace, clear, and delete behavior;
+- configurable Responses API root/full-endpoint request and response parsing,
+  official-OpenAI authentication requirements, and compatible Chat Completions
+  response parsing, including rejection of incomplete or
+  token-truncated output, without placing prompt content in logs;
+- one document per recording/template and monotonically increasing version
+  numbers, including failed and cancelled attempts;
+- `regenerate` without parent output and `revise` with a validated parent;
+- speaker-template rejection when the transcript has no speaker labels;
+- local input-budget rejection before network access;
+- collision-safe create-new paths, YAML identities, atomic file writes, and no
+  overwrite of an existing or concurrently created path;
+- `ready`, `modified`, and `missing` file states plus identity-checked relink;
+- safe Markdown preview with raw HTML disabled and remote images not loaded;
+- document-first and version-second UI selection, with newest successful
+  version selected by default;
+- three context lifetimes and per-version prompt/provider/template snapshots;
+- recording deletion preserving Markdown by default and deleting exact linked
+  paths only after explicit opt-in, completed-status filtering, and an immediate
+  YAML identity check;
+- stale asynchronous preview responses never replacing the currently selected
+  version, and official OpenAI providers without a key staying out of generation
+  UI while unauthenticated third-party Responses providers remain available;
+- application restart converting queued or generating rows to `interrupted`.
+
+Provider integration acceptance uses synthetic text only. It must not place a
+real meeting transcript or generated business document in committed fixtures or
+ordinary technical logs.
 
 ## Manual Hardware Acceptance
 

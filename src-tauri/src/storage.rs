@@ -1,7 +1,10 @@
 use crate::models::{
-    AecMode, AppSettings, AsrApiKeyUpdate, AsrProvider, AsrProviderCredentials, AsrProviderKind,
-    AsrProviderProbeRequest, ParticipantProfile, RecordingItem, RecordingSpeakerAssignment,
-    SaveAsrProviderRequest, SpeakerIdentificationAssignment, StoredTranscriptionChunk,
+    AecMode, AiDocument, AiDocumentVersion, AiFileState, AiGenerationMode, AiGenerationStatus,
+    AiMeetingProfile, AiTemplate, AiWorkspace, AppSettings, AsrApiKeyUpdate, AsrProvider,
+    AsrProviderCredentials, AsrProviderKind, AsrProviderProbeRequest, LlmProvider,
+    LlmProviderCredentials, LlmProviderKind, LlmProviderProbeRequest, ParticipantProfile,
+    RecordingItem, RecordingSpeakerAssignment, SaveAiTemplateRequest, SaveAsrProviderRequest,
+    SaveLlmProviderRequest, SpeakerIdentificationAssignment, StoredTranscriptionChunk,
     TranscriptDocument, TranscriptSegment, TranscriptionExecution, TranscriptionProgressPhase,
     TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
     VoiceprintSample,
@@ -11,6 +14,7 @@ use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use parking_lot::Mutex;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -33,6 +37,24 @@ pub struct VoiceprintEnrollment {
     pub preview_start_ms: u64,
     pub preview_end_ms: u64,
     pub speech_duration_ms: u64,
+}
+
+pub struct NewAiVersion<'a> {
+    pub id: &'a str,
+    pub document_id: &'a str,
+    pub version_number: u32,
+    pub mode: AiGenerationMode,
+    pub parent_version_id: Option<&'a str>,
+    pub file_path: &'a str,
+    pub provider_id: &'a str,
+    pub provider: &'a LlmProvider,
+    pub template: &'a AiTemplate,
+    pub transcription_generation: u32,
+    pub speaker_names_json: &'a str,
+    pub meeting_context: &'a str,
+    pub document_requirements: &'a str,
+    pub run_request: &'a str,
+    pub estimated_input_tokens: u32,
 }
 
 fn resolve_assignment_participant(
@@ -125,6 +147,87 @@ fn upsert_recording_speaker_assignment(
 pub struct Storage {
     connection: Mutex<Connection>,
     paths: AppPaths,
+}
+
+struct BuiltinAiTemplate {
+    id: &'static str,
+    key: &'static str,
+    name: &'static str,
+    description: &'static str,
+    instructions: &'static str,
+    requirements: &'static str,
+    requires_speaker_labels: bool,
+}
+
+const BUILTIN_AI_TEMPLATES: [BuiltinAiTemplate; 4] = [
+    BuiltinAiTemplate {
+        id: "builtin-meeting-summary",
+        key: "meeting_summary",
+        name: "会议总结",
+        description: "提炼会议主题、结论、风险与未决问题",
+        instructions: "总结整场会议。只保留能够从转写或用户上下文中得到支持的信息；明确区分已确认结论与仍待确认事项。",
+        requirements: "使用 Markdown，至少包含：会议摘要、主要议题、结论与决策、风险与未决问题。没有内容的章节写“未提及”，不要编造。",
+        requires_speaker_labels: false,
+    },
+    BuiltinAiTemplate {
+        id: "builtin-action-items",
+        key: "action_items",
+        name: "待办清单",
+        description: "从会议中提取可执行的后续事项",
+        instructions: "提取会议中明确提出或承诺的待办事项。不要把已经完成的事项重新列为待办，也不要推断负责人或截止时间。",
+        requirements: "使用 Markdown checkbox。每项包含事项、负责人、截止时间和来源；未明确的信息写“未指定”。没有待办时明确写“未发现明确待办”。",
+        requires_speaker_labels: false,
+    },
+    BuiltinAiTemplate {
+        id: "builtin-speaker-summary",
+        key: "speaker_summary",
+        name: "按发言人总结",
+        description: "分别整理每位发言人的观点、结论和承诺",
+        instructions: "按转写中的发言人分别总结。保留说话人显示名；没有显示名时使用原始 speaker_N。只总结其表达的要点、结论和承诺，不评价个人表现。",
+        requirements: "使用每位发言人一个二级标题，下面按要点、结论、承诺组织；缺失内容写“未提及”。",
+        requires_speaker_labels: true,
+    },
+    BuiltinAiTemplate {
+        id: "builtin-speaker-standup",
+        key: "speaker_standup",
+        name: "按发言人待办",
+        description: "按发言人生成晨会完成事项、今日待办和阻塞项",
+        instructions: "按发言人整理晨会信息。不得把昨日已经完成的事项归入今日待办，不得把一人的事项归给另一人，也不得推断未明确表达的负责人。",
+        requirements: "每位发言人一个二级标题，并固定包含“昨日完成”“今日待办”“阻塞项”。今日待办使用 Markdown checkbox；未出现的信息写“未提及”。",
+        requires_speaker_labels: true,
+    },
+];
+
+fn seed_ai_templates(connection: &Connection) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    for template in BUILTIN_AI_TEMPLATES {
+        connection.execute(
+            "INSERT INTO ai_templates
+             (id, name, description, builtin_key, task_instructions,
+              output_requirements, requires_speaker_labels, revision, archived, created_at, updated_at)
+              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 0, ?8, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name,
+               description = excluded.description,
+               builtin_key = excluded.builtin_key,
+               task_instructions = excluded.task_instructions,
+                output_requirements = excluded.output_requirements,
+                requires_speaker_labels = excluded.requires_speaker_labels,
+                archived = 0,
+               updated_at = excluded.updated_at",
+            params![
+                template.id,
+                template.name,
+                template.description,
+                template.key,
+                template.instructions,
+                template.requirements,
+                template.requires_speaker_labels,
+                now,
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 impl Storage {
@@ -239,8 +342,85 @@ impl Storage {
               confirmed_at TEXT NOT NULL,
               PRIMARY KEY(recording_id, generation, raw_speaker)
             );
+            CREATE TABLE IF NOT EXISTS llm_providers (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              base_url TEXT NOT NULL,
+              api_key TEXT NOT NULL DEFAULT '',
+              model_id TEXT NOT NULL,
+              input_token_budget INTEGER NOT NULL DEFAULT 32768,
+              max_output_tokens INTEGER NOT NULL DEFAULT 4096,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ai_templates (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              builtin_key TEXT,
+              task_instructions TEXT NOT NULL,
+              output_requirements TEXT NOT NULL,
+              requires_speaker_labels INTEGER NOT NULL DEFAULT 0,
+              revision INTEGER NOT NULL DEFAULT 1,
+              archived INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ai_templates_builtin_unique
+              ON ai_templates(builtin_key) WHERE builtin_key IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS ai_meeting_profiles (
+              recording_id TEXT PRIMARY KEY REFERENCES recordings(id) ON DELETE CASCADE,
+              workspace_path TEXT NOT NULL,
+              meeting_context TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ai_documents (
+              id TEXT PRIMARY KEY,
+              recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+              template_id TEXT NOT NULL REFERENCES ai_templates(id),
+              title TEXT NOT NULL,
+              requirements TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(recording_id, template_id)
+            );
+            CREATE TABLE IF NOT EXISTS ai_document_versions (
+              id TEXT PRIMARY KEY,
+              document_id TEXT NOT NULL REFERENCES ai_documents(id) ON DELETE CASCADE,
+              version_number INTEGER NOT NULL,
+              mode TEXT NOT NULL,
+              parent_version_id TEXT REFERENCES ai_document_versions(id) ON DELETE SET NULL,
+              status TEXT NOT NULL,
+              file_path TEXT,
+              generated_hash TEXT,
+              provider_id TEXT REFERENCES llm_providers(id) ON DELETE SET NULL,
+              provider_name TEXT NOT NULL,
+              provider_kind TEXT NOT NULL,
+              model_id TEXT NOT NULL,
+              template_name TEXT NOT NULL,
+              template_revision INTEGER NOT NULL,
+              template_instructions TEXT NOT NULL,
+              template_output_requirements TEXT NOT NULL,
+              system_policy_version INTEGER NOT NULL DEFAULT 1,
+              transcription_generation INTEGER NOT NULL,
+              speaker_names_json TEXT NOT NULL DEFAULT '{}',
+              meeting_context TEXT NOT NULL DEFAULT '',
+              document_requirements TEXT NOT NULL DEFAULT '',
+              run_request TEXT NOT NULL DEFAULT '',
+              estimated_input_tokens INTEGER NOT NULL DEFAULT 0,
+              input_tokens INTEGER,
+              output_tokens INTEGER,
+              error_message TEXT,
+              created_at TEXT NOT NULL,
+              completed_at TEXT,
+              UNIQUE(document_id, version_number)
+            );
             ",
         )?;
+        ensure_ai_template_columns(&connection)?;
+        seed_ai_templates(&connection)?;
         ensure_transcription_job_columns(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
@@ -258,6 +438,14 @@ impl Storage {
         let output_directory = self
             .setting_value(&connection, "output_directory")?
             .unwrap_or_else(|| self.paths.default_recordings.to_string_lossy().into_owned());
+        let ai_documents_directory = self
+            .setting_value(&connection, "ai_documents_directory")?
+            .unwrap_or_else(|| {
+                self.paths
+                    .default_ai_documents
+                    .to_string_lossy()
+                    .into_owned()
+            });
         let aec_mode = match self.setting_value(&connection, "aec_mode")?.as_deref() {
             Some("on") => AecMode::On,
             Some("off") => AecMode::Off,
@@ -291,8 +479,12 @@ impl Storage {
             .setting_value(&connection, "auto_transcribe")?
             .map(|value| value == "true")
             .unwrap_or(false);
+        let active_llm_provider_id = self
+            .setting_value(&connection, "active_llm_provider_id")?
+            .filter(|value| !value.trim().is_empty());
         Ok(AppSettings {
             output_directory,
+            ai_documents_directory,
             aec_mode,
             microphone_enabled,
             first_run_complete,
@@ -302,6 +494,7 @@ impl Storage {
             active_asr_provider_id,
             voiceprint_provider_id,
             auto_transcribe,
+            active_llm_provider_id,
         })
     }
 
@@ -316,6 +509,10 @@ impl Storage {
     pub fn save_settings(&self, settings: &AppSettings) -> Result<()> {
         let values = [
             ("output_directory", settings.output_directory.clone()),
+            (
+                "ai_documents_directory",
+                settings.ai_documents_directory.clone(),
+            ),
             (
                 "aec_mode",
                 match settings.aec_mode {
@@ -345,6 +542,10 @@ impl Storage {
                 settings.voiceprint_provider_id.clone().unwrap_or_default(),
             ),
             ("auto_transcribe", settings.auto_transcribe.to_string()),
+            (
+                "active_llm_provider_id",
+                settings.active_llm_provider_id.clone().unwrap_or_default(),
+            ),
         ];
         let mut connection = self.connection.lock();
         let transaction = connection.transaction()?;
@@ -617,6 +818,640 @@ impl Storage {
         transaction.commit()?;
         connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         Ok(())
+    }
+
+    pub fn list_llm_providers(&self) -> Result<Vec<LlmProvider>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT id, name, kind, base_url, model_id, input_token_budget,
+                    max_output_tokens, api_key != '', created_at, updated_at
+             FROM llm_providers ORDER BY name COLLATE NOCASE, created_at",
+        )?;
+        let rows = statement.query_map([], llm_provider_from_row)?;
+        Ok(rows.filter_map(std::result::Result::ok).collect())
+    }
+
+    pub fn find_llm_provider(&self, id: &str) -> Result<LlmProviderCredentials> {
+        self.connection
+            .lock()
+            .query_row(
+                "SELECT id, name, kind, base_url, model_id, input_token_budget,
+                        max_output_tokens, api_key, created_at, updated_at
+                 FROM llm_providers WHERE id = ?1",
+                [id],
+                |row| {
+                    let api_key: String = row.get(7)?;
+                    Ok(LlmProviderCredentials {
+                        provider: LlmProvider {
+                            id: row.get(0)?,
+                            name: row.get(1)?,
+                            kind: LlmProviderKind::from_str(&row.get::<_, String>(2)?),
+                            base_url: row.get(3)?,
+                            model_id: row.get(4)?,
+                            input_token_budget: row.get::<_, i64>(5)?.max(0) as u32,
+                            max_output_tokens: row.get::<_, i64>(6)?.max(0) as u32,
+                            has_api_key: !api_key.is_empty(),
+                            created_at: row.get(8)?,
+                            updated_at: row.get(9)?,
+                        },
+                        api_key,
+                    })
+                },
+            )
+            .context("找不到该 AI 模型服务")
+    }
+
+    pub fn llm_probe_credentials(
+        &self,
+        request: LlmProviderProbeRequest,
+    ) -> Result<LlmProviderCredentials> {
+        let existing = request
+            .id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|id| self.find_llm_provider(id))
+            .transpose()?;
+        let api_key = match request.api_key {
+            AsrApiKeyUpdate::Keep => existing
+                .as_ref()
+                .map(|credentials| credentials.api_key.clone())
+                .unwrap_or_default(),
+            AsrApiKeyUpdate::Replace { value } => value.trim().to_owned(),
+            AsrApiKeyUpdate::Clear => String::new(),
+        };
+        let now = Utc::now().to_rfc3339();
+        Ok(LlmProviderCredentials {
+            provider: LlmProvider {
+                id: existing
+                    .as_ref()
+                    .map(|credentials| credentials.provider.id.clone())
+                    .unwrap_or_default(),
+                name: existing
+                    .as_ref()
+                    .map(|credentials| credentials.provider.name.clone())
+                    .unwrap_or_else(|| "未保存的 AI 模型服务".into()),
+                kind: request.kind,
+                base_url: request.base_url,
+                model_id: request.model_id,
+                input_token_budget: request.input_token_budget,
+                max_output_tokens: request.max_output_tokens,
+                has_api_key: !api_key.is_empty(),
+                created_at: existing
+                    .as_ref()
+                    .map(|credentials| credentials.provider.created_at.clone())
+                    .unwrap_or_else(|| now.clone()),
+                updated_at: now,
+            },
+            api_key,
+        })
+    }
+
+    pub fn save_llm_provider(&self, request: SaveLlmProviderRequest) -> Result<LlmProvider> {
+        validate_llm_provider(&request)?;
+        let now = Utc::now().to_rfc3339();
+        let id = request
+            .id
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let connection = self.connection.lock();
+        let existing = connection
+            .query_row(
+                "SELECT api_key, created_at FROM llm_providers WHERE id = ?1",
+                [&id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let api_key = match request.api_key {
+            AsrApiKeyUpdate::Keep => existing
+                .as_ref()
+                .map(|value| value.0.clone())
+                .unwrap_or_default(),
+            AsrApiKeyUpdate::Replace { value } => value.trim().to_owned(),
+            AsrApiKeyUpdate::Clear => String::new(),
+        };
+        let created_at = existing.map(|value| value.1).unwrap_or_else(|| now.clone());
+        connection.execute(
+            "INSERT INTO llm_providers
+             (id, name, kind, base_url, api_key, model_id, input_token_budget,
+              max_output_tokens, created_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name,
+               kind = excluded.kind,
+               base_url = excluded.base_url,
+               api_key = excluded.api_key,
+               model_id = excluded.model_id,
+               input_token_budget = excluded.input_token_budget,
+               max_output_tokens = excluded.max_output_tokens,
+               updated_at = excluded.updated_at",
+            params![
+                id,
+                request.name.trim(),
+                request.kind.as_str(),
+                request.base_url.trim(),
+                api_key,
+                request.model_id.trim(),
+                request.input_token_budget,
+                request.max_output_tokens,
+                created_at,
+                now,
+            ],
+        )?;
+        drop(connection);
+        Ok(self.find_llm_provider(&id)?.provider)
+    }
+
+    pub fn delete_llm_provider(&self, id: &str) -> Result<()> {
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        let active: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM ai_document_versions
+             WHERE provider_id = ?1 AND status IN ('queued', 'generating')",
+            [id],
+            |row| row.get(0),
+        )?;
+        if active > 0 {
+            bail!("该服务仍有正在排队或生成的 AI 文档，请先取消任务");
+        }
+        transaction.execute("DELETE FROM llm_providers WHERE id = ?1", [id])?;
+        transaction.execute(
+            "UPDATE settings SET value = ''
+             WHERE key = 'active_llm_provider_id' AND value = ?1",
+            [id],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn list_ai_templates(&self) -> Result<Vec<AiTemplate>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT id, name, description, builtin_key, task_instructions,
+                    output_requirements, requires_speaker_labels, revision, archived, created_at, updated_at
+             FROM ai_templates ORDER BY builtin_key IS NULL, name COLLATE NOCASE, created_at",
+        )?;
+        let rows = statement.query_map([], ai_template_from_row)?;
+        Ok(rows.filter_map(std::result::Result::ok).collect())
+    }
+
+    pub fn find_ai_template(&self, id: &str) -> Result<AiTemplate> {
+        self.connection
+            .lock()
+            .query_row(
+                "SELECT id, name, description, builtin_key, task_instructions,
+                        output_requirements, requires_speaker_labels, revision, archived, created_at, updated_at
+                 FROM ai_templates WHERE id = ?1",
+                [id],
+                ai_template_from_row,
+            )
+            .context("找不到该 AI 模板")
+    }
+
+    pub fn save_ai_template(&self, request: SaveAiTemplateRequest) -> Result<AiTemplate> {
+        validate_ai_template(&request)?;
+        let now = Utc::now().to_rfc3339();
+        let id = request
+            .id
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let connection = self.connection.lock();
+        let existing = connection
+            .query_row(
+                "SELECT builtin_key, revision, created_at FROM ai_templates WHERE id = ?1",
+                [&id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if existing
+            .as_ref()
+            .and_then(|value| value.0.as_ref())
+            .is_some()
+        {
+            bail!("内置模板不能直接修改，请先复制为自定义模板");
+        }
+        let revision = existing.as_ref().map(|value| value.1 + 1).unwrap_or(1);
+        let created_at = existing.map(|value| value.2).unwrap_or_else(|| now.clone());
+        connection.execute(
+            "INSERT INTO ai_templates
+             (id, name, description, builtin_key, task_instructions,
+              output_requirements, requires_speaker_labels, revision, archived, created_at, updated_at)
+             VALUES(?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, 0, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name,
+               description = excluded.description,
+               task_instructions = excluded.task_instructions,
+               output_requirements = excluded.output_requirements,
+               requires_speaker_labels = excluded.requires_speaker_labels,
+               revision = excluded.revision,
+               archived = 0,
+               updated_at = excluded.updated_at",
+            params![
+                id,
+                request.name.trim(),
+                request.description.trim(),
+                request.task_instructions.trim(),
+                request.output_requirements.trim(),
+                request.requires_speaker_labels,
+                revision,
+                created_at,
+                now,
+            ],
+        )?;
+        drop(connection);
+        self.find_ai_template(&id)
+    }
+
+    pub fn clone_ai_template(&self, id: &str, name: &str) -> Result<AiTemplate> {
+        let source = self.find_ai_template(id)?;
+        self.save_ai_template(SaveAiTemplateRequest {
+            id: None,
+            name: name.to_owned(),
+            description: source.description,
+            task_instructions: source.task_instructions,
+            output_requirements: source.output_requirements,
+            requires_speaker_labels: source.requires_speaker_labels,
+        })
+    }
+
+    pub fn archive_ai_template(&self, id: &str) -> Result<()> {
+        let template = self.find_ai_template(id)?;
+        if template.builtin_key.is_some() {
+            bail!("内置模板不能归档");
+        }
+        self.connection.lock().execute(
+            "UPDATE ai_templates SET archived = 1, updated_at = ?1 WHERE id = ?2",
+            params![Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn ai_workspace(&self, recording_id: &str) -> Result<AiWorkspace> {
+        let recording = self.find_recording(recording_id)?;
+        let stored_profile = {
+            let connection = self.connection.lock();
+            connection
+                .query_row(
+                    "SELECT recording_id, workspace_path, meeting_context, updated_at
+                 FROM ai_meeting_profiles WHERE recording_id = ?1",
+                    [recording_id],
+                    ai_meeting_profile_from_row,
+                )
+                .optional()?
+        };
+        let profile = stored_profile.unwrap_or_else(|| AiMeetingProfile {
+            recording_id: recording_id.to_owned(),
+            workspace_path: self
+                .default_ai_workspace_path(&recording)
+                .to_string_lossy()
+                .into_owned(),
+            meeting_context: String::new(),
+            updated_at: String::new(),
+        });
+        Ok(AiWorkspace {
+            profile,
+            documents: self.list_ai_documents(recording_id)?,
+            templates: self.list_ai_templates()?,
+        })
+    }
+
+    pub fn save_ai_meeting_profile(
+        &self,
+        recording_id: &str,
+        workspace_path: &str,
+        meeting_context: &str,
+    ) -> Result<AiMeetingProfile> {
+        self.find_recording(recording_id)?;
+        let now = Utc::now().to_rfc3339();
+        self.connection.lock().execute(
+            "INSERT INTO ai_meeting_profiles
+             (recording_id, workspace_path, meeting_context, created_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(recording_id) DO UPDATE SET
+               workspace_path = excluded.workspace_path,
+               meeting_context = excluded.meeting_context,
+               updated_at = excluded.updated_at",
+            params![recording_id, workspace_path, meeting_context, now],
+        )?;
+        Ok(AiMeetingProfile {
+            recording_id: recording_id.to_owned(),
+            workspace_path: workspace_path.to_owned(),
+            meeting_context: meeting_context.to_owned(),
+            updated_at: now,
+        })
+    }
+
+    pub fn create_ai_document(
+        &self,
+        recording_id: &str,
+        template_id: &str,
+        title: &str,
+        requirements: &str,
+    ) -> Result<AiDocument> {
+        self.find_recording(recording_id)?;
+        self.find_ai_template(template_id)?;
+        if self
+            .find_ai_document_for_template(recording_id, template_id)?
+            .is_some()
+        {
+            bail!("当前会议已经使用过该模板，请在已有文档中重新生成");
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.connection.lock().execute(
+            "INSERT INTO ai_documents
+             (id, recording_id, template_id, title, requirements, created_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                id,
+                recording_id,
+                template_id,
+                title.trim(),
+                requirements,
+                now
+            ],
+        )?;
+        self.find_ai_document(&id)
+    }
+
+    pub fn update_ai_document(
+        &self,
+        id: &str,
+        title: &str,
+        requirements: &str,
+    ) -> Result<AiDocument> {
+        let changed = self.connection.lock().execute(
+            "UPDATE ai_documents
+             SET title = ?1, requirements = ?2, updated_at = ?3 WHERE id = ?4",
+            params![title.trim(), requirements, Utc::now().to_rfc3339(), id],
+        )?;
+        if changed == 0 {
+            bail!("找不到该 AI 文档");
+        }
+        self.find_ai_document(id)
+    }
+
+    pub fn find_ai_document_for_template(
+        &self,
+        recording_id: &str,
+        template_id: &str,
+    ) -> Result<Option<AiDocument>> {
+        let id = self
+            .connection
+            .lock()
+            .query_row(
+                "SELECT id FROM ai_documents WHERE recording_id = ?1 AND template_id = ?2",
+                params![recording_id, template_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        id.map(|id| self.find_ai_document(&id)).transpose()
+    }
+
+    pub fn find_ai_document(&self, id: &str) -> Result<AiDocument> {
+        let mut document = self
+            .connection
+            .lock()
+            .query_row(
+                "SELECT d.id, d.recording_id, d.template_id, d.title, d.requirements,
+                        t.name, t.builtin_key, d.created_at, d.updated_at
+                 FROM ai_documents d
+                 JOIN ai_templates t ON t.id = d.template_id
+                 WHERE d.id = ?1",
+                [id],
+                ai_document_from_row,
+            )
+            .context("找不到该 AI 文档")?;
+        document.latest_version = self.list_ai_document_versions(id)?.into_iter().next();
+        Ok(document)
+    }
+
+    pub fn list_ai_documents(&self, recording_id: &str) -> Result<Vec<AiDocument>> {
+        let documents = {
+            let connection = self.connection.lock();
+            let mut statement = connection.prepare(
+                "SELECT d.id, d.recording_id, d.template_id, d.title, d.requirements,
+                        t.name, t.builtin_key, d.created_at, d.updated_at
+                 FROM ai_documents d
+                 JOIN ai_templates t ON t.id = d.template_id
+                 WHERE d.recording_id = ?1 ORDER BY d.created_at",
+            )?;
+            statement
+                .query_map([recording_id], ai_document_from_row)?
+                .filter_map(std::result::Result::ok)
+                .collect::<Vec<_>>()
+        };
+        documents
+            .into_iter()
+            .map(|mut document| {
+                document.latest_version = self
+                    .list_ai_document_versions(&document.id)?
+                    .into_iter()
+                    .find(|version| version.status == AiGenerationStatus::Completed);
+                Ok(document)
+            })
+            .collect()
+    }
+
+    pub fn next_ai_version_number(&self, document_id: &str) -> Result<u32> {
+        let next: i64 = self.connection.lock().query_row(
+            "SELECT COALESCE(MAX(version_number), 0) + 1
+             FROM ai_document_versions WHERE document_id = ?1",
+            [document_id],
+            |row| row.get(0),
+        )?;
+        Ok(next.max(1) as u32)
+    }
+
+    pub fn insert_ai_document_version(&self, value: NewAiVersion<'_>) -> Result<AiDocumentVersion> {
+        let now = Utc::now().to_rfc3339();
+        self.connection.lock().execute(
+            "INSERT INTO ai_document_versions
+             (id, document_id, version_number, mode, parent_version_id, status,
+              file_path, provider_id, provider_name, provider_kind, model_id,
+              template_name, template_revision, template_instructions,
+              template_output_requirements, system_policy_version,
+              transcription_generation, speaker_names_json, meeting_context,
+              document_requirements, run_request, estimated_input_tokens, created_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, ?9, ?10,
+                    ?11, ?12, ?13, ?14, 1, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+            params![
+                value.id,
+                value.document_id,
+                value.version_number,
+                value.mode.as_str(),
+                value.parent_version_id,
+                value.file_path,
+                value.provider_id,
+                value.provider.name,
+                value.provider.kind.as_str(),
+                value.provider.model_id,
+                value.template.name,
+                value.template.revision,
+                value.template.task_instructions,
+                value.template.output_requirements,
+                value.transcription_generation,
+                value.speaker_names_json,
+                value.meeting_context,
+                value.document_requirements,
+                value.run_request,
+                value.estimated_input_tokens,
+                now,
+            ],
+        )?;
+        self.find_ai_document_version(value.id)
+    }
+
+    pub fn set_ai_version_status(
+        &self,
+        id: &str,
+        status: AiGenerationStatus,
+        error_message: Option<&str>,
+    ) -> Result<AiDocumentVersion> {
+        let completed_at = matches!(
+            status,
+            AiGenerationStatus::Completed
+                | AiGenerationStatus::Failed
+                | AiGenerationStatus::Cancelled
+                | AiGenerationStatus::Interrupted
+        )
+        .then(|| Utc::now().to_rfc3339());
+        self.connection.lock().execute(
+            "UPDATE ai_document_versions
+             SET status = ?1, error_message = ?2,
+                 completed_at = COALESCE(?3, completed_at)
+             WHERE id = ?4",
+            params![status.as_str(), error_message, completed_at, id],
+        )?;
+        self.find_ai_document_version(id)
+    }
+
+    pub fn complete_ai_document_version(
+        &self,
+        id: &str,
+        generated_hash: &str,
+        input_tokens: Option<u32>,
+        output_tokens: Option<u32>,
+    ) -> Result<AiDocumentVersion> {
+        let now = Utc::now().to_rfc3339();
+        self.connection.lock().execute(
+            "UPDATE ai_document_versions
+             SET status = 'completed', generated_hash = ?1, input_tokens = ?2,
+                 output_tokens = ?3, error_message = NULL, completed_at = ?4
+             WHERE id = ?5",
+            params![generated_hash, input_tokens, output_tokens, now, id],
+        )?;
+        self.find_ai_document_version(id)
+    }
+
+    pub fn find_ai_document_version(&self, id: &str) -> Result<AiDocumentVersion> {
+        let (mut version, generated_hash) = self
+            .connection
+            .lock()
+            .query_row(
+                "SELECT id, document_id, version_number, mode, parent_version_id, status,
+                        file_path, provider_name, provider_kind, model_id, template_name,
+                        template_revision, transcription_generation, estimated_input_tokens,
+                        input_tokens, output_tokens, error_message, created_at, completed_at,
+                        generated_hash
+                 FROM ai_document_versions WHERE id = ?1",
+                [id],
+                ai_document_version_from_row,
+            )
+            .context("找不到该 AI 文档版本")?;
+        version.file_state = resolve_ai_file_state(&version, generated_hash.as_deref());
+        Ok(version)
+    }
+
+    pub fn list_ai_document_versions(&self, document_id: &str) -> Result<Vec<AiDocumentVersion>> {
+        let rows = {
+            let connection = self.connection.lock();
+            let mut statement = connection.prepare(
+                "SELECT id, document_id, version_number, mode, parent_version_id, status,
+                        file_path, provider_name, provider_kind, model_id, template_name,
+                        template_revision, transcription_generation, estimated_input_tokens,
+                        input_tokens, output_tokens, error_message, created_at, completed_at,
+                        generated_hash
+                 FROM ai_document_versions WHERE document_id = ?1
+                 ORDER BY version_number DESC",
+            )?;
+            statement
+                .query_map([document_id], ai_document_version_from_row)?
+                .filter_map(std::result::Result::ok)
+                .collect::<Vec<_>>()
+        };
+        Ok(rows
+            .into_iter()
+            .map(|(mut version, generated_hash)| {
+                version.file_state = resolve_ai_file_state(&version, generated_hash.as_deref());
+                version
+            })
+            .collect())
+    }
+
+    pub fn relink_ai_document_version(&self, id: &str, path: &str) -> Result<AiDocumentVersion> {
+        self.connection.lock().execute(
+            "UPDATE ai_document_versions SET file_path = ?1 WHERE id = ?2",
+            params![path, id],
+        )?;
+        self.find_ai_document_version(id)
+    }
+
+    pub fn ai_document_file_links(
+        &self,
+        recording_id: &str,
+    ) -> Result<Vec<(String, String, String)>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT v.file_path, v.document_id, v.id
+             FROM ai_document_versions v
+             JOIN ai_documents d ON d.id = v.document_id
+             WHERE d.recording_id = ?1
+               AND v.status = 'completed'
+               AND v.file_path IS NOT NULL",
+        )?;
+        let rows = statement.query_map([recording_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        Ok(rows.filter_map(std::result::Result::ok).collect())
+    }
+
+    pub fn has_active_ai_generation(&self, recording_id: &str) -> Result<bool> {
+        let count: i64 = self.connection.lock().query_row(
+            "SELECT COUNT(*)
+             FROM ai_document_versions v
+             JOIN ai_documents d ON d.id = v.document_id
+             WHERE d.recording_id = ?1 AND v.status IN ('queued', 'generating')",
+            [recording_id],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn interrupt_running_ai_generations(&self) -> Result<()> {
+        self.connection.lock().execute(
+            "UPDATE ai_document_versions
+             SET status = 'interrupted', error_message = '应用退出时任务尚未完成',
+                 completed_at = ?1
+             WHERE status IN ('queued', 'generating')",
+            [Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    fn default_ai_workspace_path(&self, recording: &RecordingItem) -> PathBuf {
+        let root = self
+            .settings()
+            .map(|settings| PathBuf::from(settings.ai_documents_directory))
+            .unwrap_or_else(|_| self.paths.default_ai_documents.clone());
+        let title = sanitize_path_component(&recording.title, "会议");
+        let short_id = recording.id.chars().take(8).collect::<String>();
+        root.join(format!("{title} [{short_id}]"))
     }
 
     pub fn begin_transcription(
@@ -1450,6 +2285,170 @@ fn provider_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AsrProvider> {
     })
 }
 
+fn llm_provider_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LlmProvider> {
+    Ok(LlmProvider {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        kind: LlmProviderKind::from_str(&row.get::<_, String>(2)?),
+        base_url: row.get(3)?,
+        model_id: row.get(4)?,
+        input_token_budget: row.get::<_, i64>(5)?.max(0) as u32,
+        max_output_tokens: row.get::<_, i64>(6)?.max(0) as u32,
+        has_api_key: row.get::<_, i64>(7)? != 0,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+fn ai_template_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiTemplate> {
+    Ok(AiTemplate {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        description: row.get(2)?,
+        builtin_key: row.get(3)?,
+        task_instructions: row.get(4)?,
+        output_requirements: row.get(5)?,
+        requires_speaker_labels: row.get::<_, i64>(6)? != 0,
+        revision: row.get::<_, i64>(7)?.max(1) as u32,
+        archived: row.get::<_, i64>(8)? != 0,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
+fn ensure_ai_template_columns(connection: &Connection) -> Result<()> {
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(ai_templates)")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    if !columns.contains("requires_speaker_labels") {
+        connection.execute(
+            "ALTER TABLE ai_templates
+             ADD COLUMN requires_speaker_labels INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+fn ai_meeting_profile_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiMeetingProfile> {
+    Ok(AiMeetingProfile {
+        recording_id: row.get(0)?,
+        workspace_path: row.get(1)?,
+        meeting_context: row.get(2)?,
+        updated_at: row.get(3)?,
+    })
+}
+
+fn ai_document_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiDocument> {
+    Ok(AiDocument {
+        id: row.get(0)?,
+        recording_id: row.get(1)?,
+        template_id: row.get(2)?,
+        title: row.get(3)?,
+        requirements: row.get(4)?,
+        template_name: row.get(5)?,
+        template_builtin_key: row.get(6)?,
+        latest_version: None,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+fn ai_document_version_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<(AiDocumentVersion, Option<String>)> {
+    Ok((
+        AiDocumentVersion {
+            id: row.get(0)?,
+            document_id: row.get(1)?,
+            version_number: row.get::<_, i64>(2)?.max(1) as u32,
+            mode: AiGenerationMode::from_str(&row.get::<_, String>(3)?),
+            parent_version_id: row.get(4)?,
+            status: AiGenerationStatus::from_str(&row.get::<_, String>(5)?),
+            file_path: row.get(6)?,
+            file_state: AiFileState::Pending,
+            provider_name: row.get(7)?,
+            provider_kind: LlmProviderKind::from_str(&row.get::<_, String>(8)?),
+            model_id: row.get(9)?,
+            template_name: row.get(10)?,
+            template_revision: row.get::<_, i64>(11)?.max(1) as u32,
+            transcription_generation: row.get::<_, i64>(12)?.max(0) as u32,
+            estimated_input_tokens: row.get::<_, i64>(13)?.max(0) as u32,
+            input_tokens: row
+                .get::<_, Option<i64>>(14)?
+                .map(|value| value.max(0) as u32),
+            output_tokens: row
+                .get::<_, Option<i64>>(15)?
+                .map(|value| value.max(0) as u32),
+            error_message: row.get(16)?,
+            created_at: row.get(17)?,
+            completed_at: row.get(18)?,
+        },
+        row.get(19)?,
+    ))
+}
+
+fn resolve_ai_file_state(version: &AiDocumentVersion, generated_hash: Option<&str>) -> AiFileState {
+    if version.status != AiGenerationStatus::Completed {
+        return AiFileState::Pending;
+    }
+    let Some(path) = version.file_path.as_deref() else {
+        return AiFileState::Missing;
+    };
+    let Ok(bytes) = std::fs::read(path) else {
+        return AiFileState::Missing;
+    };
+    let Some(expected) = generated_hash else {
+        return AiFileState::Modified;
+    };
+    let actual = format!("{:x}", Sha256::digest(bytes));
+    if actual == expected {
+        AiFileState::Ready
+    } else {
+        AiFileState::Modified
+    }
+}
+
+fn validate_llm_provider(request: &SaveLlmProviderRequest) -> Result<()> {
+    if request.name.trim().is_empty() {
+        bail!("服务名称不能为空");
+    }
+    if request.model_id.trim().is_empty() {
+        bail!("模型 ID 不能为空");
+    }
+    if request.input_token_budget < 1_024 || request.input_token_budget > 2_000_000 {
+        bail!("输入 token 预算必须在 1024 到 2000000 之间");
+    }
+    if request.max_output_tokens < 256 || request.max_output_tokens > 131_072 {
+        bail!("最大输出 token 必须在 256 到 131072 之间");
+    }
+    if request.base_url.trim().is_empty() {
+        bail!("AI 模型服务必须填写 API 根地址");
+    }
+    Ok(())
+}
+
+fn validate_ai_template(request: &SaveAiTemplateRequest) -> Result<()> {
+    if request.name.trim().is_empty() {
+        bail!("模板名称不能为空");
+    }
+    if request.name.chars().count() > 80 {
+        bail!("模板名称不能超过 80 个字符");
+    }
+    if request.task_instructions.trim().is_empty() {
+        bail!("模板任务指令不能为空");
+    }
+    if request.task_instructions.chars().count() > 20_000
+        || request.output_requirements.chars().count() > 20_000
+    {
+        bail!("模板指令过长");
+    }
+    Ok(())
+}
+
 fn transcription_summary_from_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<TranscriptionSummary> {
@@ -1592,6 +2591,28 @@ fn sanitize_title(value: &str) -> Result<String> {
     Ok(sanitized)
 }
 
+pub(crate) fn sanitize_path_component(value: &str, fallback: &str) -> String {
+    let sanitized = value
+        .trim()
+        .trim_end_matches(['.', ' '])
+        .chars()
+        .map(|character| {
+            if r#"<>:"/\|?*"#.contains(character) || character.is_control() {
+                '_'
+            } else {
+                character
+            }
+        })
+        .take(80)
+        .collect::<String>();
+    let sanitized = sanitized.trim().trim_end_matches(['.', ' ']);
+    if sanitized.is_empty() {
+        fallback.to_owned()
+    } else {
+        sanitized.to_owned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1606,6 +2627,7 @@ mod tests {
         let storage = Storage::open(AppPaths {
             recovery,
             logs: nota.join("Logs"),
+            default_ai_documents: nota.join("AI Documents"),
             default_recordings: recordings,
             legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
             database: nota.join("nota.db"),
@@ -1633,6 +2655,353 @@ mod tests {
             model_id: "draft-model".into(),
             api_key,
         }
+    }
+
+    fn llm_provider_request(
+        id: Option<String>,
+        api_key: AsrApiKeyUpdate,
+    ) -> SaveLlmProviderRequest {
+        SaveLlmProviderRequest {
+            id,
+            name: "OpenAI".into(),
+            kind: LlmProviderKind::OpenAi,
+            base_url: "https://api.openai.com/v1".into(),
+            model_id: "test-model".into(),
+            input_token_budget: 32_768,
+            max_output_tokens: 4_096,
+            api_key,
+        }
+    }
+
+    #[test]
+    fn ai_templates_seed_four_stable_builtins() {
+        let (root, storage) = test_storage();
+        let templates = storage.list_ai_templates().unwrap();
+        let mut keys = templates
+            .iter()
+            .filter_map(|template| template.builtin_key.clone())
+            .collect::<Vec<_>>();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "action_items",
+                "meeting_summary",
+                "speaker_standup",
+                "speaker_summary"
+            ]
+        );
+        let builtin = templates
+            .iter()
+            .find(|template| template.builtin_key.as_deref() == Some("meeting_summary"))
+            .unwrap();
+        assert!(storage.archive_ai_template(&builtin.id).is_err());
+        let speaker = templates
+            .iter()
+            .find(|template| template.builtin_key.as_deref() == Some("speaker_summary"))
+            .unwrap();
+        assert!(speaker.requires_speaker_labels);
+        let cloned = storage
+            .clone_ai_template(&speaker.id, "Custom speaker summary")
+            .unwrap();
+        assert!(cloned.requires_speaker_labels);
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn existing_ai_template_tables_gain_the_speaker_requirement_column() {
+        let root = std::env::temp_dir().join(format!(
+            "nota-ai-template-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let nota = root.join("Nota");
+        let recordings = nota.join("Recordings");
+        let recovery = nota.join("Recovery");
+        std::fs::create_dir_all(&recordings).unwrap();
+        std::fs::create_dir_all(&recovery).unwrap();
+        let database = nota.join("nota.db");
+        let connection = Connection::open(&database).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE ai_templates (
+                   id TEXT PRIMARY KEY,
+                   name TEXT NOT NULL,
+                   description TEXT NOT NULL DEFAULT '',
+                   builtin_key TEXT,
+                   task_instructions TEXT NOT NULL,
+                   output_requirements TEXT NOT NULL,
+                   revision INTEGER NOT NULL DEFAULT 1,
+                   archived INTEGER NOT NULL DEFAULT 0,
+                   created_at TEXT NOT NULL,
+                   updated_at TEXT NOT NULL
+                 );",
+            )
+            .unwrap();
+        drop(connection);
+
+        let storage = Storage::open(AppPaths {
+            recovery,
+            logs: nota.join("Logs"),
+            default_ai_documents: nota.join("AI Documents"),
+            default_recordings: recordings,
+            legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
+            database,
+        })
+        .unwrap();
+        let speaker = storage
+            .list_ai_templates()
+            .unwrap()
+            .into_iter()
+            .find(|template| template.builtin_key.as_deref() == Some("speaker_summary"))
+            .unwrap();
+        assert!(speaker.requires_speaker_labels);
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn llm_provider_keys_stay_in_rust_and_support_keep_and_clear() {
+        let (root, storage) = test_storage();
+        let saved = storage
+            .save_llm_provider(llm_provider_request(
+                None,
+                AsrApiKeyUpdate::Replace {
+                    value: "secret-key".into(),
+                },
+            ))
+            .unwrap();
+        assert!(saved.has_api_key);
+        assert!(storage.list_llm_providers().unwrap()[0].has_api_key);
+        assert_eq!(
+            storage.find_llm_provider(&saved.id).unwrap().api_key,
+            "secret-key"
+        );
+
+        let kept = storage
+            .save_llm_provider(llm_provider_request(
+                Some(saved.id.clone()),
+                AsrApiKeyUpdate::Keep,
+            ))
+            .unwrap();
+        assert!(kept.has_api_key);
+        assert_eq!(
+            storage.find_llm_provider(&saved.id).unwrap().api_key,
+            "secret-key"
+        );
+
+        let cleared = storage
+            .save_llm_provider(llm_provider_request(
+                Some(saved.id.clone()),
+                AsrApiKeyUpdate::Clear,
+            ))
+            .unwrap();
+        assert!(!cleared.has_api_key);
+        assert!(
+            storage
+                .find_llm_provider(&saved.id)
+                .unwrap()
+                .api_key
+                .is_empty()
+        );
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn custom_ai_templates_are_revisioned_and_archived_and_unused_providers_can_be_deleted() {
+        let (root, storage) = test_storage();
+        let first = storage
+            .save_ai_template(SaveAiTemplateRequest {
+                id: None,
+                name: "Decision log".into(),
+                description: "Track decisions".into(),
+                task_instructions: "Extract decisions".into(),
+                output_requirements: "Use a table".into(),
+                requires_speaker_labels: false,
+            })
+            .unwrap();
+        assert_eq!(first.revision, 1);
+
+        let revised = storage
+            .save_ai_template(SaveAiTemplateRequest {
+                id: Some(first.id.clone()),
+                name: "Decision log".into(),
+                description: "Track decisions and owners".into(),
+                task_instructions: "Extract decisions with their speakers".into(),
+                output_requirements: "Use a table with an owner column".into(),
+                requires_speaker_labels: true,
+            })
+            .unwrap();
+        assert_eq!(revised.revision, 2);
+        assert!(revised.requires_speaker_labels);
+
+        storage.archive_ai_template(&first.id).unwrap();
+        let archived = storage
+            .list_ai_templates()
+            .unwrap()
+            .into_iter()
+            .find(|template| template.id == first.id)
+            .unwrap();
+        assert!(archived.archived);
+
+        let provider = storage
+            .save_llm_provider(llm_provider_request(
+                None,
+                AsrApiKeyUpdate::Replace {
+                    value: "secret-key".into(),
+                },
+            ))
+            .unwrap();
+        storage.delete_llm_provider(&provider.id).unwrap();
+        assert!(storage.list_llm_providers().unwrap().is_empty());
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ai_documents_are_one_per_template_with_append_only_file_versions() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths().default_recordings.join("meeting.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        storage
+            .insert_recording(&RecordingItem {
+                id: "ai-meeting".into(),
+                title: "Weekly meeting".into(),
+                path: recording_path.to_string_lossy().into_owned(),
+                created_at: "2026-08-09T00:00:00Z".into(),
+                duration_ms: 10_000,
+                size_bytes: 5,
+                recovered: false,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_llm_provider(llm_provider_request(None, AsrApiKeyUpdate::Clear))
+            .unwrap();
+        let template = storage
+            .list_ai_templates()
+            .unwrap()
+            .into_iter()
+            .find(|template| template.builtin_key.as_deref() == Some("meeting_summary"))
+            .unwrap();
+        let document = storage
+            .create_ai_document("ai-meeting", &template.id, "Summary", "For the team")
+            .unwrap();
+        assert!(
+            storage
+                .create_ai_document("ai-meeting", &template.id, "Duplicate", "")
+                .is_err()
+        );
+
+        let first_path = root.join("summary-v001.md");
+        let first_markdown = format!(
+            "---\nnota:\n  document_id: \"{}\"\n  version_id: \"v1\"\n---\n\n# Summary\n",
+            document.id
+        );
+        std::fs::write(&first_path, &first_markdown).unwrap();
+        let first = storage
+            .insert_ai_document_version(NewAiVersion {
+                id: "v1",
+                document_id: &document.id,
+                version_number: storage.next_ai_version_number(&document.id).unwrap(),
+                mode: AiGenerationMode::Create,
+                parent_version_id: None,
+                file_path: first_path.to_string_lossy().as_ref(),
+                provider_id: &provider.id,
+                provider: &provider,
+                template: &template,
+                transcription_generation: 1,
+                speaker_names_json: "{}",
+                meeting_context: "Project context",
+                document_requirements: "For the team",
+                run_request: "",
+                estimated_input_tokens: 120,
+            })
+            .unwrap();
+        assert_eq!(first.version_number, 1);
+        let first_hash = format!("{:x}", Sha256::digest(first_markdown.as_bytes()));
+        let completed = storage
+            .complete_ai_document_version("v1", &first_hash, Some(100), Some(20))
+            .unwrap();
+        assert_eq!(completed.file_state, AiFileState::Ready);
+
+        std::fs::write(&first_path, format!("{first_markdown}\nExternal edit\n")).unwrap();
+        assert_eq!(
+            storage.find_ai_document_version("v1").unwrap().file_state,
+            AiFileState::Modified
+        );
+
+        let second_path = root.join("summary-v002.md");
+        let second = storage
+            .insert_ai_document_version(NewAiVersion {
+                id: "v2",
+                document_id: &document.id,
+                version_number: storage.next_ai_version_number(&document.id).unwrap(),
+                mode: AiGenerationMode::Regenerate,
+                parent_version_id: None,
+                file_path: second_path.to_string_lossy().as_ref(),
+                provider_id: &provider.id,
+                provider: &provider,
+                template: &template,
+                transcription_generation: 1,
+                speaker_names_json: "{}",
+                meeting_context: "Project context",
+                document_requirements: "For the team",
+                run_request: "Shorter",
+                estimated_input_tokens: 125,
+            })
+            .unwrap();
+        assert_eq!(second.version_number, 2);
+        storage
+            .set_ai_version_status("v2", AiGenerationStatus::Failed, Some("synthetic failure"))
+            .unwrap();
+        assert_eq!(
+            storage.ai_document_file_links("ai-meeting").unwrap(),
+            vec![(
+                first_path.to_string_lossy().into_owned(),
+                document.id.clone(),
+                "v1".to_owned(),
+            )]
+        );
+        assert_eq!(storage.next_ai_version_number(&document.id).unwrap(), 3);
+        let versions = storage.list_ai_document_versions(&document.id).unwrap();
+        assert_eq!(
+            versions
+                .iter()
+                .map(|version| version.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["v2", "v1"]
+        );
+
+        std::fs::remove_file(&first_path).unwrap();
+        assert_eq!(
+            storage.find_ai_document_version("v1").unwrap().file_state,
+            AiFileState::Missing
+        );
+        let columns = {
+            let connection = storage.connection.lock();
+            let mut statement = connection
+                .prepare("PRAGMA table_info(ai_document_versions)")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            !columns
+                .iter()
+                .any(|column| column == "body" || column == "markdown")
+        );
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1880,6 +3249,7 @@ mod tests {
         let paths = AppPaths {
             recovery: root.join("Nota").join("Recovery"),
             logs: root.join("Nota").join("Logs"),
+            default_ai_documents: root.join("Nota").join("AI Documents"),
             default_recordings: nota.clone(),
             legacy_default_recordings: legacy,
             database: root.join("Nota").join("nota.db"),
@@ -1922,6 +3292,7 @@ mod tests {
         let paths = AppPaths {
             recovery: PathBuf::from(r"C:\Users\user\AppData\Local\Nota\Recovery"),
             logs: PathBuf::from(r"C:\Users\user\AppData\Local\Nota\Logs"),
+            default_ai_documents: PathBuf::from(r"C:\Users\user\Documents\Nota\AI Documents"),
             default_recordings: PathBuf::from(r"C:\Users\user\Documents\Nota\Recordings"),
             legacy_default_recordings: PathBuf::from(
                 r"C:\Users\user\Documents\Meeting Note\Recordings",
@@ -1965,6 +3336,7 @@ mod tests {
         let storage = Storage::open(AppPaths {
             recovery,
             logs: nota.join("Logs"),
+            default_ai_documents: nota.join("AI Documents"),
             default_recordings: recordings,
             legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
             database,
@@ -2328,6 +3700,7 @@ mod tests {
         let storage = Storage::open(AppPaths {
             recovery,
             logs: nota.join("Logs"),
+            default_ai_documents: nota.join("AI Documents"),
             default_recordings: recordings,
             legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
             database,

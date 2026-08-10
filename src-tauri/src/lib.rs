@@ -1,3 +1,4 @@
+mod ai;
 mod asr;
 mod audio;
 mod controller;

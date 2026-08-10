@@ -5,11 +5,15 @@ import type {
   AsrConnectionTest,
   AsrModel,
   AsrProvider,
+  LlmConnectionTest,
+  LlmModel,
+  LlmProvider,
 } from "../types";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 
 const settings: AppSettings = {
   outputDirectory: "C:\\Recordings",
+  aiDocumentsDirectory: "C:\\AI Documents",
   aecMode: "auto",
   microphoneEnabled: true,
   firstRunComplete: true,
@@ -19,6 +23,20 @@ const settings: AppSettings = {
   activeAsrProviderId: "lan",
   voiceprintProviderId: null,
   autoTranscribe: false,
+  activeLlmProviderId: null,
+};
+
+const llmProvider: LlmProvider = {
+  id: "llm",
+  name: "OpenAI",
+  kind: "openAi",
+  baseUrl: "https://api.openai.com/v1",
+  modelId: "gpt-5-mini",
+  inputTokenBudget: 32768,
+  maxOutputTokens: 4096,
+  hasApiKey: true,
+  createdAt: "2026-07-28T00:00:00Z",
+  updatedAt: "2026-07-28T00:00:00Z",
 };
 
 const provider: AsrProvider = {
@@ -38,6 +56,7 @@ const renderSettings = (
   const actions = {
     onChange: vi.fn(),
     onChooseOutput: vi.fn(),
+    onChooseAiDocuments: vi.fn(),
     onOpenMicrophoneSettings: vi.fn(),
     onSaveProvider: vi.fn(async () => provider),
     onDeleteProvider: vi.fn(async () => undefined),
@@ -49,6 +68,13 @@ const renderSettings = (
       device: null,
     })),
     onListModels: vi.fn(async (): Promise<AsrModel[]> => []),
+    onSaveLlmProvider: vi.fn(async () => llmProvider),
+    onDeleteLlmProvider: vi.fn(async () => undefined),
+    onTestLlmProvider: vi.fn(async (): Promise<LlmConnectionTest> => ({
+      reachable: true,
+      message: "连接成功",
+    })),
+    onListLlmModels: vi.fn(async (): Promise<LlmModel[]> => []),
     onDiscardChanges: vi.fn(),
     onSave: vi.fn(),
     onSkipFirstRun: vi.fn(),
@@ -60,6 +86,7 @@ const renderSettings = (
       recordingActive={false}
       settings={settings}
       providers={[provider]}
+      llmProviders={[]}
       microphoneCount={1}
       appVersion="0.2.0"
       {...actions}
@@ -225,6 +252,43 @@ describe("SettingsWorkspace ASR provider feedback", () => {
           apiKey: { kind: "clear" },
         }),
       ),
+    );
+  });
+});
+
+describe("SettingsWorkspace Responses API provider", () => {
+  it("allows a third-party base URL and does not require a key for an unauthenticated service", async () => {
+    const actions = renderSettings();
+    actions.onSaveLlmProvider.mockResolvedValue({
+      ...llmProvider,
+      name: "Workflow Responses",
+      baseUrl: "https://workflow.example.test/openai/v1",
+      hasApiKey: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /添加 Provider/ }));
+    const baseUrl = screen.getByLabelText("API Base URL");
+    expect(baseUrl).toBeEnabled();
+    fireEvent.change(baseUrl, {
+      target: { value: "https://workflow.example.test/openai/v1" },
+    });
+    expect(screen.getByLabelText("API Key")).toHaveAttribute(
+      "placeholder",
+      "按服务要求，可留空",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存 Provider" }));
+
+    await waitFor(() =>
+      expect(actions.onSaveLlmProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "openAi",
+          baseUrl: "https://workflow.example.test/openai/v1",
+          apiKey: { kind: "clear" },
+        }),
+      ),
+    );
+    expect(actions.onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ activeLlmProviderId: "llm" }),
     );
   });
 });

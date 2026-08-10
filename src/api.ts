@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import type {
+  AiDocumentContent,
+  AiDocumentVersion,
+  AiGenerationEvent,
+  AiGenerationRequest,
+  AiTemplate,
+  AiWorkspace,
   AppSettings,
   AsrConnectionTest,
   AsrModel,
@@ -12,12 +18,18 @@ import type {
   CaptureTarget,
   DeviceSelection,
   LevelEvent,
+  LlmConnectionTest,
+  LlmModel,
+  LlmProvider,
+  LlmProviderProbeRequest,
   MeetingEndPrompt,
   ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
   StartRecordingRequest,
   SaveAsrProviderRequest,
+  SaveAiTemplateRequest,
+  SaveLlmProviderRequest,
   TranscriptDocument,
   SpeakerIdentificationAssignment,
   SpeakerIdentificationSession,
@@ -62,8 +74,11 @@ export const api = {
   renameRecording: (id: string, title: string) =>
     invoke<RecordingItem>("rename_recording", { id, title }),
   revealRecording: (id: string) => invoke<void>("reveal_recording", { id }),
-  deleteRecording: (id: string, permanent: boolean) =>
-    invoke<void>("delete_recording", { id, permanent }),
+  deleteRecording: (
+    id: string,
+    permanent: boolean,
+    deleteAiDocuments = false,
+  ) => invoke<void>("delete_recording", { id, permanent, deleteAiDocuments }),
   openMicrophoneSettings: () => invoke<void>("open_microphone_settings"),
   quitApplication: (stopAndSave: boolean) =>
     invoke<void>("quit_application", { stopAndSave }),
@@ -78,6 +93,54 @@ export const api = {
     invoke<AsrConnectionTest>("test_asr_provider", { request }),
   listAsrModels: (request: AsrProviderProbeRequest) =>
     invoke<AsrModel[]>("list_asr_models", { request }),
+  listLlmProviders: () => invoke<LlmProvider[]>("list_llm_providers"),
+  saveLlmProvider: (request: SaveLlmProviderRequest) =>
+    invoke<LlmProvider>("save_llm_provider", { request }),
+  deleteLlmProvider: (id: string) =>
+    invoke<void>("delete_llm_provider", { id }),
+  setActiveLlmProvider: (id: string | null) =>
+    invoke<AppSettings>("set_active_llm_provider", { id }),
+  testLlmProvider: (request: LlmProviderProbeRequest) =>
+    invoke<LlmConnectionTest>("test_llm_provider", { request }),
+  listLlmModels: (request: LlmProviderProbeRequest) =>
+    invoke<LlmModel[]>("list_llm_models", { request }),
+  listAiTemplates: () => invoke<AiTemplate[]>("list_ai_templates"),
+  saveAiTemplate: (request: SaveAiTemplateRequest) =>
+    invoke<AiTemplate>("save_ai_template", { request }),
+  cloneAiTemplate: (id: string, name: string) =>
+    invoke<AiTemplate>("clone_ai_template", { id, name }),
+  archiveAiTemplate: (id: string) =>
+    invoke<void>("archive_ai_template", { id }),
+  getAiWorkspace: (recordingId: string) =>
+    invoke<AiWorkspace>("get_ai_workspace", { recordingId }),
+  estimateAiGenerationTokens: (request: AiGenerationRequest) =>
+    invoke<number>("estimate_ai_generation_tokens", { request }),
+  listAiDocumentVersions: (documentId: string) =>
+    invoke<AiDocumentVersion[]>("list_ai_document_versions", { documentId }),
+  generateAiDocument: (request: AiGenerationRequest) =>
+    invoke<AiDocumentVersion>("generate_ai_document", { request }),
+  cancelAiGeneration: (versionId: string) =>
+    invoke<AiDocumentVersion>("cancel_ai_generation", { versionId }),
+  readAiDocumentVersion: (versionId: string) =>
+    invoke<AiDocumentContent>("read_ai_document_version", { versionId }),
+  relinkAiDocumentVersion: (versionId: string, path: string) =>
+    invoke<AiDocumentVersion>("relink_ai_document_version", {
+      versionId,
+      path,
+    }),
+  findAiDocumentVersion: (versionId: string, workspacePath: string) =>
+    invoke<AiDocumentVersion>("find_ai_document_version", {
+      versionId,
+      workspacePath,
+    }),
+  openAiDocumentVersion: (versionId: string) =>
+    invoke<void>("open_ai_document_version", { versionId }),
+  revealAiDocumentVersion: (versionId: string) =>
+    invoke<void>("reveal_ai_document_version", { versionId }),
+  copyAiDocumentVersion: (versionId: string) =>
+    invoke<void>("copy_ai_document_version", { versionId }),
+  copyAiDocumentPath: (versionId: string) =>
+    invoke<void>("copy_ai_document_path", { versionId }),
   startTranscription: (
     recordingId: string,
     providerId?: string | null,
@@ -149,6 +212,10 @@ export const api = {
     listen<void>("recording://request-exit", handler),
   onAsrStatus: (handler: (event: TranscriptionEvent) => void) =>
     listen<TranscriptionEvent>("asr://status", (event) =>
+      handler(event.payload),
+    ),
+  onAiStatus: (handler: (event: AiGenerationEvent) => void) =>
+    listen<AiGenerationEvent>("ai://status", (event) =>
       handler(event.payload),
     ),
 };

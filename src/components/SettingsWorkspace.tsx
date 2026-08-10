@@ -22,8 +22,14 @@ import type {
   AsrProvider,
   AsrProviderKind,
   AsrProviderProbeRequest,
+  LlmConnectionTest,
+  LlmModel,
+  LlmProvider,
+  LlmProviderProbeRequest,
+  SaveLlmProviderRequest,
   SaveAsrProviderRequest,
 } from "../types";
+import { AiSettingsSection } from "./AiSettingsSection";
 
 interface SettingsWorkspaceProps {
   firstRun: boolean;
@@ -31,15 +37,21 @@ interface SettingsWorkspaceProps {
   recordingActive: boolean;
   settings: AppSettings;
   providers: AsrProvider[];
+  llmProviders: LlmProvider[];
   microphoneCount: number;
   appVersion: string;
   onChange: (settings: AppSettings) => void;
   onChooseOutput: () => void;
+  onChooseAiDocuments: () => void;
   onOpenMicrophoneSettings: () => void;
   onSaveProvider: (request: SaveAsrProviderRequest) => Promise<AsrProvider>;
   onDeleteProvider: (id: string) => Promise<void>;
   onTestProvider: (request: AsrProviderProbeRequest) => Promise<AsrConnectionTest>;
   onListModels: (request: AsrProviderProbeRequest) => Promise<AsrModel[]>;
+  onSaveLlmProvider: (request: SaveLlmProviderRequest) => Promise<LlmProvider>;
+  onDeleteLlmProvider: (id: string) => Promise<void>;
+  onTestLlmProvider: (request: LlmProviderProbeRequest) => Promise<LlmConnectionTest>;
+  onListLlmModels: (request: LlmProviderProbeRequest) => Promise<LlmModel[]>;
   onDiscardChanges: () => void;
   onSave: () => void;
   onSkipFirstRun: () => void;
@@ -327,6 +339,17 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
           </select>
         </label>
       </div>
+
+      <AiSettingsSection
+        settings={props.settings}
+        providers={props.llmProviders}
+        onChange={props.onChange}
+        onChooseDirectory={props.onChooseAiDocuments}
+        onSaveProvider={props.onSaveLlmProvider}
+        onDeleteProvider={props.onDeleteLlmProvider}
+        onTestProvider={props.onTestLlmProvider}
+        onListModels={props.onListLlmModels}
+      />
 
       <div className="settings-group">
         <div className="settings-heading">
