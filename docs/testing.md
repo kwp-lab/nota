@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-08
+- Last updated: 2026-08-11
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`
@@ -14,8 +14,9 @@ The repository-level verification entry point is:
 npm run check
 ```
 
-`check` verifies synchronized versions, builds and tests the frontend, checks
-Rust formatting, runs locked Rust tests, and treats every Clippy warning as an
+`check` verifies synchronized versions, rejects frontend visual constants that
+bypass Nota design tokens, builds and tests the frontend, checks Rust
+formatting, runs locked Rust tests, and treats every Clippy warning as an
 error. It delegates the Windows-specific orchestration to `scripts/check.ps1`.
 This local command is the required routine quality gate. `.github/workflows/ci.yml`
 exposes the same clean-Windows verification as a manual `workflow_dispatch`;
@@ -27,14 +28,17 @@ During focused development, the narrower commands remain available:
 ```powershell
 npm test
 npm run test:watch
+npm run check:design
 npm run build:web
 cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-Frontend changes require `npm test` and `npm run build:web`. Rust changes
-require formatting, tests, and Clippy. Cross-layer, migration, packaging, or
-release changes require `npm run check`. `npm run build` is a desktop packaging
-command, not a substitute for the verification suite.
+Frontend visual changes also require `npm run check:design`; the repository
+check runs it automatically. Other frontend changes require `npm test` and
+`npm run build:web`. Rust changes require formatting, tests, and Clippy.
+Cross-layer, migration, packaging, or release changes require `npm run check`.
+`npm run build` is a desktop packaging command, not a substitute for the
+verification suite.
 
 Hardware-dependent Rust tests are ignored by default and document their
 required devices or environment variables in the test name and ignore message.
@@ -53,6 +57,7 @@ required devices or environment variables in the test name and ignore message.
 | Recording state and idempotent controls | `src-tauri/src/state_machine.rs` tests |
 | Tray and controller behavior | `src-tauri/src/controller.rs` tests |
 | Release consistency | `scripts/verify-version.ps1` and CI |
+| Visual token discipline | `scripts/check-design-tokens.mjs` |
 
 The Nota ASR Server repository owns protocol endpoint, authentication,
 server-restart, window-recovery, diarization, and final response contract

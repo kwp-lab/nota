@@ -1,0 +1,147 @@
+:root {
+  color-scheme: light;
+
+  /* Typography: Fluent-inspired Windows ramp, tuned for Chinese UI text. */
+  --font-family-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-family-display: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-size-caption: 12px;
+  --line-height-caption: 16px;
+  --font-size-body: 14px;
+  --line-height-body: 20px;
+  --font-size-body-large: 18px;
+  --line-height-body-large: 24px;
+  --font-size-subtitle: 20px;
+  --line-height-subtitle: 28px;
+  --font-size-title: 28px;
+  --line-height-title: 36px;
+  --font-size-large-title: 40px;
+  --line-height-large-title: 52px;
+  --line-height-reading: 24px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Nota's warm-neutral, calm-jade semantic color system. */
+  --color-text-primary: #242726;
+  --color-text-secondary: #59615d;
+  --color-text-muted: #737a76;
+  --color-text-subtle: #858a86;
+  --color-text-disabled: #999d99;
+  --color-text-inverse: #ffffff;
+  --color-text-brand: #285f58;
+  --color-text-success: #2d675e;
+  --color-text-info: #3d6875;
+  --color-text-warning: #80621e;
+  --color-text-danger: #a23e3e;
+  --color-text-tooltip: #f7faf8;
+
+  --color-surface-canvas: #f4f3ef;
+  --color-surface-primary: #fbfaf7;
+  --color-surface-raised: #ffffff;
+  --color-surface-subtle: #f1f0ec;
+  --color-surface-sunken: #efeee9;
+  --color-surface-hover: #ebeae5;
+  --color-surface-brand: #e4eeeb;
+  --color-surface-brand-strong: #dce9e6;
+  --color-surface-success: #dfebe7;
+  --color-surface-info: #deebef;
+  --color-surface-warning: #f5eedf;
+  --color-surface-danger: #f2e3df;
+  --color-surface-tooltip: #26312e;
+
+  --color-border-default: #d8d7d1;
+  --color-border-subtle: #e5e4df;
+  --color-border-strong: #bed2cc;
+  --color-border-danger: #e7cfca;
+  --color-border-inverse: #ffffff;
+  --color-focus-ring: #4d7f77;
+
+  --color-control-primary: #285f58;
+  --color-control-primary-hover: #214f49;
+  --color-control-secondary: #ffffff;
+  --color-control-danger: #a23e3e;
+  --color-icon-primary: #59615d;
+  --color-icon-muted: #737a76;
+  --color-icon-brand: #39786e;
+  --color-brand-accent: #4b8178;
+  --color-brand-accent-soft: #72a49b;
+  --color-status-recording: #c84f45;
+  --color-status-paused: #bd8b35;
+  --color-status-warning-accent: #d99a42;
+
+  /* Translucent surfaces and effect colors. */
+  --color-surface-app-chrome: rgba(248, 247, 243, 0.92);
+  --color-surface-app-chrome-soft: rgba(248, 247, 243, 0.88);
+  --color-surface-glass: rgba(255, 254, 251, 0.98);
+  --color-surface-hover-translucent: rgba(255, 255, 255, 0.55);
+  --color-surface-selected-translucent: rgba(255, 255, 255, 0.72);
+  --color-border-inverse-subtle: rgba(255, 255, 255, 0.09);
+  --color-fill-inverse-subtle: rgba(255, 255, 255, 0.18);
+  --color-overlay-scrim: rgba(24, 29, 27, 0.42);
+  --color-focus-ring-soft: rgba(65, 125, 111, 0.12);
+  --color-brand-tint: rgba(39, 116, 95, 0.1);
+  --color-danger-tint: rgba(200, 79, 69, 0.12);
+  --color-danger-ring: rgba(200, 79, 69, 0.15);
+
+  /* Four-pixel spacing rhythm, with half steps for compact controls. */
+  --space-0: 0;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-13: 52px;
+  --space-14: 56px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  --radius-small: 6px;
+  --radius-medium: 8px;
+  --radius-large: 12px;
+  --radius-x-large: 16px;
+  --radius-round: 999px;
+
+  --control-height-compact: 28px;
+  --control-height-compact-text: 34px;
+  --control-height-default: 32px;
+  --control-height-large: 36px;
+  --icon-size-compact: 14px;
+  --icon-size-default: 16px;
+  --icon-size-large: 20px;
+
+  --shadow-color-transparent: rgba(48, 53, 50, 0);
+  --shadow-color-xs: rgba(40, 52, 47, 0.05);
+  --shadow-color-sm: rgba(46, 51, 48, 0.07);
+  --shadow-color-md: rgba(42, 50, 47, 0.12);
+  --shadow-color-lg: rgba(32, 39, 36, 0.25);
+  --shadow-color-overlay: rgba(34, 37, 35, 0.46);
+  --shadow-xs: 0 1px 4px var(--shadow-color-sm);
+  --shadow-sm: 0 3px 13px var(--shadow-color-sm);
+  --shadow-md: 0 10px 28px var(--shadow-color-md);
+  --shadow-lg: 0 18px 50px var(--shadow-color-lg);
+  --shadow-focus-compact: 0 0 0 2px var(--color-brand-tint);
+  --shadow-focus: 0 0 0 3px var(--color-focus-ring-soft);
+  --shadow-focus-danger: 0 0 0 2px var(--color-danger-ring);
+  --shadow-focus-inverse: 0 0 0 3px var(--color-fill-inverse-subtle);
+  --shadow-brand-soft: 0 3px 12px var(--color-brand-tint);
+  --shadow-brand-raised: 0 6px 18px var(--color-focus-ring-soft);
+  --shadow-brand-glow: 0 24px 80px var(--color-focus-ring-soft);
+  --shadow-recording-pulse: 0 0 0 5px var(--color-danger-tint);
+  --shadow-sticky: 0 -8px 18px var(--shadow-color-xs);
+  --shadow-inset-warning: inset 0 3px 0 var(--color-status-warning-accent);
+
+  --motion-duration-fast: 110ms;
+  --motion-duration-normal: 180ms;
+  --motion-easing-standard: ease-out;
+}

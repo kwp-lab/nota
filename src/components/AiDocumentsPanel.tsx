@@ -452,11 +452,11 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                   wrapDisabled={!availableProviders.length}
                 >
                   <button
-                    className="button secondary"
+                    className="button secondary compact"
                     disabled={!availableProviders.length}
                     onClick={() => openDialog("regenerate", selectedDocument)}
                   >
-                    <RotateCcw size={14} />生成全新版本
+                    <RotateCcw size={14} />重新生成
                   </button>
                 </AppTooltip>
                 <AppTooltip
@@ -464,11 +464,11 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                   wrapDisabled={!canReviseVersion}
                 >
                   <button
-                    className="button secondary"
+                    className="button secondary compact"
                     disabled={!canReviseVersion}
                     onClick={() => openDialog("revise", selectedDocument, selectedVersion)}
                   >
-                    <WandSparkles size={14} />基于此版本创建新版
+                    <WandSparkles size={14} />AI修改
                   </button>
                 </AppTooltip>
               </div>

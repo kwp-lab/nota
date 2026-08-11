@@ -1,7 +1,7 @@
 # Nota Engineering Documentation
 
 - Status: Accepted
-- Last updated: 2026-08-06
+- Last updated: 2026-08-11
 - Owners: Nota maintainers
 
 This directory is the durable engineering context for Nota. It explains the
@@ -16,15 +16,17 @@ that are intentionally too detailed for the project README.
    OpenAI-compatible legacy chunks, state mapping, and recovery rules.
 3. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
    templates, versions, providers, and relinking.
-4. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
+4. [`design-system.md`](design-system.md) — product visual language, design
+   tokens, typography, color, spacing, and component styling rules.
+5. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
    migrations, retention, and deletion ordering.
-5. [`testing.md`](testing.md) — automated checks and hardware acceptance
+6. [`testing.md`](testing.md) — automated checks and hardware acceptance
    scenarios.
-6. [`decisions/README.md`](decisions/README.md) — architectural decision
+7. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-7. [`speaker-identification.md`](speaker-identification.md) — local
+8. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
-8. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+9. [`releasing.md`](releasing.md) — version, tag, package, and release process.
 
 ## Sources of Truth
 
@@ -53,6 +55,7 @@ uses that contract and what it promises locally.
 | ASR request, state, retry, or compatibility behavior | `asr-integration.md` |
 | SQLite fields, migration, retention, or deletion ordering | `data-lifecycle.md` |
 | New test requirement or supported environment | `testing.md` |
+| Visual token, shared component styling, or durable interaction treatment | `design-system.md` |
 | Long-lived architectural choice or reversed decision | New ADR |
 | Versioning or packaging workflow | `releasing.md` |
 | Product-owned policy or compliance workflow | New ADR plus affected specification |

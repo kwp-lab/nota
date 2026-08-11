@@ -748,19 +748,19 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 </div>
                 <div className="transcript-actions">
                   {isProcessing ? (
-                    <button className="button secondary" onClick={() => props.onCancelTranscription(selected.id)}>
+                    <button className="button secondary compact" onClick={() => props.onCancelTranscription(selected.id)}>
                       <Square size={13} fill="currentColor" />中断
                     </button>
                   ) : transcription && resumableStatuses.includes(transcription.status) ? (
-                    <button className="button primary" onClick={() => props.onResumeTranscription(selected.id)}>
+                    <button className="button primary compact" onClick={() => props.onResumeTranscription(selected.id)}>
                       <RotateCcw size={15} />继续转写
                     </button>
                   ) : transcription?.status === "completed" ? (
                     <>
-                      <button className="button secondary" onClick={() => props.onCopyTranscript(selected.id)}>
+                      <button className="button secondary compact" onClick={() => props.onCopyTranscript(selected.id)}>
                         <Clipboard size={15} />复制全文
                       </button>
-                      <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
+                      <button className="button secondary compact" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
                         <Download size={15} />导出 TXT
                       </button>
                       <AppTooltip
@@ -770,7 +770,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                         wrapDisabled={managementSpeakers.length === 0}
                       >
                         <button
-                          className="button secondary"
+                          className="button secondary compact"
                           disabled={managementSpeakers.length === 0}
                           onClick={() => openSpeakerManagement(null)}
                         >
@@ -788,7 +788,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       wrapDisabled={!props.hasProvider}
                     >
                       <button
-                        className="button primary"
+                        className="button primary compact"
                         disabled={!props.hasProvider}
                         onClick={() => requestTranscription(selected, false)}
                       >

@@ -415,8 +415,12 @@ describe("RecordingsWorkspace", () => {
 
   it("offers copy, export, and resume actions for their respective states", () => {
     const completedActions = renderWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: "复制全文" }));
-    fireEvent.click(screen.getByRole("button", { name: "导出 TXT" }));
+    const copyButton = screen.getByRole("button", { name: "复制全文" });
+    const exportButton = screen.getByRole("button", { name: "导出 TXT" });
+    expect(copyButton).toHaveClass("compact");
+    expect(exportButton).toHaveClass("compact");
+    fireEvent.click(copyButton);
+    fireEvent.click(exportButton);
     expect(completedActions.onCopyTranscript).toHaveBeenCalledWith(completed.id);
     expect(completedActions.onExportTranscript).toHaveBeenCalledWith(completed.id, completed.title);
     cleanup();
