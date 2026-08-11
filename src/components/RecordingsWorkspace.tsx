@@ -5,6 +5,7 @@ import {
   Clipboard,
   Download,
   FileAudio,
+  FileUp,
   Fingerprint,
   FolderOpen,
   LoaderCircle,
@@ -16,10 +17,12 @@ import {
   Sparkles,
   Square,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AsrProviderKind,
+  AudioImportBatchSnapshot,
   LlmProvider,
   ParticipantProfile,
   RecordingItem,
@@ -46,6 +49,7 @@ interface RecordingsWorkspaceProps {
   transcript: TranscriptDocument | null;
   transcriptLoading: boolean;
   recordingActive: boolean;
+  audioImport: AudioImportBatchSnapshot | null;
   hasProvider: boolean;
   activeProviderKind: AsrProviderKind | null;
   hasVoiceprintProvider: boolean;
@@ -54,6 +58,9 @@ interface RecordingsWorkspaceProps {
   participants: ParticipantProfile[];
   onSelect: (id: string) => void;
   onReturnToRecorder: () => void;
+  onImportAudio: () => void;
+  onCancelAudioImport: () => void;
+  onDismissAudioImport: () => void;
   onPreparePlayback: (id: string) => Promise<string>;
   onPlaybackError: (message: string) => void;
   onStartTranscription: (id: string, speakerCount: number | null) => void;
@@ -140,6 +147,19 @@ const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+const audioImportStatusLabel = (status: AudioImportBatchSnapshot["items"][number]["status"]) => {
+  switch (status) {
+    case "queued": return "等待导入";
+    case "probing": return "正在检查文件";
+    case "decoding": return "正在转换音频";
+    case "finalizing": return "正在安全保存";
+    case "completed": return "导入完成";
+    case "failed": return "导入失败";
+    case "skipped": return "已存在，已跳过";
+    case "cancelled": return "已取消";
+  }
+};
 
 const selectRepresentativeUtterances = (
   utterances: SpeakerManagementSpeaker["utterances"],
@@ -347,9 +367,10 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         if (!cancelled) setAudioLoading(false);
       });
     return () => { cancelled = true; };
-    // The selected id is the identity of the player source.
+    // Renaming keeps the recording id but moves the managed file, so the
+    // authoritative path is also part of the player source identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.selectedId]);
+  }, [props.selectedId, selected?.path]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -530,6 +551,18 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
 
   const transcription = selected?.transcription;
   const isProcessing = !!transcription && processingStatuses.includes(transcription.status);
+  const importActive = props.audioImport?.status === "running";
+  const failedImportItem = props.audioImport?.items.find((item) => item.status === "failed");
+  const currentImportItem = !importActive && failedImportItem
+    ? failedImportItem
+    : props.audioImport && props.audioImport.currentIndex > 0
+      ? props.audioImport.items[props.audioImport.currentIndex - 1]
+      : props.audioImport?.items[0];
+  const importProgress = currentImportItem?.progressTotalMs
+    ? Math.min(100, Math.round(
+        currentImportItem.progressCurrentMs * 100 / currentImportItem.progressTotalMs,
+      ))
+    : null;
 
   return (
     <section className="library-workspace">
@@ -539,7 +572,25 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             <p className="eyebrow">RECORDINGS</p>
             <h1>录音记录</h1>
           </div>
-          <span className="count-pill">{props.items.length}</span>
+          <div className="history-header-actions">
+            <AppTooltip
+              content={props.recordingActive
+                ? "停止并保存当前录音后才能导入"
+                : importActive
+                  ? "已有音频正在导入"
+                  : ""}
+              wrapDisabled={props.recordingActive || importActive}
+            >
+              <button
+                className="button secondary compact import-audio-button"
+                disabled={props.recordingActive || importActive}
+                onClick={props.onImportAudio}
+              >
+                <FileUp size={14} />导入录音
+              </button>
+            </AppTooltip>
+            <span className="count-pill">{props.items.length}</span>
+          </div>
         </div>
         <label className="history-search">
           <Search size={15} />
@@ -550,6 +601,70 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
+        {props.audioImport && (
+          <section
+            className={`audio-import-card status-${props.audioImport.status}`}
+            aria-live="polite"
+          >
+            <div className="audio-import-card-header">
+              <div>
+                <strong>
+                  {importActive
+                    ? props.audioImport.currentIndex > 0
+                      ? `正在导入 ${props.audioImport.currentIndex} / ${props.audioImport.total}`
+                      : `准备导入 ${props.audioImport.total} 个文件`
+                    : props.audioImport.status === "cancelled"
+                      ? "导入已停止"
+                      : "导入任务已完成"}
+                </strong>
+                {currentImportItem && <span title={currentImportItem.fileName}>{currentImportItem.fileName}</span>}
+              </div>
+              {importActive ? (
+                <AppTooltip content="停止当前和等待中的导入">
+                  <button
+                    className="icon-button compact"
+                    aria-label="停止导入"
+                    onClick={props.onCancelAudioImport}
+                  >
+                    <Square size={12} fill="currentColor" />
+                  </button>
+                </AppTooltip>
+              ) : (
+                <AppTooltip content="关闭导入状态">
+                  <button
+                    className="icon-button compact"
+                    aria-label="关闭导入状态"
+                    onClick={props.onDismissAudioImport}
+                  >
+                    <X size={14} />
+                  </button>
+                </AppTooltip>
+              )}
+            </div>
+            {importActive && (
+              <div
+                className={`audio-import-progress ${importProgress === null ? "indeterminate" : ""}`}
+                role="progressbar"
+                aria-label="音频导入进度"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={importProgress ?? undefined}
+              >
+                <i style={importProgress === null ? undefined : { width: `${importProgress}%` }} />
+              </div>
+            )}
+            <small>
+              {currentImportItem ? audioImportStatusLabel(currentImportItem.status) : "正在准备"}
+              {importProgress === null || !importActive ? "" : ` · ${importProgress}%`}
+              {!importActive
+                ? ` · 成功 ${props.audioImport.completed}，跳过 ${props.audioImport.skipped}，失败 ${props.audioImport.failed}`
+                : ""}
+            </small>
+            {currentImportItem?.status === "failed" && currentImportItem.errorMessage && (
+              <p>{currentImportItem.errorMessage}</p>
+            )}
+          </section>
+        )}
         {props.recoverable.length > 0 && (
           <div className="compact-recovery">
             <RotateCcw size={16} />
@@ -574,7 +689,20 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             <div className="history-empty">
               <FileAudio size={26} />
               <strong>{props.items.length ? "没有匹配的录音" : "还没有录音"}</strong>
-              <span>完成的会议会显示在这里。</span>
+              <span>
+                {props.items.length
+                  ? "换一个关键词试试。"
+                  : "开始一次录音，或导入手机中的会议录音。"}
+              </span>
+              {!props.items.length && (
+                <button
+                  className="button primary compact"
+                  disabled={props.recordingActive || importActive}
+                  onClick={props.onImportAudio}
+                >
+                  <FileUp size={14} />导入录音
+                </button>
+              )}
             </div>
           ) : (
             filtered.map((item) => (
@@ -644,7 +772,17 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <p>
                   {new Date(selected.createdAt).toLocaleString("zh-CN")}
                   {" · "}{formatDuration(selected.durationMs)}{" · "}{formatSize(selected.sizeBytes)}
+                  {selected.origin === "imported" && (
+                    <span className="import-origin-badge">
+                      导入{selected.sourceFormat ? ` · ${selected.sourceFormat}` : ""}
+                    </span>
+                  )}
                 </p>
+                {selected.origin === "imported" && selected.sourceFileName && (
+                  <small className="import-source-name" title={selected.sourceFileName}>
+                    原文件：{selected.sourceFileName}
+                  </small>
+                )}
               </div>
               <div className="detail-actions">
                 <AppTooltip content="打开所在文件夹">

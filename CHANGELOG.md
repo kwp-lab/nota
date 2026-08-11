@@ -7,6 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added offline, multi-file import for MP3, M4A, WAV, and FLAC phone or
+  external recordings, with local progress, cancellation, per-file failures,
+  exact-file duplicate detection, and immediate access to playback,
+  transcription, speaker management, and AI documents.
+
+### Changed
+
+- Imported media is decoded locally and normalized to a Nota-managed 48 kHz
+  mono Ogg Opus copy without FFmpeg; deleting the Nota recording does not
+  modify the originally selected file.
+
+### Fixed
+
+- Reloaded the detail audio player after a recording rename moves its managed
+  Ogg path, instead of retaining an unsupported stale source until another
+  recording is selected.
+
 ## [0.5.0] - 2026-08-11
 
 ### Added

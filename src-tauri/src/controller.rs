@@ -14,6 +14,7 @@ use crate::audio::{
     list_capture_targets as enumerate_capture_targets, list_recoverable_files, move_verified,
     recover_ogg_file, start_capture,
 };
+use crate::importer::AudioImportManager;
 use crate::models::*;
 use crate::paths::AppPaths;
 use crate::state_machine::{RecordingEvent, transition};
@@ -55,7 +56,9 @@ struct AppState {
     recorder: Arc<RecordingController>,
     asr: Arc<AsrManager>,
     ai: Arc<AiManager>,
+    importer: Arc<AudioImportManager>,
     voiceprints: Arc<VoiceprintManager>,
+    media_start_gate: Mutex<()>,
     tray_state: Mutex<Option<(RecordingState, bool)>>,
 }
 
@@ -926,6 +929,10 @@ fn recording_worker(
                 duration_ms: duration,
                 size_bytes: metadata.map(|value| value.len()).unwrap_or(0),
                 recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
                 transcription: None,
             };
             if let Err(error) = storage.insert_recording(&item) {
@@ -1177,6 +1184,10 @@ fn start_recording(
     state: State<AppState>,
     request: StartRecordingRequest,
 ) -> std::result::Result<RecordingSnapshot, String> {
+    let _gate = state.media_start_gate.lock();
+    if state.importer.has_active() {
+        return Err("音频正在导入，请等待完成或停止导入后再开始录音".into());
+    }
     command_result(state.recorder.start(app, request))
 }
 
@@ -1228,8 +1239,33 @@ fn set_microphone_enabled(
 
 impl AppState {
     fn runtime_active(&self) -> bool {
-        self.recorder.is_active() || self.asr.has_active() || self.ai.has_active()
+        self.recorder.is_active()
+            || self.asr.has_active()
+            || self.ai.has_active()
+            || self.importer.has_active()
     }
+}
+
+#[tauri::command]
+fn start_audio_import(
+    app: AppHandle,
+    state: State<AppState>,
+    paths: Vec<String>,
+) -> std::result::Result<AudioImportBatchSnapshot, String> {
+    let _gate = state.media_start_gate.lock();
+    command_result(state.importer.start(app, paths))
+}
+
+#[tauri::command]
+fn get_audio_import_snapshot(state: State<AppState>) -> Option<AudioImportBatchSnapshot> {
+    state.importer.snapshot()
+}
+
+#[tauri::command]
+fn cancel_audio_import(
+    state: State<AppState>,
+) -> std::result::Result<AudioImportBatchSnapshot, String> {
+    command_result(state.importer.cancel())
 }
 
 #[tauri::command]
@@ -1275,6 +1311,10 @@ fn list_recoverable_recordings(
                 duration_ms: 0,
                 size_bytes: file.size_bytes,
                 recovered: true,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
                 transcription: None,
             })
             .collect())
@@ -1316,6 +1356,10 @@ fn recover_recording(
             duration_ms: 0,
             size_bytes: size,
             recovered: true,
+            origin: RecordingOrigin::Captured,
+            source_file_name: None,
+            source_format: None,
+            imported_at: None,
             transcription: None,
         };
         state.storage.insert_recording(&item)?;
@@ -1468,6 +1512,12 @@ async fn quit_application(
             return Err("仍有 AI 文档正在生成".into());
         }
         command_result(state.ai.interrupt_all())?;
+    }
+    if state.importer.has_active() {
+        if !stop_and_save {
+            return Err("仍有音频正在导入".into());
+        }
+        command_result(state.importer.interrupt_all())?;
     }
     app.exit(0);
     Ok(())
@@ -2417,6 +2467,18 @@ pub fn run_app() {
         }),
     ));
     let ai = Arc::new(AiManager::new(Arc::clone(&storage)));
+    let weak_recorder_for_import = Arc::downgrade(&recorder);
+    let importer = Arc::new(
+        AudioImportManager::new(
+            Arc::clone(&storage),
+            Arc::new(move || {
+                weak_recorder_for_import
+                    .upgrade()
+                    .is_some_and(|recorder| recorder.is_active())
+            }),
+        )
+        .expect("无法初始化 Nota 音频导入管理器"),
+    );
     let voiceprints =
         Arc::new(VoiceprintManager::new(Arc::clone(&storage)).expect("无法初始化 Nota 声纹管理"));
     let application = tauri::Builder::default()
@@ -2433,7 +2495,9 @@ pub fn run_app() {
             recorder,
             asr,
             ai,
+            importer,
             voiceprints,
+            media_start_gate: Mutex::new(()),
             tray_state: Mutex::new(Some((RecordingState::Idle, false))),
         })
         .setup(|app| {
@@ -2475,6 +2539,9 @@ pub fn run_app() {
             switch_capture_source,
             set_microphone_enabled,
             list_recordings,
+            start_audio_import,
+            get_audio_import_snapshot,
+            cancel_audio_import,
             prepare_recording_playback,
             list_recoverable_recordings,
             recover_recording,
@@ -2542,6 +2609,9 @@ pub fn run_app() {
             }
             if let Err(error) = state.ai.interrupt_all() {
                 log::error!("best-effort AI interruption failed: {error:#}");
+            }
+            if let Err(error) = state.importer.interrupt_all() {
+                log::error!("best-effort audio import interruption failed: {error:#}");
             }
         }
     });

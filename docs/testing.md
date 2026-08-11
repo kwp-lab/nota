@@ -54,6 +54,7 @@ required devices or environment variables in the test name and ignore message.
 | Voiceprint candidate planning, clean-range mapping, local matching, and confirmation sessions | `src-tauri/src/voiceprints.rs` tests |
 | AI prompt boundaries, provider response parsing, Markdown metadata, version semantics, and SQLite snapshots | `src-tauri/src/ai.rs` and `src-tauri/src/storage.rs` tests |
 | Ogg encoding, decoding, and recovery | `src-tauri/src/audio/` tests |
+| Audio import decode/resample, journal commit, deduplication, and cleanup | `src-tauri/src/importer.rs` and `src-tauri/src/storage.rs` tests |
 | Recording state and idempotent controls | `src-tauri/src/state_machine.rs` tests |
 | Tray and controller behavior | `src-tauri/src/controller.rs` tests |
 | Release consistency | `scripts/verify-version.ps1` and CI |
@@ -63,6 +64,23 @@ The Nota ASR Server repository owns protocol endpoint, authentication,
 server-restart, window-recovery, diarization, and final response contract
 tests. Client and server tests complement each other; neither repository should
 duplicate the other's internal implementation fixtures.
+
+## Audio Import Regression Matrix
+
+Automated coverage must include:
+
+- supported-extension validation for MP3, M4A, WAV, and FLAC plus a clear
+  unsupported-format error;
+- stereo downmix and non-48-kHz resampling into a readable Nota Ogg Opus file;
+- imported recording origin and source-display metadata across Rust/TypeScript
+  IPC;
+- exact source-hash deduplication without changing or deleting the original;
+- journal ordering, final recording insertion, and journal removal;
+- cancellation and per-item failure without discarding earlier completed
+  imports;
+- recording/import mutual exclusion and visible batch progress/actions;
+- imported-recording deletion copy that distinguishes the managed Ogg from the
+  original source.
 
 ## ASR Regression Matrix
 
@@ -232,6 +250,15 @@ scenarios on Windows 11:
     convergence after each enabled switch, and a deliberately unavailable
     device leaves the previous microphone selected. Repeat once with a
     Bluetooth headset to cover A2DP/HFP mode changes.
+16. Import one file each in MP3, AAC-LC M4A, ALAC M4A, WAV, and FLAC from a
+    removable or phone-synchronized directory. Confirm duration, playback,
+    seeking, transcription, and AI-document actions use the managed Ogg; the
+    original files remain byte-identical. Import an exact duplicate, a corrupt
+    file, an HE-AAC/protected M4A, and a batch with one bad middle item. Confirm
+    duplicate/unsupported failures are explicit, later items continue, cancel
+    preserves completed items, and no `.partial.ogg` remains. Repeat with low
+    disk space and by terminating the app at the prepared-file commit boundary,
+    then relaunch and verify startup reconciliation.
 
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not

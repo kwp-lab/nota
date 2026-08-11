@@ -3,11 +3,11 @@ use crate::models::{
     AiMeetingProfile, AiTemplate, AiWorkspace, AppSettings, AsrApiKeyUpdate, AsrProvider,
     AsrProviderCredentials, AsrProviderKind, AsrProviderProbeRequest, LlmProvider,
     LlmProviderCredentials, LlmProviderKind, LlmProviderProbeRequest, ParticipantProfile,
-    RecordingItem, RecordingSpeakerAssignment, SaveAiTemplateRequest, SaveAsrProviderRequest,
-    SaveLlmProviderRequest, SpeakerIdentificationAssignment, StoredTranscriptionChunk,
-    TranscriptDocument, TranscriptSegment, TranscriptionExecution, TranscriptionProgressPhase,
-    TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
-    VoiceprintSample,
+    RecordingItem, RecordingOrigin, RecordingSpeakerAssignment, SaveAiTemplateRequest,
+    SaveAsrProviderRequest, SaveLlmProviderRequest, SpeakerIdentificationAssignment,
+    StoredTranscriptionChunk, TranscriptDocument, TranscriptSegment, TranscriptionExecution,
+    TranscriptionProgressPhase, TranscriptionProgressUnit, TranscriptionProtocol,
+    TranscriptionStatus, TranscriptionSummary, VoiceprintSample,
 };
 use crate::paths::AppPaths;
 use anyhow::{Context, Result, bail};
@@ -37,6 +37,23 @@ pub struct VoiceprintEnrollment {
     pub preview_start_ms: u64,
     pub preview_end_ms: u64,
     pub speech_duration_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct AudioImportJob {
+    pub id: String,
+    pub source_path: String,
+    pub source_file_name: String,
+    pub source_format: Option<String>,
+    pub source_sha256: Option<String>,
+    pub title: String,
+    pub created_at: String,
+    pub imported_at: String,
+    pub final_path: String,
+    pub partial_path: String,
+    pub duration_ms: Option<u64>,
+    pub size_bytes: Option<u64>,
+    pub status: String,
 }
 
 pub struct NewAiVersion<'a> {
@@ -251,7 +268,12 @@ impl Storage {
               created_at TEXT NOT NULL,
               duration_ms INTEGER NOT NULL,
               size_bytes INTEGER NOT NULL,
-              recovered INTEGER NOT NULL DEFAULT 0
+              recovered INTEGER NOT NULL DEFAULT 0,
+              origin TEXT NOT NULL DEFAULT 'captured',
+              source_file_name TEXT,
+              source_format TEXT,
+              source_sha256 TEXT,
+              imported_at TEXT
             );
             CREATE TABLE IF NOT EXISTS events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -419,6 +441,8 @@ impl Storage {
             );
             ",
         )?;
+        ensure_recording_import_columns(&connection)?;
+        ensure_audio_import_schema(&connection)?;
         ensure_ai_template_columns(&connection)?;
         seed_ai_templates(&connection)?;
         ensure_transcription_job_columns(&connection)?;
@@ -585,6 +609,149 @@ impl Storage {
         Ok(())
     }
 
+    pub fn begin_audio_import(&self, job: &AudioImportJob) -> Result<()> {
+        self.connection.lock().execute(
+            "INSERT INTO audio_import_jobs
+             (id, source_path, source_file_name, source_format, source_sha256,
+              title, created_at, imported_at, final_path, partial_path,
+              duration_ms, size_bytes, status, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                job.id,
+                job.source_path,
+                job.source_file_name,
+                job.source_format,
+                job.source_sha256,
+                job.title,
+                job.created_at,
+                job.imported_at,
+                job.final_path,
+                job.partial_path,
+                job.duration_ms
+                    .map(|value| value.min(i64::MAX as u64) as i64),
+                job.size_bytes
+                    .map(|value| value.min(i64::MAX as u64) as i64),
+                job.status,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn prepare_audio_import(
+        &self,
+        id: &str,
+        source_format: &str,
+        source_sha256: &str,
+        duration_ms: u64,
+        size_bytes: u64,
+    ) -> Result<()> {
+        let changed = self.connection.lock().execute(
+            "UPDATE audio_import_jobs
+             SET source_format = ?1, source_sha256 = ?2, duration_ms = ?3,
+                 size_bytes = ?4, status = 'prepared', updated_at = ?5
+             WHERE id = ?6",
+            params![
+                source_format,
+                source_sha256,
+                duration_ms.min(i64::MAX as u64) as i64,
+                size_bytes.min(i64::MAX as u64) as i64,
+                Utc::now().to_rfc3339(),
+                id,
+            ],
+        )?;
+        if changed == 0 {
+            bail!("找不到音频导入任务");
+        }
+        Ok(())
+    }
+
+    pub fn mark_audio_import_file_committed(&self, id: &str) -> Result<()> {
+        let changed = self.connection.lock().execute(
+            "UPDATE audio_import_jobs
+             SET status = 'file_committed', updated_at = ?1 WHERE id = ?2",
+            params![Utc::now().to_rfc3339(), id],
+        )?;
+        if changed == 0 {
+            bail!("找不到音频导入任务");
+        }
+        Ok(())
+    }
+
+    pub fn complete_audio_import(&self, id: &str) -> Result<RecordingItem> {
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        let job = transaction
+            .query_row(
+                "SELECT id, source_path, source_file_name, source_format, source_sha256,
+                        title, created_at, imported_at, final_path, partial_path,
+                        duration_ms, size_bytes, status
+                 FROM audio_import_jobs WHERE id = ?1",
+                [id],
+                audio_import_job_from_row,
+            )
+            .context("找不到音频导入任务")?;
+        let source_format = job.source_format.context("导入任务缺少音频格式")?;
+        let source_sha256 = job.source_sha256.context("导入任务缺少文件摘要")?;
+        let duration_ms = job.duration_ms.context("导入任务缺少音频时长")?;
+        let size_bytes = job.size_bytes.context("导入任务缺少文件大小")?;
+        transaction.execute(
+            "INSERT INTO recordings
+             (id, title, path, created_at, duration_ms, size_bytes, recovered,
+              origin, source_file_name, source_format, source_sha256, imported_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, 0, 'imported', ?7, ?8, ?9, ?10)",
+            params![
+                job.id,
+                job.title,
+                job.final_path,
+                job.created_at,
+                duration_ms.min(i64::MAX as u64) as i64,
+                size_bytes.min(i64::MAX as u64) as i64,
+                job.source_file_name,
+                source_format,
+                source_sha256,
+                job.imported_at,
+            ],
+        )?;
+        transaction.execute("DELETE FROM audio_import_jobs WHERE id = ?1", [id])?;
+        transaction.commit()?;
+        drop(connection);
+        self.find_recording(id)
+    }
+
+    pub fn audio_import_jobs(&self) -> Result<Vec<AudioImportJob>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT id, source_path, source_file_name, source_format, source_sha256,
+                    title, created_at, imported_at, final_path, partial_path,
+                    duration_ms, size_bytes, status
+             FROM audio_import_jobs ORDER BY updated_at, id",
+        )?;
+        let rows = statement.query_map([], audio_import_job_from_row)?;
+        Ok(rows.filter_map(std::result::Result::ok).collect())
+    }
+
+    pub fn remove_audio_import_job(&self, id: &str) -> Result<()> {
+        self.connection
+            .lock()
+            .execute("DELETE FROM audio_import_jobs WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn imported_recording_by_hash(&self, source_sha256: &str) -> Result<Option<RecordingItem>> {
+        let id = self
+            .connection
+            .lock()
+            .query_row(
+                "SELECT id FROM recordings
+                 WHERE origin = 'imported' AND source_sha256 = ?1",
+                [source_sha256],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        id.map(|value| self.find_recording(&value)).transpose()
+    }
+
     pub fn list_recordings(&self) -> Result<Vec<RecordingItem>> {
         let connection = self.connection.lock();
         let mut statement = connection.prepare(
@@ -592,7 +759,8 @@ impl Storage {
                      t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
                      t.error_message, t.text, t.protocol, t.progress_phase,
                      t.progress_current, t.progress_total, t.progress_unit,
-                     t.speaker_count
+                     t.speaker_count, r.origin, r.source_file_name,
+                     r.source_format, r.imported_at
              FROM recordings r
              LEFT JOIN transcriptions t ON t.recording_id = r.id
              ORDER BY r.created_at DESC",
@@ -612,7 +780,8 @@ impl Storage {
                          t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
                          t.error_message, t.text, t.protocol, t.progress_phase,
                          t.progress_current, t.progress_total, t.progress_unit,
-                         t.speaker_count
+                         t.speaker_count, r.origin, r.source_file_name,
+                         r.source_format, r.imported_at
                  FROM recordings r
                  LEFT JOIN transcriptions t ON t.recording_id = r.id
                  WHERE r.id = ?1",
@@ -2253,7 +2422,36 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
         duration_ms: row.get::<_, i64>(4)?.max(0) as u64,
         size_bytes: row.get::<_, i64>(5)?.max(0) as u64,
         recovered: row.get::<_, i32>(6)? != 0,
+        origin: RecordingOrigin::from_str(
+            &row.get::<_, Option<String>>(20)?
+                .unwrap_or_else(|| "captured".into()),
+        ),
+        source_file_name: row.get(21)?,
+        source_format: row.get(22)?,
+        imported_at: row.get(23)?,
         transcription,
+    })
+}
+
+fn audio_import_job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AudioImportJob> {
+    Ok(AudioImportJob {
+        id: row.get(0)?,
+        source_path: row.get(1)?,
+        source_file_name: row.get(2)?,
+        source_format: row.get(3)?,
+        source_sha256: row.get(4)?,
+        title: row.get(5)?,
+        created_at: row.get(6)?,
+        imported_at: row.get(7)?,
+        final_path: row.get(8)?,
+        partial_path: row.get(9)?,
+        duration_ms: row
+            .get::<_, Option<i64>>(10)?
+            .map(|value| value.max(0) as u64),
+        size_bytes: row
+            .get::<_, Option<i64>>(11)?
+            .map(|value| value.max(0) as u64),
+        status: row.get(12)?,
     })
 }
 
@@ -2483,6 +2681,68 @@ fn transcription_summary_from_row(
     })
 }
 
+fn ensure_recording_import_columns(connection: &Connection) -> Result<()> {
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(recordings)")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    let additions = [
+        (
+            "origin",
+            "ALTER TABLE recordings ADD COLUMN origin TEXT NOT NULL DEFAULT 'captured'",
+        ),
+        (
+            "source_file_name",
+            "ALTER TABLE recordings ADD COLUMN source_file_name TEXT",
+        ),
+        (
+            "source_format",
+            "ALTER TABLE recordings ADD COLUMN source_format TEXT",
+        ),
+        (
+            "source_sha256",
+            "ALTER TABLE recordings ADD COLUMN source_sha256 TEXT",
+        ),
+        (
+            "imported_at",
+            "ALTER TABLE recordings ADD COLUMN imported_at TEXT",
+        ),
+    ];
+    for (name, sql) in additions {
+        if !columns.contains(name) {
+            connection.execute(sql, [])?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_audio_import_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS recordings_import_hash_unique
+           ON recordings(source_sha256)
+           WHERE origin = 'imported' AND source_sha256 IS NOT NULL;
+         CREATE TABLE IF NOT EXISTS audio_import_jobs (
+           id TEXT PRIMARY KEY,
+           source_path TEXT NOT NULL,
+           source_file_name TEXT NOT NULL,
+           source_format TEXT,
+           source_sha256 TEXT,
+           title TEXT NOT NULL,
+           created_at TEXT NOT NULL,
+           imported_at TEXT NOT NULL,
+           final_path TEXT NOT NULL,
+           partial_path TEXT NOT NULL,
+           duration_ms INTEGER,
+           size_bytes INTEGER,
+           status TEXT NOT NULL,
+           updated_at TEXT NOT NULL
+         );",
+    )?;
+    Ok(())
+}
+
 fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
     let columns = {
         let mut statement = connection.prepare("PRAGMA table_info(transcriptions)")?;
@@ -2641,6 +2901,57 @@ mod tests {
         })
         .unwrap();
         (root, storage)
+    }
+
+    #[test]
+    fn audio_import_commit_records_origin_metadata_and_enables_deduplication() {
+        let (root, storage) = test_storage();
+        let recordings = root.join("Nota").join("Recordings");
+        let final_path = recordings.join("phone-meeting.ogg");
+        let partial_path = recordings.join(".nota-import-test.partial.ogg");
+        std::fs::write(&final_path, b"normalized audio").unwrap();
+        let job = AudioImportJob {
+            id: "imported-meeting".into(),
+            source_path: "C:\\Phone\\meeting.m4a".into(),
+            source_file_name: "meeting.m4a".into(),
+            source_format: None,
+            source_sha256: None,
+            title: "手机会议".into(),
+            created_at: "2026-08-10T09:00:00Z".into(),
+            imported_at: "2026-08-11T09:00:00Z".into(),
+            final_path: final_path.to_string_lossy().into_owned(),
+            partial_path: partial_path.to_string_lossy().into_owned(),
+            duration_ms: None,
+            size_bytes: None,
+            status: "writing".into(),
+        };
+        storage.begin_audio_import(&job).unwrap();
+        storage
+            .prepare_audio_import("imported-meeting", "M4A", "abc123", 65_000, 16)
+            .unwrap();
+        storage
+            .mark_audio_import_file_committed("imported-meeting")
+            .unwrap();
+        let recording = storage.complete_audio_import("imported-meeting").unwrap();
+
+        assert_eq!(recording.origin, RecordingOrigin::Imported);
+        assert_eq!(recording.source_file_name.as_deref(), Some("meeting.m4a"));
+        assert_eq!(recording.source_format.as_deref(), Some("M4A"));
+        assert_eq!(
+            recording.imported_at.as_deref(),
+            Some("2026-08-11T09:00:00Z")
+        );
+        assert_eq!(recording.duration_ms, 65_000);
+        assert_eq!(
+            storage
+                .imported_recording_by_hash("abc123")
+                .unwrap()
+                .unwrap()
+                .id,
+            "imported-meeting"
+        );
+        assert!(storage.audio_import_jobs().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn provider_request(id: Option<String>, api_key: AsrApiKeyUpdate) -> SaveAsrProviderRequest {
@@ -2884,6 +3195,10 @@ mod tests {
                 duration_ms: 10_000,
                 size_bytes: 5,
                 recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
                 transcription: None,
             })
             .unwrap();
@@ -2924,6 +3239,10 @@ mod tests {
                 duration_ms: 10_000,
                 size_bytes: 5,
                 recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
                 transcription: None,
             })
             .unwrap();
@@ -3065,6 +3384,10 @@ mod tests {
                 duration_ms: 10_000,
                 size_bytes: 5,
                 recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
                 transcription: None,
             })
             .unwrap();
@@ -3558,6 +3881,10 @@ mod tests {
             duration_ms: 10_000,
             size_bytes: 5,
             recovered: false,
+            origin: RecordingOrigin::Captured,
+            source_file_name: None,
+            source_format: None,
+            imported_at: None,
             transcription: None,
         };
         storage.insert_recording(&recording).unwrap();
@@ -3609,6 +3936,10 @@ mod tests {
             duration_ms: 10_000,
             size_bytes: 5,
             recovered: false,
+            origin: RecordingOrigin::Captured,
+            source_file_name: None,
+            source_format: None,
+            imported_at: None,
             transcription: None,
         };
         storage.insert_recording(&recording).unwrap();
@@ -3777,6 +4108,11 @@ mod tests {
         assert_eq!(summary.speaker_count, None);
         assert_eq!(summary.completed_chunks, 1);
         assert_eq!(summary.total_chunks, 2);
+        let legacy_recording = storage.find_recording("legacy").unwrap();
+        assert_eq!(legacy_recording.origin, RecordingOrigin::Captured);
+        assert_eq!(legacy_recording.source_file_name, None);
+        assert_eq!(legacy_recording.source_format, None);
+        assert_eq!(legacy_recording.imported_at, None);
 
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();

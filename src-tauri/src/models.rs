@@ -165,7 +165,78 @@ pub struct RecordingItem {
     pub size_bytes: u64,
     pub recovered: bool,
     #[serde(default)]
+    pub origin: RecordingOrigin,
+    #[serde(default)]
+    pub source_file_name: Option<String>,
+    #[serde(default)]
+    pub source_format: Option<String>,
+    #[serde(default)]
+    pub imported_at: Option<String>,
+    #[serde(default)]
     pub transcription: Option<TranscriptionSummary>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingOrigin {
+    #[default]
+    Captured,
+    Imported,
+}
+
+impl RecordingOrigin {
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "imported" => Self::Imported,
+            _ => Self::Captured,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioImportBatchStatus {
+    Running,
+    Completed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioImportItemStatus {
+    Queued,
+    Probing,
+    Decoding,
+    Finalizing,
+    Completed,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioImportItemSnapshot {
+    pub id: String,
+    pub file_name: String,
+    pub status: AudioImportItemStatus,
+    pub progress_current_ms: u64,
+    pub progress_total_ms: u64,
+    pub error_message: Option<String>,
+    pub recording_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioImportBatchSnapshot {
+    pub id: String,
+    pub status: AudioImportBatchStatus,
+    pub current_index: u32,
+    pub total: u32,
+    pub completed: u32,
+    pub failed: u32,
+    pub skipped: u32,
+    pub items: Vec<AudioImportItemSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,6 +2,7 @@ mod ai;
 mod asr;
 mod audio;
 mod controller;
+mod importer;
 mod logging;
 mod models;
 mod paths;

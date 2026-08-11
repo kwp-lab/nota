@@ -73,6 +73,8 @@ h2 { margin: 0; font-size: var(--font-size-subtitle); line-height: var(--line-he
 .icon-button { width: var(--control-height-default); height: var(--control-height-default); display: grid; place-items: center; border: 0; background: transparent; border-radius: var(--radius-medium); color: var(--color-icon-primary); cursor: pointer; }
 .icon-button > svg { width: var(--icon-size-default); height: var(--icon-size-default); }
 .icon-button:hover { background: var(--color-surface-hover); }
+.icon-button.compact { width: var(--control-height-compact); height: var(--control-height-compact); }
+.icon-button.compact > svg { width: var(--icon-size-compact); height: var(--icon-size-compact); }
 .danger-hover:hover { color: var(--color-text-danger); background: var(--color-surface-warning); }
 .recording-time { display: flex; align-items: center; gap: var(--space-2-5); padding: var(--space-2) var(--space-3); background: var(--color-surface-subtle); border-radius: var(--radius-large); font-variant-numeric: tabular-nums; }
 .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--color-status-recording); animation: pulse 1.7s infinite; }
@@ -444,6 +446,8 @@ body.meeting-end-prompt-body {
 .history-header, .history-search, .compact-recovery { flex: 0 0 auto; }
 .history-header { display: flex; align-items: end; justify-content: space-between; padding: 0 var(--space-1-5) var(--space-4); }
 .history-header h1 { font-size: var(--font-size-subtitle); line-height: var(--line-height-subtitle); }
+.history-header-actions { display: flex; align-items: center; gap: var(--space-2); }
+.import-audio-button { white-space: nowrap; }
 .history-search {
   display: flex; align-items: center; gap: var(--space-2); margin: 0 var(--space-1) var(--space-3); padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-default); border-radius: var(--radius-large); color: var(--color-text-muted); background: var(--color-surface-raised);
@@ -455,6 +459,35 @@ body.meeting-end-prompt-body {
 }
 .compact-recovery span { flex: 1; }
 .compact-recovery button { border: 0; color: var(--color-text-warning); background: transparent; cursor: pointer; font-weight: var(--font-weight-semibold); }
+.audio-import-card {
+  flex: 0 0 auto;
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 var(--space-1-5) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-large);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-brand);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+}
+.audio-import-card.status-cancelled { border-color: var(--color-border-default); background: var(--color-surface-subtle); }
+.audio-import-card-header { display: flex; align-items: start; justify-content: space-between; gap: var(--space-2); }
+.audio-import-card-header > div { min-width: 0; display: grid; gap: var(--space-0-5); }
+.audio-import-card-header strong { color: var(--color-text-primary); }
+.audio-import-card-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); }
+.audio-import-card p { margin: 0; color: var(--color-text-danger); }
+.audio-import-progress { height: var(--space-1); overflow: hidden; border-radius: var(--radius-round); background: var(--color-surface-sunken); }
+.audio-import-progress i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--color-brand-accent); transition: width var(--motion-duration-normal) var(--motion-easing-standard); }
+.audio-import-progress.indeterminate i { width: 38%; animation: audio-import-progress calc(var(--motion-duration-normal) * 6) linear infinite; }
+@keyframes audio-import-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .audio-import-progress.indeterminate i { animation: none; }
+}
 .history-list {
   flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto;
   overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 var(--space-1) var(--space-5);
@@ -506,7 +539,9 @@ body.meeting-end-prompt-body {
 .record-detail-header { display: flex; justify-content: space-between; gap: var(--space-5); margin: var(--space-6) 0 var(--space-1); }
 .recording-active-banner + .record-detail-header { margin-top: 0; }
 .record-detail-header h2 { max-width: 700px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-subtitle); line-height: var(--line-height-subtitle); }
-.record-detail-header p:last-child { margin: var(--space-2) 0 0; color: var(--color-text-subtle); font-size: var(--font-size-caption); line-height: var(--line-height-caption); }
+.record-detail-header p { margin: var(--space-2) 0 0; color: var(--color-text-subtle); font-size: var(--font-size-caption); line-height: var(--line-height-caption); }
+.import-origin-badge { display: inline-flex; margin-left: var(--space-2); padding: var(--space-0-5) var(--space-2); border-radius: var(--radius-round); color: var(--color-text-brand); background: var(--color-surface-brand); font-weight: var(--font-weight-semibold); }
+.record-detail-header .import-source-name { display: block; max-width: 700px; margin-top: var(--space-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: var(--font-size-caption); line-height: var(--line-height-caption); }
 .detail-actions { display: flex; }
 .record-detail-sticky-controls {
   position: sticky; z-index: 5; top: 0; flex: 0 0 auto;

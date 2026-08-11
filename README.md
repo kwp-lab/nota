@@ -59,6 +59,7 @@ Nota gives Windows one focused recording workflow:
 | **Live microphone switching** | Change or disable the microphone during an active recording without stopping, splitting, or replacing the current Ogg file. |
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
+| **Import phone recordings** | Import MP3, M4A, WAV, or FLAC offline, normalize it to a Nota-managed Ogg copy, and use the same playback, transcription, speaker, and AI workflows. |
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
 | **Shareable AI documents** | Turn a completed transcript into versioned Markdown summaries or action lists with a user-configured OpenAI or OpenAI-compatible LLM. |
 | **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
@@ -119,7 +120,13 @@ Nota is currently an early preview. Download the latest build from [GitHub Relea
 4. Confirm the destination and start recording.
    You can change or disable the microphone from the live recording panel without changing the selected meeting-audio scope.
 5. Stop and save from the window, tray menu, or keyboard shortcut.
-6. Open **Recordings** to play the result, manage the file, or start an optional transcription.
+6. Open **Recordings** to play the result, manage the file, or start an optional transcription. You can also select **Import recording** and choose multiple MP3, M4A, WAV, or FLAC files from a phone or another device.
+
+Import runs entirely on-device without FFmpeg and never modifies the selected
+source. Nota creates a normalized 48 kHz mono Ogg Opus copy in the current
+recording directory; deleting the imported recording affects only that copy.
+The initial M4A path supports AAC-LC and ALAC, not HE-AAC, DRM, or protected
+audio.
 
 ### Optional speech-to-text
 
@@ -187,6 +194,7 @@ Recording begins in `%LOCALAPPDATA%\Nota\Recovery` before the result is moved to
 - Output and microphone streams recover independently after device interruptions.
 - Low disk space triggers a warning below 200 MB and a safe stop below 50 MB.
 - Paused time and system sleep are excluded from the final recording.
+- Imports use a temporary Ogg plus a SQLite commit journal; restart completes a synchronized commit or removes the incomplete copy.
 
 The default output directory is `Documents\Nota\Recordings`. Settings, the recording index, transcripts, participant names, voiceprints, and confirmed meeting mappings are stored locally in SQLite WAL mode; rotating technical logs are limited to 3 × 10 MB.
 
@@ -199,6 +207,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings, the recor
 - No video, translation, transcript editing, real-time streaming transcription, autonomous agents, or cross-meeting AI retrieval
 - Speaker identification requires provider-supplied diarization labels and a compatible Nota ASR Server; suggestions remain probabilistic until the user confirms them
 - Transcription requires a user-configured FunASR or OpenAI-compatible service
+- First-phase import supports MP3, M4A (AAC-LC/ALAC), WAV, and FLAC, not HE-AAC, DRM audio, or video containers
 - Echo-cancellation quality depends on the microphone, speakers, room, and device mode
 - The preview is not code-signed
 
@@ -271,6 +280,7 @@ src-tauri/src/audio/wasapi.rs      Windows capture and device recovery
 src-tauri/src/audio/dsp.rs         Alignment, resampling, AEC, mixing, limiting
 src-tauri/src/audio/encoder.rs     Opus encoding and Ogg container
 src-tauri/src/audio/recovery.rs    Validation, repair, and safe finalization
+src-tauri/src/importer.rs          External decode, normalization, deduplication, crash cleanup
 src-tauri/src/asr.rs               Provider clients, durable FunASR jobs, legacy chunking, and merge
 src-tauri/src/voiceprints.rs       Bounded sample extraction, local matching, and confirmation sessions
 src-tauri/src/storage.rs           SQLite settings, recording index, and transcripts

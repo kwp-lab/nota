@@ -47,6 +47,10 @@ const recording: RecordingItem = {
   durationMs: 60_000,
   sizeBytes: 1024,
   recovered: false,
+  origin: "captured",
+  sourceFileName: null,
+  sourceFormat: null,
+  importedAt: null,
   transcription: null,
 };
 
