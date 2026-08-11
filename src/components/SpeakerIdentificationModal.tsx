@@ -299,7 +299,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <CheckCircle2 size={16} />
               <span>声纹分析完成，{props.session?.voiceprintCount ?? 0} 位具备可用声纹。</span>
               <button
-                className="button secondary speaker-analysis-action"
+                className="button secondary compact speaker-analysis-action"
                 disabled={!props.canAnalyzeVoiceprints}
                 onClick={props.onAnalyze}
               >

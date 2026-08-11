@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-11
+
 ### Added
 
 - Added Markdown-first AI meeting documents for completed transcripts, with
@@ -27,6 +29,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Standardized the client visual language with Fluent-inspired Nota design
+  tokens for typography, semantic colors, spacing, shape, elevation, control
+  sizing, and motion, including consistent 12 px tooltips, 14 px menus, and a
+  shared compact action-button treatment for dense document toolbars.
 - Every successful AI generation now creates a new shareable Markdown file;
   external edits remain authoritative, moved files are reported and can be
   identity-checked for relinking, and recording deletion preserves AI files by
@@ -230,7 +236,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kwp-lab/nota/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kwp-lab/nota/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...v0.3.0
 [0.2.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...a9091aaca969bf901e30d32ed55affe43f5efe2a

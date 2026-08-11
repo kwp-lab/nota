@@ -29,6 +29,7 @@ specific rules.
   narrowly scoped.
 - `scripts/`: versioning, licensing, Windows build, and release packaging.
 - `docs/README.md`: engineering documentation index and source-of-truth rules.
+- `docs/design-system.md`: visual language and UI design-token rules.
 - `docs/decisions/`: accepted architectural decision records.
 - `docs/assets/`: tracked documentation assets.
 - `release/`, `artifacts/`, `dist/`, `node_modules/`, and
@@ -68,6 +69,28 @@ specific rules.
   complements concise prose and executable tests; it does not replace either.
 - Do not duplicate the complete server HTTP schema in this repository. The
   Nota ASR Server OpenAPI schema and API contract remain canonical.
+
+## Visual design discipline
+
+- Read `docs/design-system.md` before changing frontend styling, shared UI
+  components, typography, color, spacing, icon treatment, or interaction
+  states.
+- Treat `src/design-tokens.css` as the executable source of truth for Nota's
+  visual foundations. Component and page CSS must consume semantic variables;
+  do not add literal colors, ad-hoc font sizes, or numeric font weights outside
+  the token file.
+- Reuse the documented spacing, radius, control-size, icon-size, elevation,
+  and motion tokens. Fixed values are acceptable only for content geometry,
+  media, window constraints, or a layout calculation that has no reusable
+  semantic role.
+- Prefer shared React components and shared component classes over page-local
+  visual variants. Name variants by purpose such as `primary`, `danger`, or
+  `compact`, never by a literal appearance.
+- Icon-only controls require an accessible name and `AppTooltip`. Controls
+  with visible labels do not need a duplicate tooltip.
+- Update `docs/design-system.md` and `src/design-tokens.css` together whenever
+  a durable visual role is added or its meaning changes. Run
+  `npm run check:design` before handing off frontend visual work.
 
 ## Verification
 
