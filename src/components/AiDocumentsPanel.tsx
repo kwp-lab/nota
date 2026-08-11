@@ -18,6 +18,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type UnlistenFn } from "../api";
 import { llmProviderReady } from "../llm";
+import { AppTooltip } from "./AppTooltip";
 import type {
   AiDocument,
   AiDocumentContent,
@@ -231,6 +232,13 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     () => props.providers.filter(llmProviderReady),
     [props.providers],
   );
+  const canCreateDocument = unusedTemplates.length > 0 && availableProviders.length > 0;
+  const canReviseVersion = Boolean(
+    availableProviders.length
+    && selectedVersion
+    && selectedVersion.status === "completed"
+    && selectedVersion.fileState !== "missing",
+  );
   const speakerLabelsAvailable = hasSpeakerLabels(props.transcript);
   const provider = dialog
     ? availableProviders.find((item) => item.id === dialog.providerId) ?? null
@@ -378,14 +386,19 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
       <aside className="ai-document-list">
         <div className="ai-document-list-header">
           <div><strong>AI 文档</strong><small>{workspace?.documents.length ?? 0} 个场景</small></div>
-          <button
-            className="icon-button"
-            title={unusedTemplates.length ? "生成新文档" : "所有模板都已生成"}
-            disabled={!unusedTemplates.length || !availableProviders.length}
-            onClick={() => openDialog("create", null)}
+          <AppTooltip
+            content={unusedTemplates.length ? "生成新文档" : "所有模板都已生成"}
+            wrapDisabled={!canCreateDocument}
           >
-            <Plus size={16} />
-          </button>
+            <button
+              className="icon-button"
+              aria-label="生成新文档"
+              disabled={!canCreateDocument}
+              onClick={() => openDialog("create", null)}
+            >
+              <Plus size={16} />
+            </button>
+          </AppTooltip>
         </div>
         {!availableProviders.length && (
           <div className="ai-inline-warning"><AlertCircle size={15} />请先在设置中添加可用的 LLM Provider；OpenAI 官方服务需要 API Key。</div>
@@ -434,21 +447,30 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                     <option key={version.id} value={version.id}>{formatVersionLabel(version)}</option>
                   ))}
                 </select>
-                <button className="button secondary" disabled={!availableProviders.length} onClick={() => openDialog("regenerate", selectedDocument)}>
-                  <RotateCcw size={14} />重新生成
-                </button>
-                <button
-                  className="button secondary"
-                  disabled={
-                    !availableProviders.length
-                    || !selectedVersion
-                    || selectedVersion.status !== "completed"
-                    || selectedVersion.fileState === "missing"
-                  }
-                  onClick={() => openDialog("revise", selectedDocument, selectedVersion)}
+                <AppTooltip
+                  content="不参考当前版本，使用当前转写创建全新版本；已有版本不会被覆盖"
+                  wrapDisabled={!availableProviders.length}
                 >
-                  <WandSparkles size={14} />基于此版本修改
-                </button>
+                  <button
+                    className="button secondary"
+                    disabled={!availableProviders.length}
+                    onClick={() => openDialog("regenerate", selectedDocument)}
+                  >
+                    <RotateCcw size={14} />生成全新版本
+                  </button>
+                </AppTooltip>
+                <AppTooltip
+                  content="以当前所选版本为基础创建修改后的新版本；原版本不会被覆盖"
+                  wrapDisabled={!canReviseVersion}
+                >
+                  <button
+                    className="button secondary"
+                    disabled={!canReviseVersion}
+                    onClick={() => openDialog("revise", selectedDocument, selectedVersion)}
+                  >
+                    <WandSparkles size={14} />基于此版本创建新版
+                  </button>
+                </AppTooltip>
               </div>
             </header>
 
@@ -488,11 +510,11 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
               </span>
               {selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing" && (
                 <div>
-                  <button title="刷新预览" onClick={() => setContentReloadKey((current) => current + 1)}><RefreshCw size={14} /></button>
-                  <button title="复制 Markdown" onClick={() => void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error)))}><Clipboard size={14} /></button>
-                  <button title="复制路径" onClick={() => void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error)))}><Link2 size={14} /></button>
-                  <button title="默认应用打开" onClick={() => void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FileText size={14} /></button>
-                  <button title="在资源管理器中显示" onClick={() => void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FolderOpen size={14} /></button>
+                  <AppTooltip content="刷新预览"><button aria-label="刷新预览" onClick={() => setContentReloadKey((current) => current + 1)}><RefreshCw size={14} /></button></AppTooltip>
+                  <AppTooltip content="复制 Markdown"><button aria-label="复制 Markdown" onClick={() => void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error)))}><Clipboard size={14} /></button></AppTooltip>
+                  <AppTooltip content="复制文件路径"><button aria-label="复制文件路径" onClick={() => void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error)))}><Link2 size={14} /></button></AppTooltip>
+                  <AppTooltip content="使用默认应用打开"><button aria-label="使用默认应用打开" onClick={() => void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FileText size={14} /></button></AppTooltip>
+                  <AppTooltip content="在资源管理器中显示"><button aria-label="在资源管理器中显示" onClick={() => void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FolderOpen size={14} /></button></AppTooltip>
                 </div>
               )}
             </div>
@@ -522,9 +544,12 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
             <header>
               <div>
                 <p className="eyebrow">AI MARKDOWN</p>
-                <h3>{dialog.mode === "create" ? "生成 AI 文档" : dialog.mode === "revise" ? "基于当前版本修改" : "重新生成新版本"}</h3>
+                <h3>{dialog.mode === "create" ? "生成 AI 文档" : dialog.mode === "revise" ? "基于所选版本创建新版" : "生成全新版本"}</h3>
+                <small className="ai-version-creation-note">
+                  每次生成都会创建新的 Markdown 版本，不会覆盖已有版本或文件。
+                </small>
               </div>
-              <button className="icon-button" onClick={() => setDialog(null)}>×</button>
+              <AppTooltip content="关闭"><button className="icon-button" aria-label="关闭生成窗口" onClick={() => setDialog(null)}>×</button></AppTooltip>
             </header>
             {dialog.mode === "create" && (
               <label>

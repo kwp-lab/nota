@@ -6,6 +6,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppTooltip } from "./AppTooltip";
 
 export type ToastTone = "success" | "info" | "warning" | "error";
 
@@ -134,14 +135,16 @@ function ToastItem({
         )}
       </span>
       {persistent && (
-        <button
-          type="button"
-          className="toast-close"
-          aria-label="关闭通知"
-          onClick={beginDismiss}
-        >
-          <X size={16} />
-        </button>
+        <AppTooltip content="关闭通知" side="left">
+          <button
+            type="button"
+            className="toast-close"
+            aria-label="关闭通知"
+            onClick={beginDismiss}
+          >
+            <X size={16} />
+          </button>
+        </AppTooltip>
       )}
     </article>
   );

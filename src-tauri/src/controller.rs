@@ -38,7 +38,9 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::Shell::{
+    ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems, ShellExecuteW,
+};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::PCWSTR;
 
@@ -1727,6 +1729,17 @@ fn ai_version_path(storage: &Storage, version_id: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+fn reveal_path_in_explorer(path: &Path) -> Result<()> {
+    let target = wide(path.to_string_lossy().as_ref());
+    let pidl = unsafe { ILCreateFromPathW(PCWSTR(target.as_ptr())) };
+    if pidl.is_null() {
+        bail!("无法解析要在资源管理器中显示的文件路径");
+    }
+    let result = unsafe { SHOpenFolderAndSelectItems(pidl, None, 0) };
+    unsafe { ILFree(Some(pidl)) };
+    result.context("无法在资源管理器中显示 Markdown 文件")
+}
+
 #[tauri::command]
 fn open_ai_document_version(
     state: State<AppState>,
@@ -1760,10 +1773,7 @@ fn reveal_ai_document_version(
 ) -> std::result::Result<(), String> {
     command_result((|| {
         let path = ai_version_path(&state.storage, &version_id)?;
-        std::process::Command::new("explorer.exe")
-            .arg(format!("/select,{}", path.display()))
-            .spawn()?;
-        Ok(())
+        reveal_path_in_explorer(&path)
     })())
 }
 

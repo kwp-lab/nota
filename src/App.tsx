@@ -24,6 +24,7 @@ import {
   type CaptureTargetPreference,
 } from "./captureTargets";
 import { LevelMeter } from "./components/LevelMeter";
+import { AppTooltip } from "./components/AppTooltip";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
 import { VoiceprintsWorkspace } from "./components/VoiceprintsWorkspace";
@@ -834,7 +835,7 @@ export default function App() {
     <div className="app-shell">
       <ToastRegion toasts={toasts} onDismiss={dismissToast} />
       <aside className="app-sidebar">
-        <div className="sidebar-brand" title="Nota"><Radio size={20} /></div>
+        <div className="sidebar-brand" aria-label="Nota"><Radio size={20} /></div>
         <button
           className={`sidebar-item ${page === "recorder" ? "active" : ""}`}
           onClick={() => navigateTo("recorder")}
@@ -969,18 +970,19 @@ export default function App() {
                         </select>
                         <ChevronDown size={16} />
                       </div>
-                      <button
-                        type="button"
-                        className="refresh-targets"
-                        aria-label="刷新应用列表"
-                        title="刷新应用列表"
-                        disabled={targetsRefreshing}
-                        onClick={() =>
-                          void refreshTargets().catch(showError)
-                        }
-                      >
-                        <RefreshCw size={16} className={targetsRefreshing ? "spinning" : ""} />
-                      </button>
+                      <AppTooltip content={targetsRefreshing ? "正在刷新应用列表" : "刷新应用列表"} wrapDisabled={targetsRefreshing}>
+                        <button
+                          type="button"
+                          className="refresh-targets"
+                          aria-label="刷新应用列表"
+                          disabled={targetsRefreshing}
+                          onClick={() =>
+                            void refreshTargets().catch(showError)
+                          }
+                        >
+                          <RefreshCw size={16} className={targetsRefreshing ? "spinning" : ""} />
+                        </button>
+                      </AppTooltip>
                     </div>
                   ) : (
                     <div className="select-wrap">
@@ -1087,10 +1089,12 @@ export default function App() {
           )}
 
           <div className="recorder-footer">
-            <button className="folder-choice" onClick={chooseOutput} title={settings.outputDirectory}>
-              <Folder size={17} />
-              <span>{settings.outputDirectory || "默认录音目录"}</span>
-            </button>
+            <AppTooltip content={settings.outputDirectory || "使用默认录音目录"} side="top" align="start">
+              <button className="folder-choice" onClick={chooseOutput}>
+                <Folder size={17} />
+                <span>{settings.outputDirectory || "默认录音目录"}</span>
+              </button>
+            </AppTooltip>
             {!isActive(snapshot.state) ? (
               <button
                 className="record-button"

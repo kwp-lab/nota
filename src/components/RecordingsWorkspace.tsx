@@ -30,6 +30,7 @@ import type {
   TranscriptionSummary,
 } from "../types";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
+import { AppTooltip } from "./AppTooltip";
 import {
   SpeakerIdentificationModal,
   type SpeakerAnalysisStatus,
@@ -554,12 +555,14 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             <RotateCcw size={16} />
             <span>{props.recoverable.length} 个录音可恢复</span>
             <button onClick={() => props.onRecover(props.recoverable[0].id)}>恢复</button>
-            <button
-              aria-label="删除恢复文件"
-              onClick={() => props.onDiscardRecovery(props.recoverable[0].id)}
-            >
-              <Trash2 size={14} />
-            </button>
+            <AppTooltip content="删除恢复文件">
+              <button
+                aria-label="删除恢复文件"
+                onClick={() => props.onDiscardRecovery(props.recoverable[0].id)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </AppTooltip>
           </div>
         )}
         <div
@@ -602,15 +605,17 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                     </span>
                   </span>
                 </button>
-                <button
-                  className="history-quick-play"
-                  aria-label={playing && selected?.id === item.id ? `暂停 ${item.title}` : `播放 ${item.title}`}
-                  onClick={() => toggleQuickPlayback(item)}
-                >
-                  {playing && selected?.id === item.id
-                    ? <Pause size={14} fill="currentColor" />
-                    : <Play size={14} fill="currentColor" />}
-                </button>
+                <AppTooltip content={playing && selected?.id === item.id ? "暂停" : "播放"} side="left">
+                  <button
+                    className="history-quick-play"
+                    aria-label={playing && selected?.id === item.id ? `暂停 ${item.title}` : `播放 ${item.title}`}
+                    onClick={() => toggleQuickPlayback(item)}
+                  >
+                    {playing && selected?.id === item.id
+                      ? <Pause size={14} fill="currentColor" />
+                      : <Play size={14} fill="currentColor" />}
+                  </button>
+                </AppTooltip>
               </article>
             ))
           )}
@@ -642,19 +647,23 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 </p>
               </div>
               <div className="detail-actions">
-                <button className="icon-button" title="打开所在文件夹" onClick={() => props.onReveal(selected.id)}>
-                  <FolderOpen size={17} />
-                </button>
-                <button
-                  ref={detailMenuButtonRef}
-                  className="icon-button"
-                  title="更多"
-                  aria-haspopup="menu"
-                  aria-expanded={actionMenu?.source === "detail" && actionMenu.recordingId === selected.id}
-                  onClick={toggleDetailMenu}
-                >
-                  <MoreHorizontal size={17} />
-                </button>
+                <AppTooltip content="打开所在文件夹">
+                  <button className="icon-button" aria-label="打开录音所在文件夹" onClick={() => props.onReveal(selected.id)}>
+                    <FolderOpen size={17} />
+                  </button>
+                </AppTooltip>
+                <AppTooltip content="更多操作">
+                  <button
+                    ref={detailMenuButtonRef}
+                    className="icon-button"
+                    aria-label="更多录音操作"
+                    aria-haspopup="menu"
+                    aria-expanded={actionMenu?.source === "detail" && actionMenu.recordingId === selected.id}
+                    onClick={toggleDetailMenu}
+                  >
+                    <MoreHorizontal size={17} />
+                  </button>
+                </AppTooltip>
               </div>
             </header>
 
@@ -754,30 +763,38 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       <button className="button secondary" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
                         <Download size={15} />导出 TXT
                       </button>
-                      <button
-                        className="button secondary"
-                        disabled={managementSpeakers.length === 0}
-                        title={props.hasVoiceprintProvider
+                      <AppTooltip
+                        content={props.hasVoiceprintProvider
                           ? "管理当前会议说话人并按需分析声纹"
                           : "可以手动管理姓名；配置 Nota ASR Server 后可分析声纹"}
-                        onClick={() => openSpeakerManagement(null)}
+                        wrapDisabled={managementSpeakers.length === 0}
                       >
-                        <Fingerprint size={15} />
-                        {Object.keys(props.transcript?.speakerAssignments ?? {}).length > 0
-                          ? "管理说话人"
-                          : "说话人识别"}
-                      </button>
+                        <button
+                          className="button secondary"
+                          disabled={managementSpeakers.length === 0}
+                          onClick={() => openSpeakerManagement(null)}
+                        >
+                          <Fingerprint size={15} />
+                          {Object.keys(props.transcript?.speakerAssignments ?? {}).length > 0
+                            ? "管理说话人"
+                            : "说话人识别"}
+                        </button>
+                      </AppTooltip>
                       <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
                     </>
                   ) : (
-                    <button
-                      className="button primary"
-                      disabled={!props.hasProvider}
-                      title={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
-                      onClick={() => requestTranscription(selected, false)}
+                    <AppTooltip
+                      content={props.hasProvider ? "" : "请先在设置中配置语音转写服务"}
+                      wrapDisabled={!props.hasProvider}
                     >
-                      <Sparkles size={15} />开始转写
-                    </button>
+                      <button
+                        className="button primary"
+                        disabled={!props.hasProvider}
+                        onClick={() => requestTranscription(selected, false)}
+                      >
+                        <Sparkles size={15} />开始转写
+                      </button>
+                    </AppTooltip>
                   )}
                 </div>
               </div>
@@ -827,13 +844,14 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                     </button>
                     <div>
                       {segment.speaker && (
-                        <button
-                          className="speaker-label-button"
-                          title={`管理 ${segment.speaker} 的姓名`}
-                          onClick={() => openSpeakerManagement(segment.speaker)}
-                        >
-                          {props.transcript?.speakerNames?.[segment.speaker] ?? segment.speaker}
-                        </button>
+                        <AppTooltip content={`管理 ${segment.speaker} 的姓名`} side="right">
+                          <button
+                            className="speaker-label-button"
+                            onClick={() => openSpeakerManagement(segment.speaker)}
+                          >
+                            {props.transcript?.speakerNames?.[segment.speaker] ?? segment.speaker}
+                          </button>
+                        </AppTooltip>
                       )}
                       <p>{segment.text}</p>
                     </div>

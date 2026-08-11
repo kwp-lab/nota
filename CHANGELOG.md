@@ -34,6 +34,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - AI document commits now use no-replace atomic moves, cancellation is checked
   at the final commit boundary, incomplete model responses are rejected, and
   optional deletion verifies each Markdown file's embedded Nota identity.
+- Long AI Markdown previews now scroll inside the document body, version actions
+  explicitly state that they create a new version without overwriting, and new
+  generations follow the currently configured Markdown root while Explorer
+  selects the exact version file.
+- Icon-only controls now use a consistent accessible Radix tooltip on hover and
+  keyboard focus instead of the browser's unstyled native title popup.
 - Meeting-window disappearance is detected even when an application keeps its
   meeting engine resident for warm-up. Continuing preserves the existing
   recording and capture state and suppresses repeat prompts until that target

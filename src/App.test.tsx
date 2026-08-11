@@ -550,7 +550,7 @@ describe("Nota UI states", () => {
     fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
     expect(await screen.findByRole("heading", { name: "待删除录音" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多录音操作" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "永久删除" }));
     expect(await screen.findByRole("dialog", { name: "永久删除录音" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /同时删除关联的 AI Markdown 文件/ })).not.toBeChecked();

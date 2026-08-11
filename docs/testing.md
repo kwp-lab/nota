@@ -147,6 +147,8 @@ Automated coverage for AI documents must include:
 - stale asynchronous preview responses never replacing the currently selected
   version, and official OpenAI providers without a key staying out of generation
   UI while unauthenticated third-party Responses providers remain available;
+- icon-only actions exposing an accessible custom tooltip on keyboard focus
+  without retaining a duplicate native `title` tooltip;
 - application restart converting queued or generating rows to `interrupted`.
 
 Provider integration acceptance uses synthetic text only. It must not place a

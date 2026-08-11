@@ -36,6 +36,9 @@ Every generation attempt appends a version ledger row. Every successful
 attempt creates a new `.md` file with a monotonically increasing version number;
 Nota must never overwrite a previous generated file. The UI opens the newest
 completed version by default and lets the user select any earlier version.
+Regenerate and revise controls explicitly describe that they create a new
+version, and the generation dialog repeats that existing versions and files are
+never overwritten.
 
 Generation modes have distinct semantics:
 
@@ -139,6 +142,10 @@ body.
 The default root is `Documents\Nota\AI Documents`. Each meeting receives a
 folder based on its title plus a short recording identifier. The directory is
 created only when the first successful generation writes a file.
+The configured global root is resolved again for every new generation, so
+changing it in Settings affects subsequent versions even when that meeting had
+generated versions under an older root. Historical versions retain their exact
+file paths, and the Explorer action resolves and selects that exact file.
 
 Markdown is the authoritative document content. SQLite is an index and
 generation ledger containing associations, status, snapshots, hashes, and

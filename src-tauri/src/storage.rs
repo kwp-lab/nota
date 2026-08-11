@@ -1104,15 +1104,22 @@ impl Storage {
                 )
                 .optional()?
         };
-        let profile = stored_profile.unwrap_or_else(|| AiMeetingProfile {
-            recording_id: recording_id.to_owned(),
-            workspace_path: self
-                .default_ai_workspace_path(&recording)
-                .to_string_lossy()
-                .into_owned(),
-            meeting_context: String::new(),
-            updated_at: String::new(),
-        });
+        let current_workspace_path = self
+            .default_ai_workspace_path(&recording)
+            .to_string_lossy()
+            .into_owned();
+        let profile = match stored_profile {
+            Some(mut profile) => {
+                profile.workspace_path = current_workspace_path;
+                profile
+            }
+            None => AiMeetingProfile {
+                recording_id: recording_id.to_owned(),
+                workspace_path: current_workspace_path,
+                meeting_context: String::new(),
+                updated_at: String::new(),
+            },
+        };
         Ok(AiWorkspace {
             profile,
             documents: self.list_ai_documents(recording_id)?,
@@ -2858,6 +2865,46 @@ mod tests {
             .unwrap();
         storage.delete_llm_provider(&provider.id).unwrap();
         assert!(storage.list_llm_providers().unwrap().is_empty());
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ai_workspace_uses_the_current_configured_root_for_new_versions() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths().default_recordings.join("workspace.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        storage
+            .insert_recording(&RecordingItem {
+                id: "workspace-meeting".into(),
+                title: "Workspace meeting".into(),
+                path: recording_path.to_string_lossy().into_owned(),
+                created_at: "2026-08-10T00:00:00Z".into(),
+                duration_ms: 10_000,
+                size_bytes: 5,
+                recovered: false,
+                transcription: None,
+            })
+            .unwrap();
+
+        let original = storage.ai_workspace("workspace-meeting").unwrap();
+        storage
+            .save_ai_meeting_profile(
+                "workspace-meeting",
+                &original.profile.workspace_path,
+                "Preserved meeting context",
+            )
+            .unwrap();
+
+        let custom_root = root.join("Custom AI Documents");
+        let mut settings = storage.settings().unwrap();
+        settings.ai_documents_directory = custom_root.to_string_lossy().into_owned();
+        storage.save_settings(&settings).unwrap();
+
+        let updated = storage.ai_workspace("workspace-meeting").unwrap();
+        assert!(PathBuf::from(&updated.profile.workspace_path).starts_with(&custom_root));
+        assert_eq!(updated.profile.meeting_context, "Preserved meeting context");
 
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();

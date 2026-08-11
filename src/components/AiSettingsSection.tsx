@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { isOfficialOpenAiUrl, llmProviderReady, OPENAI_API_ROOT } from "../llm";
+import { AppTooltip } from "./AppTooltip";
 import type {
   AiTemplate,
   AppSettings,
@@ -288,7 +289,7 @@ export function AiSettingsSection(props: AiSettingsSectionProps) {
 
       {editing && (
         <div className="provider-editor">
-          <div className="provider-editor-title"><strong>{editing.id ? "编辑 LLM Provider" : "添加 LLM Provider"}</strong><button className="icon-button" onClick={() => setEditing(null)}><X size={15} /></button></div>
+          <div className="provider-editor-title"><strong>{editing.id ? "编辑 LLM Provider" : "添加 LLM Provider"}</strong><AppTooltip content="关闭"><button className="icon-button" aria-label="关闭 LLM Provider 编辑" onClick={() => setEditing(null)}><X size={15} /></button></AppTooltip></div>
           <div className="provider-form">
             <label><span>名称</span><input value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
             <label><span>类型</span><select value={editing.kind} onChange={(event) => {
@@ -334,20 +335,20 @@ export function AiSettingsSection(props: AiSettingsSectionProps) {
           <article key={template.id}>
             <div><strong>{template.name}</strong><small>{template.description || "暂无描述"}</small></div>
             <span>{template.builtinKey ? "内置" : `自定义 r${template.revision}`}{template.requiresSpeakerLabels ? " · 需说话人" : ""}</span>
-            <button title="复制模板" onClick={() => void cloneTemplate(template)}><Copy size={14} /></button>
-            {!template.builtinKey && <button title="编辑模板" onClick={() => setTemplateDraft({ id: template.id, name: template.name, description: template.description, taskInstructions: template.taskInstructions, outputRequirements: template.outputRequirements, requiresSpeakerLabels: template.requiresSpeakerLabels })}><FileText size={14} /></button>}
-            {!template.builtinKey && <button title="归档模板" onClick={() => {
+            <AppTooltip content="复制模板"><button aria-label={`复制模板 ${template.name}`} onClick={() => void cloneTemplate(template)}><Copy size={14} /></button></AppTooltip>
+            {!template.builtinKey && <AppTooltip content="编辑模板"><button aria-label={`编辑模板 ${template.name}`} onClick={() => setTemplateDraft({ id: template.id, name: template.name, description: template.description, taskInstructions: template.taskInstructions, outputRequirements: template.outputRequirements, requiresSpeakerLabels: template.requiresSpeakerLabels })}><FileText size={14} /></button></AppTooltip>}
+            {!template.builtinKey && <AppTooltip content="归档模板"><button aria-label={`归档模板 ${template.name}`} onClick={() => {
               if (!confirm(`归档模板“${template.name}”？已有 AI 文档仍可继续使用它。`)) return;
               setTemplateBusy(true);
               void api.archiveAiTemplate(template.id).then(refreshTemplates).finally(() => setTemplateBusy(false));
-            }}><Trash2 size={14} /></button>}
+            }}><Trash2 size={14} /></button></AppTooltip>}
           </article>
         ))}
       </div>
 
       {templateDraft && (
         <div className="provider-editor ai-template-editor">
-          <div className="provider-editor-title"><strong>{templateDraft.id ? "编辑自定义模板" : "新建自定义模板"}</strong><button className="icon-button" onClick={() => setTemplateDraft(null)}><X size={15} /></button></div>
+          <div className="provider-editor-title"><strong>{templateDraft.id ? "编辑自定义模板" : "新建自定义模板"}</strong><AppTooltip content="关闭"><button className="icon-button" aria-label="关闭模板编辑" onClick={() => setTemplateDraft(null)}><X size={15} /></button></AppTooltip></div>
           <label><span>模板名称</span><input value={templateDraft.name} onChange={(event) => setTemplateDraft({ ...templateDraft, name: event.target.value })} /></label>
           <label><span>用途说明</span><input value={templateDraft.description} onChange={(event) => setTemplateDraft({ ...templateDraft, description: event.target.value })} /></label>
           <label><span>任务指令</span><textarea rows={5} value={templateDraft.taskInstructions} onChange={(event) => setTemplateDraft({ ...templateDraft, taskInstructions: event.target.value })} /></label>

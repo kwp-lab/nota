@@ -185,6 +185,8 @@ describe("AI documents panel", () => {
     expect(await screen.findByRole("heading", { name: "Current summary" })).toBeInTheDocument();
     expect(screen.getByText("[图片未自动加载：chart]")).toBeInTheDocument();
     expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByRole("button", { name: "生成全新版本" })).not.toHaveAttribute("title");
+    expect(screen.getByRole("button", { name: "基于此版本创建新版" })).not.toHaveAttribute("title");
   });
 
   it("skips an unavailable speaker template when opening a new document dialog", async () => {

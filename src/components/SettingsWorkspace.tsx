@@ -30,6 +30,7 @@ import type {
   SaveAsrProviderRequest,
 } from "../types";
 import { AiSettingsSection } from "./AiSettingsSection";
+import { AppTooltip } from "./AppTooltip";
 
 interface SettingsWorkspaceProps {
   firstRun: boolean;
@@ -436,14 +437,16 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
           <div className="provider-editor">
             <div className="provider-editor-title">
               <strong>{editing.id ? "编辑服务" : "添加服务"}</strong>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="关闭服务编辑"
-                onClick={() => setEditing(null)}
-              >
-                <X size={15} />
-              </button>
+              <AppTooltip content="关闭">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="关闭服务编辑"
+                  onClick={() => setEditing(null)}
+                >
+                  <X size={15} />
+                </button>
+              </AppTooltip>
             </div>
             <div className="provider-form">
               <label>

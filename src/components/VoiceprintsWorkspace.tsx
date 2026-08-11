@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { AsrProvider, ParticipantProfile, VoiceprintSample } from "../types";
+import { AppTooltip } from "./AppTooltip";
 
 interface VoiceprintsWorkspaceProps {
   participants: ParticipantProfile[];
@@ -99,50 +100,61 @@ export function VoiceprintsWorkspace(props: VoiceprintsWorkspaceProps) {
                   <strong>{participant.displayName}</strong>
                   <small>{participant.samples.length} 个声纹样本</small>
                 </div>
-                <button
-                  className="icon-button"
-                  title="修改姓名"
-                  onClick={() => {
-                    const name = prompt("输入新的参会人姓名", participant.displayName);
-                    if (name?.trim() && name.trim() !== participant.displayName) {
-                      props.onRename(participant.id, name.trim());
-                    }
-                  }}
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  className="icon-button danger"
-                  title="删除参会人"
-                  onClick={() => props.onDeleteParticipant(participant.id)}
-                >
-                  <Trash2 size={15} />
-                </button>
+                <AppTooltip content="修改姓名">
+                  <button
+                    className="icon-button"
+                    aria-label={`修改 ${participant.displayName} 的姓名`}
+                    onClick={() => {
+                      const name = prompt("输入新的参会人姓名", participant.displayName);
+                      if (name?.trim() && name.trim() !== participant.displayName) {
+                        props.onRename(participant.id, name.trim());
+                      }
+                    }}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                </AppTooltip>
+                <AppTooltip content="删除参会人">
+                  <button
+                    className="icon-button danger"
+                    aria-label={`删除参会人 ${participant.displayName}`}
+                    onClick={() => props.onDeleteParticipant(participant.id)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </AppTooltip>
               </header>
               <div className="voiceprint-samples">
                 {participant.samples.map((sample) => (
                   <div className="voiceprint-sample" key={sample.id}>
-                    <button
-                      className="sample-play"
-                      disabled={!sample.previewAvailable}
-                      title={sample.previewAvailable ? "试听原始录音片段" : "源录音已删除，无法试听"}
-                      onClick={() => void playSample(sample)}
+                    <AppTooltip
+                      content={sample.previewAvailable ? "试听原始录音片段" : "源录音已删除，无法试听"}
+                      wrapDisabled={!sample.previewAvailable}
                     >
-                      <Play size={13} fill="currentColor" />
-                    </button>
+                      <button
+                        className="sample-play"
+                        aria-label={`试听 ${participant.displayName} 的原始录音片段`}
+                        disabled={!sample.previewAvailable}
+                        onClick={() => void playSample(sample)}
+                      >
+                        <Play size={13} fill="currentColor" />
+                      </button>
+                    </AppTooltip>
                     <div>
                       <strong>{sample.sourceRecordingTitle ?? "源录音已删除"}</strong>
                       <small>
                         {sample.sourceSpeaker} · {formatDuration(sample.previewStartMs)}
                       </small>
                     </div>
-                    <button
-                      className="sample-delete"
-                      aria-label={`删除 ${participant.displayName} 的声纹样本`}
-                      onClick={() => props.onDeleteSample(sample.id)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <AppTooltip content="删除声纹样本">
+                      <button
+                        className="sample-delete"
+                        aria-label={`删除 ${participant.displayName} 的声纹样本`}
+                        onClick={() => props.onDeleteSample(sample.id)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </AppTooltip>
                   </div>
                 ))}
               </div>
