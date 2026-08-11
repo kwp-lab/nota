@@ -59,6 +59,7 @@ Nota 为 Windows 提供一条专注的本地录音工作流：
 | **录音中切换麦克风** | 录音开始后仍可更换或关闭麦克风，不停止录音、不拆分记录，也不替换当前 Ogg 文件。 |
 | **崩溃安全** | 先写入恢复文件，校验完整 Ogg 页，并在应用重启后恢复中断的会话。 |
 | **紧凑的输出文件** | 默认生成 48 kHz 单声道、64 kbps 的 Ogg Opus，通常约 30 MB/小时。 |
+| **导入手机录音** | 离线导入 MP3、M4A、WAV 或 FLAC，转为 Nota 管理的 Ogg 副本后继续播放、转写、说话人管理与 AI 总结。 |
 | **可选语音转写** | 仅在手动点击转写或明确开启自动转写后发送录音；可使用局域网 FunASR 或其他 OpenAI-compatible 服务。 |
 | **可分享的 AI 文档** | 使用自行配置的 OpenAI 或 OpenAI-compatible LLM，把已完成的转写生成带版本的 Markdown 总结或待办清单。 |
 | **本地说话人身份** | 手动提取匿名 CAM++ 声纹、确认真实姓名，并在后续会议中复用；姓名、匹配过程和生物特征向量留在本机 Rust 后端。 |
@@ -118,7 +119,12 @@ Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases
 4. 确认保存位置并开始录音。
    录音进行中可从实时面板更换或关闭麦克风，会议声音的采集范围不会改变。
 5. 从主窗口、托盘菜单或快捷键停止并保存。
-6. 打开 **录音记录** 播放、管理录音，或按需开始文字转写。
+6. 打开 **录音记录** 播放、管理录音，或按需开始文字转写。也可以点击
+   **导入录音**，一次选择多个手机或其他设备产生的 MP3、M4A、WAV、FLAC。
+
+导入完全在本机完成，不需要 FFmpeg，也不会修改最初选择的文件。Nota 会在
+当前录音目录生成统一的 48 kHz 单声道 Ogg Opus 管理副本；删除导入记录时只
+处理这份副本。M4A 首阶段支持 AAC-LC 和 ALAC，不支持 HE-AAC、DRM 或受保护音频。
 
 ### 可选语音转写
 
@@ -183,6 +189,7 @@ Nota 不内置参会者告知或同意确认流程。发行者和二次开发者
 - 输出声音与麦克风在设备中断后独立恢复。
 - 磁盘空间低于 200 MB 时警告，低于 50 MB 时安全停止。
 - 暂停和系统休眠时间不会写入最终录音。
+- 导入使用临时 Ogg 和 SQLite 提交日志；崩溃后会完成已经同步的提交，或清理未完成副本。
 
 默认输出目录为 `文档\Nota\Recordings`。设置、录音索引、转写、参会人姓名、声纹和会议确认映射保存在本地 SQLite WAL 数据库中；滚动技术日志最多保留 3 × 10 MB。
 
@@ -195,6 +202,7 @@ Nota 不内置参会者告知或同意确认流程。发行者和二次开发者
 - 不包含视频、翻译、转写文本编辑、实时流式转写、自治 Agent 或跨会议 AI 检索
 - 说话人识别依赖 Provider 返回的匿名分离标签和兼容的 Nota ASR Server；系统建议是概率结果，必须由用户确认
 - 转写需要用户自行配置 FunASR 或 OpenAI-compatible 服务
+- 音频导入首阶段支持 MP3、M4A（AAC-LC/ALAC）、WAV 与 FLAC；不支持 HE-AAC、DRM 音频和视频容器
 - 回声消除效果会受到麦克风、扬声器、房间和设备模式影响
 - 预览版尚未进行代码签名
 
@@ -263,6 +271,7 @@ src-tauri/src/audio/wasapi.rs      Windows 音频采集与设备恢复
 src-tauri/src/audio/dsp.rs         对齐、重采样、AEC、混音与限制
 src-tauri/src/audio/encoder.rs     Opus 编码与 Ogg 封装
 src-tauri/src/audio/recovery.rs    校验、修复与安全完成录音
+src-tauri/src/importer.rs          外部音频解码、归一化、去重与崩溃清理
 src-tauri/src/asr.rs               Provider 客户端、FunASR 持久任务、兼容分块与结果合并
 src-tauri/src/voiceprints.rs       有界语音采样、本地声纹匹配与确认会话
 src-tauri/src/storage.rs           SQLite 设置、录音索引与转写数据

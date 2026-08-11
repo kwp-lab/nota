@@ -113,6 +113,7 @@
 | error-code | 3.3.2 | BSL-1.0 |
 | event-listener | 5.4.1 | Apache-2.0 OR MIT |
 | event-listener-strategy | 0.5.4 | Apache-2.0 OR MIT |
+| extended | 0.1.0 | MIT |
 | fallible-iterator | 0.3.0 | MIT/Apache-2.0 |
 | fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT |
@@ -207,6 +208,7 @@
 | json-patch | 3.0.1 | MIT/Apache-2.0 |
 | jsonptr | 0.6.3 | MIT OR Apache-2.0 |
 | keyboard-types | 0.7.0 | MIT OR Apache-2.0 |
+| lazy_static | 1.5.0 | MIT OR Apache-2.0 |
 | libappindicator | 0.9.0 | Apache-2.0 OR MIT |
 | libappindicator-sys | 0.9.0 | Apache-2.0 OR MIT |
 | libc | 0.2.189 | MIT OR Apache-2.0 |
@@ -233,6 +235,7 @@
 | new_debug_unreachable | 1.0.6 | MIT |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
+| num-complex | 0.4.6 | MIT OR Apache-2.0 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 |
 | num-integer | 0.1.46 | MIT OR Apache-2.0 |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 |
@@ -280,6 +283,7 @@
 | powerfmt | 0.2.0 | MIT OR Apache-2.0 |
 | ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 |
 | precomputed-hash | 0.1.1 | MIT |
+| primal-check | 0.3.4 | MIT OR Apache-2.0 |
 | proc-macro-crate | 1.3.1 | MIT OR Apache-2.0 |
 | proc-macro-crate | 2.0.2 | MIT OR Apache-2.0 |
 | proc-macro-crate | 3.5.0 | MIT OR Apache-2.0 |
@@ -308,6 +312,7 @@
 | ref-cast-impl | 1.0.26 | MIT OR Apache-2.0 |
 | regex | 1.13.1 | MIT OR Apache-2.0 |
 | regex-automata | 0.4.16 | MIT OR Apache-2.0 |
+| regex-lite | 0.1.9 | MIT OR Apache-2.0 |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 |
 | reqwest | 0.12.28 | MIT OR Apache-2.0 |
 | reqwest | 0.13.4 | MIT OR Apache-2.0 |
@@ -318,6 +323,7 @@
 | rusqlite | 0.40.1 | MIT |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
+| rustfft | 6.4.1 | MIT OR Apache-2.0 |
 | rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | rustls | 0.23.42 | Apache-2.0 OR ISC OR MIT |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 |
@@ -367,11 +373,24 @@
 | soup3-sys | 0.5.0 | MIT |
 | sqlite-wasm-rs | 0.5.5 | MIT |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
+| strength_reduce | 0.2.4 | MIT OR Apache-2.0 |
 | string_cache | 0.9.0 | MIT OR Apache-2.0 |
 | string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 |
 | strsim | 0.11.1 | MIT |
 | subtle | 2.6.1 | BSD-3-Clause |
 | swift-rs | 1.0.7 | MIT OR Apache-2.0 |
+| symphonia | 0.6.0 | MPL-2.0 |
+| symphonia-bundle-flac | 0.6.0 | MPL-2.0 |
+| symphonia-bundle-mp3 | 0.6.0 | MPL-2.0 |
+| symphonia-codec-aac | 0.6.0 | MPL-2.0 |
+| symphonia-codec-adpcm | 0.6.0 | MPL-2.0 |
+| symphonia-codec-alac | 0.6.0 | MPL-2.0 |
+| symphonia-codec-pcm | 0.6.0 | MPL-2.0 |
+| symphonia-common | 0.6.0 | MPL-2.0 |
+| symphonia-core | 0.6.0 | MPL-2.0 |
+| symphonia-format-isomp4 | 0.6.0 | MPL-2.0 |
+| symphonia-format-riff | 0.6.0 | MPL-2.0 |
+| symphonia-metadata | 0.6.0 | MPL-2.0 |
 | syn | 1.0.109 | MIT OR Apache-2.0 |
 | syn | 2.0.119 | MIT OR Apache-2.0 |
 | syn | 3.0.3 | MIT OR Apache-2.0 |
@@ -428,6 +447,7 @@
 | tracing | 0.1.44 | MIT |
 | tracing-attributes | 0.1.31 | MIT |
 | tracing-core | 0.1.36 | MIT |
+| transpose | 0.2.3 | MIT OR Apache-2.0 |
 | trash | 5.2.6 | MIT |
 | tray-icon | 0.24.1 | MIT OR Apache-2.0 |
 | try-lock | 0.2.5 | MIT |
@@ -636,6 +656,10 @@
 | @esbuild/win32-ia32 | 0.27.0 | MIT |
 | @esbuild/win32-x64 | 0.27.0 | MIT |
 | @exodus/bytes | 1.15.1 | MIT |
+| @floating-ui/core | 1.8.0 | MIT |
+| @floating-ui/dom | 1.8.0 | MIT |
+| @floating-ui/react-dom | 2.1.9 | MIT |
+| @floating-ui/utils | 0.2.12 | MIT |
 | @jridgewell/gen-mapping | 0.3.13 | MIT |
 | @jridgewell/remapping | 2.3.5 | MIT |
 | @jridgewell/resolve-uri | 3.1.2 | MIT |
@@ -643,6 +667,26 @@
 | @jridgewell/trace-mapping | 0.3.31 | MIT |
 | @napi-rs/wasm-runtime | 1.1.6 | MIT |
 | @oxc-project/types | 0.139.0 | MIT |
+| @radix-ui/primitive | 1.1.7 | MIT |
+| @radix-ui/react-arrow | 1.1.15 | MIT |
+| @radix-ui/react-compose-refs | 1.1.5 | MIT |
+| @radix-ui/react-context | 1.2.2 | MIT |
+| @radix-ui/react-dismissable-layer | 1.1.19 | MIT |
+| @radix-ui/react-id | 1.1.4 | MIT |
+| @radix-ui/react-popper | 1.3.7 | MIT |
+| @radix-ui/react-portal | 1.1.17 | MIT |
+| @radix-ui/react-presence | 1.1.10 | MIT |
+| @radix-ui/react-primitive | 2.1.10 | MIT |
+| @radix-ui/react-slot | 1.3.3 | MIT |
+| @radix-ui/react-tooltip | 1.2.16 | MIT |
+| @radix-ui/react-use-callback-ref | 1.1.4 | MIT |
+| @radix-ui/react-use-controllable-state | 1.2.6 | MIT |
+| @radix-ui/react-use-effect-event | 0.0.5 | MIT |
+| @radix-ui/react-use-layout-effect | 1.1.4 | MIT |
+| @radix-ui/react-use-rect | 1.1.4 | MIT |
+| @radix-ui/react-use-size | 1.1.4 | MIT |
+| @radix-ui/react-visually-hidden | 1.2.11 | MIT |
+| @radix-ui/rect | 1.1.3 | MIT |
 | @rolldown/binding-android-arm64 | 1.1.5 | MIT |
 | @rolldown/binding-darwin-arm64 | 1.1.5 | MIT |
 | @rolldown/binding-darwin-x64 | 1.1.5 | MIT |
@@ -687,10 +731,17 @@
 | @types/babel__template | 7.4.4 | MIT |
 | @types/babel__traverse | 7.28.0 | MIT |
 | @types/chai | 5.2.3 | MIT |
+| @types/debug | 4.1.13 | MIT |
 | @types/deep-eql | 4.0.2 | MIT |
 | @types/estree | 1.0.9 | MIT |
+| @types/estree-jsx | 1.0.5 | MIT |
+| @types/hast | 3.0.5 | MIT |
+| @types/mdast | 4.0.4 | MIT |
+| @types/ms | 2.1.0 | MIT |
 | @types/react | 19.2.17 | MIT |
 | @types/react-dom | 19.2.3 | MIT |
+| @types/unist | 3.0.3 | MIT |
+| @ungap/structured-clone | 1.3.3 | ISC |
 | @vitejs/plugin-react | 5.2.0 | MIT |
 | @vitest/expect | 4.1.10 | MIT |
 | @vitest/mocker | 4.1.10 | MIT |
@@ -704,11 +755,18 @@
 | ansi-styles | 5.2.0 | MIT |
 | aria-query | 5.3.0 | Apache-2.0 |
 | assertion-error | 2.0.1 | MIT |
+| bail | 2.0.2 | MIT |
 | baseline-browser-mapping | 2.11.1 | Apache-2.0 |
 | bidi-js | 1.0.3 | MIT |
 | browserslist | 4.28.7 | MIT |
 | caniuse-lite | 1.0.30001806 | CC-BY-4.0 |
+| ccount | 2.0.1 | MIT |
 | chai | 6.2.2 | MIT |
+| character-entities | 2.0.2 | MIT |
+| character-entities-html4 | 2.1.0 | MIT |
+| character-entities-legacy | 3.0.0 | MIT |
+| character-reference-invalid | 2.0.1 | MIT |
+| comma-separated-tokens | 2.0.3 | MIT |
 | convert-source-map | 2.0.0 | MIT |
 | css-tree | 3.2.1 | MIT |
 | css.escape | 1.5.1 | MIT |
@@ -719,23 +777,37 @@
 | data-urls/node_modules/whatwg-mimetype | 5.0.0 | MIT |
 | debug | 4.4.3 | MIT |
 | decimal.js | 10.6.0 | MIT |
+| decode-named-character-reference | 1.3.0 | MIT |
 | dequal | 2.0.3 | MIT |
 | detect-libc | 2.1.2 | Apache-2.0 |
+| devlop | 1.1.0 | MIT |
 | dom-accessibility-api | 0.5.16 | MIT |
 | electron-to-chromium | 1.5.396 | ISC |
 | entities | 8.0.0 | BSD-2-Clause |
 | es-module-lexer | 2.3.1 | MIT |
 | esbuild | 0.27.0 | MIT |
 | escalade | 3.2.0 | MIT |
+| escape-string-regexp | 5.0.0 | MIT |
+| estree-util-is-identifier-name | 3.0.0 | MIT |
 | estree-walker | 3.0.3 | MIT |
 | expect-type | 1.4.0 | Apache-2.0 |
+| extend | 3.0.2 | MIT |
 | fdir | 6.5.0 | MIT |
 | fsevents | 2.3.3 | MIT |
 | gensync | 1.0.0-beta.2 | MIT |
+| hast-util-to-jsx-runtime | 2.3.6 | MIT |
+| hast-util-whitespace | 3.0.0 | MIT |
 | html-encoding-sniffer | 6.0.0 | MIT |
+| html-url-attributes | 3.0.1 | MIT |
 | http-proxy-agent | 7.0.2 | MIT |
 | https-proxy-agent | 7.0.6 | MIT |
 | indent-string | 4.0.0 | MIT |
+| inline-style-parser | 0.2.7 | MIT |
+| is-alphabetical | 2.0.1 | MIT |
+| is-alphanumerical | 2.0.1 | MIT |
+| is-decimal | 2.0.1 | MIT |
+| is-hexadecimal | 2.0.1 | MIT |
+| is-plain-obj | 4.1.0 | MIT |
 | is-potential-custom-element-name | 1.0.1 | MIT |
 | js-tokens | 4.0.0 | MIT |
 | jsdom | 27.4.0 | MIT |
@@ -753,28 +825,81 @@
 | lightningcss-linux-x64-musl | 1.33.0 | MPL-2.0 |
 | lightningcss-win32-arm64-msvc | 1.33.0 | MPL-2.0 |
 | lightningcss-win32-x64-msvc | 1.33.0 | MPL-2.0 |
+| longest-streak | 3.1.0 | MIT |
 | lru-cache | 5.1.1 | ISC |
 | lucide-react | 0.468.0 | ISC |
 | lz-string | 1.5.0 | MIT |
 | magic-string | 0.30.21 | MIT |
+| markdown-table | 3.0.4 | MIT |
+| mdast-util-find-and-replace | 3.0.2 | MIT |
+| mdast-util-from-markdown | 2.0.3 | MIT |
+| mdast-util-gfm | 3.1.0 | MIT |
+| mdast-util-gfm-autolink-literal | 2.0.1 | MIT |
+| mdast-util-gfm-footnote | 2.1.0 | MIT |
+| mdast-util-gfm-strikethrough | 2.0.0 | MIT |
+| mdast-util-gfm-table | 2.0.0 | MIT |
+| mdast-util-gfm-task-list-item | 2.0.0 | MIT |
+| mdast-util-mdx-expression | 2.0.1 | MIT |
+| mdast-util-mdx-jsx | 3.2.0 | MIT |
+| mdast-util-mdxjs-esm | 2.0.1 | MIT |
+| mdast-util-phrasing | 4.1.0 | MIT |
+| mdast-util-to-hast | 13.2.1 | MIT |
+| mdast-util-to-markdown | 2.1.2 | MIT |
+| mdast-util-to-string | 4.0.0 | MIT |
 | mdn-data | 2.27.1 | CC0-1.0 |
+| micromark | 4.0.2 | MIT |
+| micromark-core-commonmark | 2.0.3 | MIT |
+| micromark-extension-gfm | 3.0.0 | MIT |
+| micromark-extension-gfm-autolink-literal | 2.1.0 | MIT |
+| micromark-extension-gfm-footnote | 2.1.0 | MIT |
+| micromark-extension-gfm-strikethrough | 2.1.0 | MIT |
+| micromark-extension-gfm-table | 2.1.1 | MIT |
+| micromark-extension-gfm-tagfilter | 2.0.0 | MIT |
+| micromark-extension-gfm-task-list-item | 2.1.0 | MIT |
+| micromark-factory-destination | 2.0.1 | MIT |
+| micromark-factory-label | 2.0.1 | MIT |
+| micromark-factory-space | 2.0.1 | MIT |
+| micromark-factory-title | 2.0.1 | MIT |
+| micromark-factory-whitespace | 2.0.1 | MIT |
+| micromark-util-character | 2.1.1 | MIT |
+| micromark-util-chunked | 2.0.1 | MIT |
+| micromark-util-classify-character | 2.0.1 | MIT |
+| micromark-util-combine-extensions | 2.0.1 | MIT |
+| micromark-util-decode-numeric-character-reference | 2.0.2 | MIT |
+| micromark-util-decode-string | 2.0.1 | MIT |
+| micromark-util-encode | 2.0.1 | MIT |
+| micromark-util-html-tag-name | 2.0.1 | MIT |
+| micromark-util-normalize-identifier | 2.0.1 | MIT |
+| micromark-util-resolve-all | 2.0.1 | MIT |
+| micromark-util-sanitize-uri | 2.0.1 | MIT |
+| micromark-util-subtokenize | 2.1.0 | MIT |
+| micromark-util-symbol | 2.0.1 | MIT |
+| micromark-util-types | 2.0.2 | MIT |
 | min-indent | 1.0.1 | MIT |
 | ms | 2.1.3 | MIT |
 | nanoid | 3.3.16 | MIT |
 | node-releases | 2.0.51 | MIT |
 | obug | 2.1.4 | MIT |
+| parse-entities | 4.0.2 | MIT |
+| parse-entities/node_modules/@types/unist | 2.0.11 | MIT |
 | parse5 | 8.0.1 | MIT |
 | pathe | 2.0.3 | MIT |
 | picocolors | 1.1.1 | ISC |
 | picomatch | 4.0.5 | MIT |
 | postcss | 8.5.22 | MIT |
 | pretty-format | 27.5.1 | MIT |
+| property-information | 7.2.0 | MIT |
 | punycode | 2.3.1 | MIT |
 | react | 19.2.8 | MIT |
 | react-dom | 19.2.8 | MIT |
 | react-is | 17.0.2 | MIT |
+| react-markdown | 10.1.0 | MIT |
 | react-refresh | 0.18.0 | MIT |
 | redent | 3.0.0 | MIT |
+| remark-gfm | 4.0.1 | MIT |
+| remark-parse | 11.0.0 | MIT |
+| remark-rehype | 11.1.2 | MIT |
+| remark-stringify | 11.0.0 | MIT |
 | require-from-string | 2.0.2 | MIT |
 | rolldown | 1.1.5 | MIT |
 | rolldown/node_modules/@rolldown/pluginutils | 1.0.1 | MIT |
@@ -783,9 +908,13 @@
 | semver | 6.3.1 | ISC |
 | siginfo | 2.0.0 | ISC |
 | source-map-js | 1.2.1 | BSD-3-Clause |
+| space-separated-tokens | 2.0.2 | MIT |
 | stackback | 0.0.2 | MIT |
 | std-env | 4.2.0 | MIT |
+| stringify-entities | 4.0.4 | MIT |
 | strip-indent | 3.0.0 | MIT |
+| style-to-js | 1.1.21 | MIT |
+| style-to-object | 1.0.14 | MIT |
 | symbol-tree | 3.2.4 | MIT |
 | tinybench | 2.9.0 | MIT |
 | tinyexec | 1.2.4 | MIT |
@@ -795,9 +924,19 @@
 | tldts-core | 7.4.9 | MIT |
 | tough-cookie | 6.0.2 | BSD-3-Clause |
 | tr46 | 6.0.0 | MIT |
+| trim-lines | 3.0.1 | MIT |
+| trough | 2.2.0 | MIT |
 | tslib | 2.8.1 | 0BSD |
 | typescript | 5.9.3 | Apache-2.0 |
+| unified | 11.0.5 | MIT |
+| unist-util-is | 6.0.1 | MIT |
+| unist-util-position | 5.0.0 | MIT |
+| unist-util-stringify-position | 4.0.0 | MIT |
+| unist-util-visit | 5.1.0 | MIT |
+| unist-util-visit-parents | 6.0.2 | MIT |
 | update-browserslist-db | 1.2.3 | MIT |
+| vfile | 6.0.3 | MIT |
+| vfile-message | 4.0.3 | MIT |
 | vite | 8.1.5 | MIT |
 | vitest | 4.1.10 | MIT |
 | w3c-xmlserializer | 5.0.0 | MIT |
@@ -809,3 +948,4 @@
 | xml-name-validator | 5.0.0 | Apache-2.0 |
 | xmlchars | 2.2.0 | MIT |
 | yallist | 3.1.1 | ISC |
+| zwitch | 2.0.4 | MIT |

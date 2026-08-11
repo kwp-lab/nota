@@ -2,7 +2,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api } from "./api";
-import type { RecordingItem, RecordingSnapshot, TranscriptDocument } from "./types";
+import type {
+  AudioImportBatchSnapshot,
+  RecordingItem,
+  RecordingSnapshot,
+  TranscriptDocument,
+} from "./types";
 
 const dialogMocks = vi.hoisted(() => ({
   open: vi.fn(async () => null as string | string[] | null),
@@ -54,6 +59,10 @@ const testState = vi.hoisted(() => ({
   snapshotListener: null as
     | ((snapshot: RecordingSnapshot) => void)
     | null,
+  audioImport: null as AudioImportBatchSnapshot | null,
+  audioImportListener: null as
+    | ((snapshot: AudioImportBatchSnapshot) => void)
+    | null,
 }));
 
 vi.mock("./api", () => ({
@@ -81,6 +90,33 @@ vi.mock("./api", () => ({
     getSnapshot: vi.fn(async () => testState.snapshot),
     listRecordings: vi.fn(async () => testState.recordings),
     listRecoverable: vi.fn(async () => testState.recoverable),
+    getAudioImportSnapshot: vi.fn(async () => testState.audioImport),
+    startAudioImport: vi.fn(async (paths: string[]) => {
+      testState.audioImport = {
+        id: "import-batch",
+        status: "running" as const,
+        currentIndex: 0,
+        total: paths.length,
+        completed: 0,
+        failed: 0,
+        skipped: 0,
+        items: paths.map((path, index) => ({
+          id: `import-item-${index}`,
+          fileName: path.split("\\").at(-1) ?? path,
+          status: "queued" as const,
+          progressCurrentMs: 0,
+          progressTotalMs: 0,
+          errorMessage: null,
+          recordingId: null,
+        })),
+      };
+      return testState.audioImport;
+    }),
+    cancelAudioImport: vi.fn(async () => {
+      if (!testState.audioImport) throw new Error("没有导入任务");
+      testState.audioImport = { ...testState.audioImport, status: "cancelled" };
+      return testState.audioImport;
+    }),
     prepareRecordingPlayback: vi.fn(async (id: string) => {
       const recording = testState.recordings.find((item) => item.id === id);
       if (!recording) throw new Error("录音不存在");
@@ -137,6 +173,12 @@ vi.mock("./api", () => ({
     ),
     onLevels: vi.fn(async () => () => undefined),
     onAsrStatus: vi.fn(async () => () => undefined),
+    onAudioImportStatus: vi.fn(
+      async (handler: (snapshot: AudioImportBatchSnapshot) => void) => {
+        testState.audioImportListener = handler;
+        return () => undefined;
+      },
+    ),
     saveSettings: vi.fn(async () => undefined),
     startRecording: vi.fn(async () => snapshot("recording")),
     pauseRecording: vi.fn(async () => snapshot("paused")),
@@ -241,6 +283,8 @@ describe("Nota UI states", () => {
     ];
     testState.requestStart = null;
     testState.snapshotListener = null;
+    testState.audioImport = null;
+    testState.audioImportListener = null;
     dialogMocks.open.mockResolvedValue(null);
     dialogMocks.save.mockResolvedValue(null);
     vi.clearAllMocks();
@@ -523,6 +567,43 @@ describe("Nota UI states", () => {
     expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
   });
 
+  it("selects supported phone recordings and starts a visible import batch", async () => {
+    dialogMocks.open.mockResolvedValue([
+      "C:\\Phone\\meeting.m4a",
+      "C:\\Phone\\interview.mp3",
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "导入录音" })[0]);
+
+    await waitFor(() => expect(api.startAudioImport).toHaveBeenCalledWith([
+      "C:\\Phone\\meeting.m4a",
+      "C:\\Phone\\interview.mp3",
+    ]));
+    expect(dialogMocks.open).toHaveBeenCalledWith({
+      directory: false,
+      multiple: true,
+      filters: [{
+        name: "会议录音",
+        extensions: ["mp3", "m4a", "wav", "flac"],
+      }],
+    });
+    expect(await screen.findByText("准备导入 2 个文件")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "音频导入进度" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "录音" }));
+    expect(screen.getByRole("button", { name: "开始录音" })).toBeDisabled();
+  });
+
+  it("disables audio import while a recording is active", async () => {
+    testState.snapshot = snapshot("recording");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    for (const button of screen.getAllByRole("button", { name: "导入录音" })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
   it("clears the details selection and confirms success after permanent deletion", async () => {
     testState.recordings = [
       {
@@ -533,6 +614,10 @@ describe("Nota UI states", () => {
         durationMs: 60_000,
         sizeBytes: 1024,
         recovered: false,
+        origin: "captured",
+        sourceFileName: null,
+        sourceFormat: null,
+        importedAt: null,
         transcription: null,
       },
       {
@@ -543,6 +628,10 @@ describe("Nota UI states", () => {
         durationMs: 60_000,
         sizeBytes: 1024,
         recovered: false,
+        origin: "captured",
+        sourceFileName: null,
+        sourceFormat: null,
+        importedAt: null,
         transcription: null,
       },
     ];
@@ -564,6 +653,32 @@ describe("Nota UI states", () => {
     expect(screen.queryByRole("heading", { name: "下一条录音" })).not.toBeInTheDocument();
     expect(screen.getByText("下一条录音")).toBeInTheDocument();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("clarifies that deleting an imported recording preserves its source file", async () => {
+    testState.recordings = [{
+      id: "imported-recording",
+      title: "手机会议",
+      path: "C:\\Recordings\\phone-meeting.ogg",
+      createdAt: "2026-08-11T01:00:00Z",
+      durationMs: 60_000,
+      sizeBytes: 1024,
+      recovered: false,
+      origin: "imported",
+      sourceFileName: "phone-meeting.m4a",
+      sourceFormat: "M4A",
+      importedAt: "2026-08-11T02:00:00Z",
+      transcription: null,
+    }];
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    expect(await screen.findByText("原文件：phone-meeting.m4a")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多录音操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "永久删除" }));
+
+    expect(await screen.findByRole("dialog", { name: "永久删除录音" })).toHaveTextContent(
+      "Nota 管理的音频副本将被永久删除，最初选择的文件不受影响。",
+    );
   });
 
   it("offers an open-folder action after exporting a transcript", async () => {
@@ -591,6 +706,10 @@ describe("Nota UI states", () => {
         durationMs: 60_000,
         sizeBytes: 1024,
         recovered: false,
+        origin: "captured",
+        sourceFileName: null,
+        sourceFormat: null,
+        importedAt: null,
         transcription,
       },
     ];

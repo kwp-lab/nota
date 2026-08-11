@@ -22,6 +22,10 @@ const completed: RecordingItem = {
   durationMs: 62_000,
   sizeBytes: 1024 * 1024,
   recovered: false,
+  origin: "captured",
+  sourceFileName: null,
+  sourceFormat: null,
+  importedAt: null,
   transcription: {
     status: "completed",
     completedChunks: 1,
@@ -121,6 +125,9 @@ const renderWorkspace = (
   const actions = {
     onSelect: vi.fn(),
     onReturnToRecorder: vi.fn(),
+    onImportAudio: vi.fn(),
+    onCancelAudioImport: vi.fn(),
+    onDismissAudioImport: vi.fn(),
     onPreparePlayback: vi.fn(async () => completed.path),
     onPlaybackError: vi.fn(),
     onStartTranscription: vi.fn(),
@@ -141,14 +148,15 @@ const renderWorkspace = (
     onPermanentDelete: vi.fn(),
     onAiMessage: vi.fn(),
   };
-  render(
+  const view = (currentItems: RecordingItem[]) => (
     <RecordingsWorkspace
-      items={items}
+      items={currentItems}
       recoverable={[]}
       selectedId={selectedId}
       transcript={document}
       transcriptLoading={false}
       recordingActive={false}
+      audioImport={null}
       hasProvider
       activeProviderKind={activeProviderKind}
       hasVoiceprintProvider={hasVoiceprintProvider}
@@ -156,9 +164,13 @@ const renderWorkspace = (
       activeLlmProviderId={null}
       participants={participants}
       {...actions}
-    />,
+    />
   );
-  return actions;
+  const rendered = render(view(items));
+  return {
+    ...actions,
+    rerenderWorkspace: (nextItems: RecordingItem[]) => rendered.rerender(view(nextItems)),
+  };
 };
 
 afterEach(() => {
@@ -211,6 +223,29 @@ describe("RecordingsWorkspace", () => {
     expect(sticky?.querySelector("audio")).not.toBeNull();
     expect(sticky?.querySelector(".transcript-toolbar")).not.toBeNull();
     expect(sticky?.querySelector(".transcript-body")).toBeNull();
+  });
+
+  it("reloads the player when rename moves the selected recording without changing its id", async () => {
+    const actions = renderWorkspace([completed], completed.id);
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalledTimes(1));
+    const renamed = {
+      ...completed,
+      title: "重命名后的产品周会",
+      path: "C:\\Recordings\\renamed-weekly.ogg",
+    };
+    actions.onPreparePlayback.mockResolvedValueOnce(renamed.path);
+    const audio = document.querySelector("audio")!;
+    vi.spyOn(audio, "pause").mockImplementation(() => undefined);
+    vi.spyOn(audio, "load").mockImplementation(() => undefined);
+
+    actions.rerenderWorkspace([renamed]);
+
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalledTimes(2));
+    expect(actions.onPreparePlayback).toHaveBeenLastCalledWith(completed.id);
+    expect(audio).toHaveAttribute(
+      "src",
+      `asset://${renamed.path}`,
+    );
   });
 
   it("renders confirmed participant names without changing the raw segment", () => {

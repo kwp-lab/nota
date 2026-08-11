@@ -18,6 +18,7 @@ rejected alternatives, and consequences.
 | [0004](0004-clean-voiceprint-sample-selection.md) | Accepted | Enroll voiceprints only from server-filtered clean speaker ranges |
 | [0005](0005-markdown-first-ai-meeting-documents.md) | Accepted | Keep generated Markdown authoritative and append a file for every successful AI version |
 | [0006](0006-fluent-inspired-nota-design-tokens.md) | Accepted | Use Fluent-inspired semantic tokens while keeping Nota's own visual identity |
+| [0007](0007-normalize-imported-audio-to-managed-ogg.md) | Accepted | Normalize imported audio to a Nota-owned Ogg copy with built-in Rust codecs |
 
 ## Lifecycle
 

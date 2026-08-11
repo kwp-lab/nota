@@ -1,11 +1,12 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-09
+- Last updated: 2026-08-11
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
-  `src-tauri/src/voiceprints.rs`, `src-tauri/src/ai.rs`
+  `src-tauri/src/importer.rs`, `src-tauri/src/voiceprints.rs`,
+  `src-tauri/src/ai.rs`
 - Related decisions:
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
   [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md)
@@ -31,8 +32,13 @@ flowchart LR
     E --> F["Recording file"]
     F --> G["SQLite recording index"]
 
+    S["Phone or external audio: MP3, M4A, WAV, FLAC"] --> T["Rust import manager"]
+    T --> U["Built-in decode, mono downmix, 48 kHz resample"]
+    U --> E
+
     H["React UI"] -->|"typed Tauri commands"| I["Rust controller"]
     I --> B
+    I --> T
     I --> J["Storage"]
     I --> K["ASR manager"]
     K -->|"FunASR: original Ogg job"| L["Nota ASR Server"]
@@ -55,6 +61,7 @@ flowchart LR
 | React and TypeScript | Rendering, user intent, typed IPC calls, transient form input | PCM, direct recording files, SQLite, stored credentials, ASR HTTP |
 | Tauri controller | Command boundary, application lifecycle, tray and shortcut integration | Provider-specific transcript normalization |
 | Audio pipeline | Capture scope, clock alignment, AEC, mixing, Opus encoding, recovery | Network access or transcript state |
+| Audio import manager | Local file validation, exact-file deduplication, decode/resample, managed Ogg creation, cancellation, and crash cleanup | Source-file mutation, network access, ASR, or UI rendering |
 | Storage | Settings, recording index, provider snapshots, transcription state and results | Audio capture or HTTP retry policy |
 | ASR manager | Queueing, cancellation, provider protocol selection, retry and result normalization | UI rendering or raw credential disclosure |
 | Voiceprint manager | Timestamp candidate planning, bounded Ogg sampling, clean-range response mapping, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
@@ -70,6 +77,8 @@ flowchart LR
 - A selected application capture failure must be reported; Nota must not
   silently widen capture to all system audio.
 - Only one recording may be active.
+- Recording capture and audio import must not run at the same time.
+- Imported source files are read-only inputs; Nota owns only the normalized Ogg copy.
 - Recording controls and recovery actions must remain idempotent.
 - The original Ogg recording is never replaced by transcription intermediates.
 - A transcript is complete only after its final result is durable in local
@@ -96,7 +105,16 @@ until recording stops. On application startup, locally queued, preparing, or
 transcribing records are marked `interrupted`; the user can explicitly resume
 them.
 
-User cancellation and application shutdown differ:
+The audio import manager owns one sequential, cancellable batch. Recording
+start rejects while import is active, and import start rejects while recording
+is active. ASR and AI work remain independent because import performs only
+local bounded-buffer media conversion. A failed item does not stop later items
+in the batch. Application shutdown cancels and joins the importer before exit;
+startup either completes an already durable file commit or removes an
+uncommitted partial file. Source decoding itself is restarted rather than
+resumed after a crash.
+
+For ASR, user cancellation and application shutdown differ:
 
 - User cancellation requests remote cancellation for FunASR and leaves the
   local job resumable.

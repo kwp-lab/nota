@@ -40,6 +40,7 @@ import type {
   AsrProvider,
   AsrProviderProbeRequest,
   AudioDevice,
+  AudioImportBatchSnapshot,
   CaptureSelection,
   CaptureTarget,
   DeviceSelection,
@@ -127,6 +128,7 @@ export default function App() {
   const [microphoneSwitching, setMicrophoneSwitching] = useState(false);
   const [levels, setLevels] = useState<LevelEvent>({ system: 0, microphone: 0 });
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
+  const [audioImport, setAudioImport] = useState<AudioImportBatchSnapshot | null>(null);
   const [recoverable, setRecoverable] = useState<RecordingItem[]>([]);
   const [providers, setProviders] = useState<AsrProvider[]>([]);
   const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([]);
@@ -147,6 +149,7 @@ export default function App() {
   const refreshTargetsPromiseRef = useRef<Promise<CaptureTarget[]> | null>(null);
   const requestStartRef = useRef<(mode?: StartRequestMode) => void>(() => undefined);
   const lastCompletedSessionRef = useRef<string | null>(null);
+  const lastHandledImportRef = useRef<string | null>(null);
   const selectedRecordingIdRef = useRef<string | null>(null);
   const nextToastIdRef = useRef(1);
   const seenFaultKeysRef = useRef(new Set<string>());
@@ -234,6 +237,47 @@ export default function App() {
     });
   }, []);
 
+  const applyAudioImportSnapshot = useCallback((next: AudioImportBatchSnapshot) => {
+    setAudioImport(next);
+    if (next.status === "running") return;
+    const terminalKey = `${next.id}:${next.status}`;
+    if (lastHandledImportRef.current === terminalKey) return;
+    lastHandledImportRef.current = terminalKey;
+    const firstAvailableId = next.items.find(
+      (item) => ["completed", "skipped"].includes(item.status) && item.recordingId,
+    )?.recordingId;
+    void refreshLibrary()
+      .then(() => {
+        if (firstAvailableId) {
+          setSelectedRecordingId(firstAvailableId);
+          setPage("recordings");
+        }
+        if (next.status === "cancelled") {
+          showToast("info", "音频导入已停止；已完成的录音仍然保留。");
+        } else if (next.failed > 0) {
+          showToast(
+            "warning",
+            `导入完成：成功 ${next.completed}，跳过 ${next.skipped}，失败 ${next.failed}。`,
+            { durationMs: 6_000 },
+          );
+        } else if (next.completed === 0 && next.skipped > 0) {
+          showToast("info", "所选录音已经导入，无需重复添加。");
+        } else {
+          showToast(
+            "success",
+            next.completed === 1
+              ? next.skipped > 0
+                ? `已导入 1 个录音，另有 ${next.skipped} 个重复文件已跳过。`
+                : "录音已导入，可以开始转写。"
+              : next.skipped > 0
+                ? `已导入 ${next.completed} 个录音，另有 ${next.skipped} 个重复文件已跳过。`
+                : `已导入 ${next.completed} 个录音。`,
+          );
+        }
+      })
+      .catch(showError);
+  }, [refreshLibrary, showError, showToast]);
+
   const refreshProviders = useCallback(async () => {
     const next = await api.listAsrProviders();
     setProviders(next);
@@ -305,6 +349,7 @@ export default function App() {
     let unlistenStart: UnlistenFn | undefined;
     let unlistenExit: UnlistenFn | undefined;
     let unlistenAsr: UnlistenFn | undefined;
+    let unlistenImport: UnlistenFn | undefined;
     void Promise.all([
       refreshTargets(),
       refreshDevices(),
@@ -314,8 +359,9 @@ export default function App() {
       api.listAsrProviders(),
       api.listLlmProviders(),
       api.listParticipants(),
+      api.getAudioImportSnapshot(),
     ])
-      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedLlmProviders, savedParticipants]) => {
+      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedLlmProviders, savedParticipants, savedImport]) => {
         if (!mounted) return;
         applyCaptureTargets(targetList);
         setDevices(deviceList);
@@ -332,15 +378,20 @@ export default function App() {
         setProviders(savedProviders);
         setLlmProviders(savedLlmProviders);
         setParticipants(savedParticipants);
+        setAudioImport(savedImport);
+        if (savedImport && savedImport.status !== "running") {
+          lastHandledImportRef.current = `${savedImport.id}:${savedImport.status}`;
+        }
         await refreshLibrary();
         unlistenSnapshot = await api.onSnapshot(applySnapshot);
         unlistenLevels = await api.onLevels(setLevels);
         unlistenStart = await api.onRequestStart((mode) => requestStartRef.current(mode));
         unlistenExit = await api.onRequestExit(() => {
-          if (confirm("录音、语音转写或 AI 文档任务仍在进行。中断任务（录音会先保存）后退出应用？")) {
+          if (confirm("录音、音频导入、语音转写或 AI 文档任务仍在进行。中断任务（录音会先保存）后退出应用？")) {
             void api.quitApplication(true);
           }
         });
+        unlistenImport = await api.onAudioImportStatus(applyAudioImportSnapshot);
         unlistenAsr = await api.onAsrStatus((event) => {
           setRecordings((currentItems) =>
             currentItems.map((item) =>
@@ -362,10 +413,12 @@ export default function App() {
       unlistenStart?.();
       unlistenExit?.();
       unlistenAsr?.();
+      unlistenImport?.();
     };
   }, [
     applyCaptureTargets,
     applySnapshot,
+    applyAudioImportSnapshot,
     refreshDevices,
     refreshLibrary,
     refreshTargets,
@@ -544,6 +597,35 @@ export default function App() {
       const next = { ...settings, outputDirectory: selected };
       await api.saveSettings(next);
       setSettings(next);
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const chooseAudioFiles = async () => {
+    try {
+      const selected = await open({
+        directory: false,
+        multiple: true,
+        filters: [{
+          name: "会议录音",
+          extensions: ["mp3", "m4a", "wav", "flac"],
+        }],
+      });
+      const paths = typeof selected === "string" ? [selected] : selected ?? [];
+      if (paths.length === 0) return;
+      const next = await api.startAudioImport(paths);
+      lastHandledImportRef.current = null;
+      setAudioImport(next);
+      setPage("recordings");
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const cancelAudioImport = async () => {
+    try {
+      setAudioImport(await api.cancelAudioImport());
     } catch (error) {
       showError(error);
     }
@@ -830,6 +912,10 @@ export default function App() {
   const canSwitchLiveMicrophone = ["recording", "paused", "interrupted"].includes(
     snapshot.state,
   );
+  const importActive = audioImport?.status === "running";
+  const recordingDeleteTarget = recordingDeleteRequest
+    ? recordings.find((item) => item.id === recordingDeleteRequest.id) ?? null
+    : null;
 
   return (
     <div className="app-shell">
@@ -1096,13 +1182,18 @@ export default function App() {
               </button>
             </AppTooltip>
             {!isActive(snapshot.state) ? (
-              <button
-                className="record-button"
-                disabled={captureMode === "process" && !targetId}
-                onClick={() => void requestStart(captureMode)}
+              <AppTooltip
+                content={importActive ? "停止或等待音频导入完成后才能开始录音" : ""}
+                wrapDisabled={importActive}
               >
-                <span className="record-dot" />开始录音
-              </button>
+                <button
+                  className="record-button"
+                  disabled={importActive || (captureMode === "process" && !targetId)}
+                  onClick={() => void requestStart(captureMode)}
+                >
+                  <span className="record-dot" />开始录音
+                </button>
+              </AppTooltip>
             ) : (
               <div className="recording-actions">
                 <button
@@ -1135,6 +1226,7 @@ export default function App() {
           transcript={transcript}
           transcriptLoading={transcriptLoading}
           recordingActive={isActive(snapshot.state)}
+          audioImport={audioImport}
           hasProvider={providers.some(
             (provider) => provider.id === settings.activeAsrProviderId,
           )}
@@ -1150,6 +1242,9 @@ export default function App() {
           participants={participants}
           onSelect={setSelectedRecordingId}
           onReturnToRecorder={() => navigateTo("recorder")}
+          onImportAudio={() => void chooseAudioFiles()}
+          onCancelAudioImport={() => void cancelAudioImport()}
+          onDismissAudioImport={() => setAudioImport(null)}
           onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
           onPlaybackError={(message) => showToast("error", message)}
           onStartTranscription={(id, speakerCount) =>
@@ -1296,9 +1391,13 @@ export default function App() {
             <div className="modal-icon"><AlertTriangle size={21} /></div>
             <h3>{recordingDeleteRequest.permanent ? "永久删除这条录音？" : "将这条录音移入回收站？"}</h3>
             <p>
-              {recordingDeleteRequest.permanent
-                ? "录音文件将被永久删除，无法撤销。"
-                : "录音文件将移入 Windows 回收站。"}
+              {recordingDeleteTarget?.origin === "imported"
+                ? recordingDeleteRequest.permanent
+                  ? "Nota 管理的音频副本将被永久删除，最初选择的文件不受影响。"
+                  : "Nota 管理的音频副本将移入 Windows 回收站，最初选择的文件不受影响。"
+                : recordingDeleteRequest.permanent
+                  ? "录音文件将被永久删除，无法撤销。"
+                  : "录音文件将移入 Windows 回收站。"}
             </p>
             <label className="delete-ai-documents-option">
               <input

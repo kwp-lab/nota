@@ -1,10 +1,10 @@
 # Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-09
+- Last updated: 2026-08-11
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
-  `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`,
+  `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`, `src-tauri/src/importer.rs`,
   `src-tauri/src/audio/recovery.rs`
 - Related tests: Rust `storage::tests`, `asr::tests`, and `paths::tests`
 
@@ -12,7 +12,11 @@
 
 | Data | Location | Lifetime |
 |---|---|---|
-| Final Ogg recording | User-selected recording directory | Until the user deletes or moves it |
+| Captured final Ogg recording | User-selected recording directory | Until the user deletes or moves it |
+| Imported source audio | User-selected external path | Never owned or modified by Nota |
+| Imported normalized Ogg copy | User-selected recording directory | Until the user deletes or moves the Nota copy |
+| Audio import partial Ogg | User-selected recording directory, hidden `.nota-import-*.partial.ogg` | One import attempt; removed on failure/cancel or reconciled at startup |
+| Audio import commit journal | Local SQLite `audio_import_jobs` | Until the managed Ogg and recording row are atomically reconciled |
 | Recovery Ogg | Nota recovery directory | Until recovery, discard, or successful finalization |
 | Settings and recording index | Local SQLite | Application lifetime |
 | ASR provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
@@ -37,7 +41,15 @@ SQLite uses WAL mode, foreign keys, and secure deletion.
 ### `recordings`
 
 Owns the durable recording identity, title, path, creation time, duration,
-indexed byte size, and recovery marker.
+indexed byte size, and recovery marker. `origin` distinguishes `captured` and
+`imported` media. Imported rows also retain the original file name, detected
+format, exact-source SHA-256, and import time. The hash remains Rust/SQLite
+metadata and is not exposed to React.
+
+An imported row points to Nota's normalized Ogg copy, never to the external
+source path. Deleting or recycling an imported recording affects only that
+managed copy and its local dependent data. The file originally selected by the
+user remains untouched.
 
 Deleting a recording cascades its local transcription state and legacy chunk
 rows. Moving a file outside Nota can leave an indexed path that is reported as
@@ -148,6 +160,27 @@ work already committed for the current generation.
 FunASR server windows must not be copied into this table; they remain private
 server checkpoints until the meeting-wide result is finalized.
 
+### `audio_import_jobs`
+
+This private journal bridges the filesystem and SQLite commit. It temporarily
+stores the source path, original display metadata, final and partial paths,
+hash, duration, size, and commit phase. React receives only an in-memory typed
+batch snapshot; it never receives this journal or the source hash.
+
+The commit order is:
+
+1. insert a `writing` journal row;
+2. decode to a uniquely named partial Ogg and synchronize it;
+3. persist detected metadata and mark the job `prepared`;
+4. atomically rename the partial file to its final path;
+5. mark the file committed;
+6. transactionally insert the imported `recordings` row and delete the journal.
+
+At startup, a fully prepared partial is renamed and committed, an already
+renamed final file is indexed, and any earlier incomplete partial and journal
+are removed. This prevents orphaned visible recordings and database rows that
+point to incomplete media.
+
 ## FunASR Lifecycle
 
 ```mermaid
@@ -221,6 +254,11 @@ columns are added at database open:
 Existing rows default to `legacy_chunks` so previously completed or resumable
 work preserves its original semantics; their speaker count remains null. A migration must not reinterpret old
 independent chunks as a meeting-wide speaker scope.
+
+Audio-import migration is additive. Existing `recordings` rows receive
+`origin = 'captured'` and nullable source metadata. New databases create the
+import journal and an imported-source-hash uniqueness constraint. No existing
+recording is reclassified or re-encoded.
 
 Rust and TypeScript serialization names are part of the Tauri IPC contract.
 Changing a field requires updating both sides and adding migration or default

@@ -13,6 +13,7 @@ import type {
   AsrModel,
   AsrProvider,
   AsrProviderProbeRequest,
+  AudioImportBatchSnapshot,
   AudioDevice,
   CaptureSelection,
   CaptureTarget,
@@ -64,6 +65,12 @@ export const api = {
   setMicrophoneEnabled: (microphone: DeviceSelection | null) =>
     invoke<RecordingSnapshot>("set_microphone_enabled", { microphone }),
   listRecordings: () => invoke<RecordingItem[]>("list_recordings"),
+  startAudioImport: (paths: string[]) =>
+    invoke<AudioImportBatchSnapshot>("start_audio_import", { paths }),
+  getAudioImportSnapshot: () =>
+    invoke<AudioImportBatchSnapshot | null>("get_audio_import_snapshot"),
+  cancelAudioImport: () =>
+    invoke<AudioImportBatchSnapshot>("cancel_audio_import"),
   prepareRecordingPlayback: (id: string) =>
     invoke<string>("prepare_recording_playback", { id }),
   listRecoverable: () => invoke<RecordingItem[]>("list_recoverable_recordings"),
@@ -216,6 +223,10 @@ export const api = {
     ),
   onAiStatus: (handler: (event: AiGenerationEvent) => void) =>
     listen<AiGenerationEvent>("ai://status", (event) =>
+      handler(event.payload),
+    ),
+  onAudioImportStatus: (handler: (snapshot: AudioImportBatchSnapshot) => void) =>
+    listen<AudioImportBatchSnapshot>("audio-import://status", (event) =>
       handler(event.payload),
     ),
 };

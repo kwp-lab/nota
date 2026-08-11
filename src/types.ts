@@ -81,7 +81,44 @@ export interface RecordingItem {
   durationMs: number;
   sizeBytes: number;
   recovered: boolean;
+  origin: "captured" | "imported";
+  sourceFileName: string | null;
+  sourceFormat: string | null;
+  importedAt: string | null;
   transcription?: TranscriptionSummary | null;
+}
+
+export type AudioImportBatchStatus = "running" | "completed" | "cancelled";
+
+export type AudioImportItemStatus =
+  | "queued"
+  | "probing"
+  | "decoding"
+  | "finalizing"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+export interface AudioImportItemSnapshot {
+  id: string;
+  fileName: string;
+  status: AudioImportItemStatus;
+  progressCurrentMs: number;
+  progressTotalMs: number;
+  errorMessage: string | null;
+  recordingId: string | null;
+}
+
+export interface AudioImportBatchSnapshot {
+  id: string;
+  status: AudioImportBatchStatus;
+  currentIndex: number;
+  total: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  items: AudioImportItemSnapshot[];
 }
 
 export interface LevelEvent {

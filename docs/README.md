@@ -14,19 +14,21 @@ that are intentionally too detailed for the project README.
    boundaries, concurrency, and system-wide invariants.
 2. [`asr-integration.md`](asr-integration.md) — FunASR whole-meeting jobs,
    OpenAI-compatible legacy chunks, state mapping, and recovery rules.
-3. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
+3. [`audio-import.md`](audio-import.md) — local phone-recording import,
+   normalization, task state, duplicate handling, and crash cleanup.
+4. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
    templates, versions, providers, and relinking.
-4. [`design-system.md`](design-system.md) — product visual language, design
+5. [`design-system.md`](design-system.md) — product visual language, design
    tokens, typography, color, spacing, and component styling rules.
-5. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
+6. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
    migrations, retention, and deletion ordering.
-6. [`testing.md`](testing.md) — automated checks and hardware acceptance
+7. [`testing.md`](testing.md) — automated checks and hardware acceptance
    scenarios.
-7. [`decisions/README.md`](decisions/README.md) — architectural decision
+8. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-8. [`speaker-identification.md`](speaker-identification.md) — local
+9. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
-9. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+10. [`releasing.md`](releasing.md) — version, tag, package, and release process.
 
 ## Sources of Truth
 
@@ -54,6 +56,7 @@ uses that contract and what it promises locally.
 | Component boundary or invariant | `architecture.md` |
 | ASR request, state, retry, or compatibility behavior | `asr-integration.md` |
 | SQLite fields, migration, retention, or deletion ordering | `data-lifecycle.md` |
+| Audio import formats, normalization, task state, or recovery | `audio-import.md` |
 | New test requirement or supported environment | `testing.md` |
 | Visual token, shared component styling, or durable interaction treatment | `design-system.md` |
 | Long-lived architectural choice or reversed decision | New ADR |
