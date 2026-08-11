@@ -16,6 +16,7 @@ import type {
   SpeakerIdentificationAssignment,
   SpeakerIdentificationSession,
 } from "../types";
+import { AppTooltip } from "./AppTooltip";
 
 export interface SpeakerUtterance {
   startMs: number;
@@ -277,16 +278,17 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               待确认 {Math.max(0, props.speakers.length - confirmedCount)} 位。
             </p>
           </div>
-          <button
-            className="icon-button speaker-modal-close"
-            type="button"
-            aria-label="关闭管理说话人"
-            title="关闭"
-            disabled={props.saving}
-            onClick={props.onCancel}
-          >
-            <X size={19} />
-          </button>
+          <AppTooltip content={props.saving ? "正在保存，暂时无法关闭" : "关闭"} wrapDisabled={props.saving}>
+            <button
+              className="icon-button speaker-modal-close"
+              type="button"
+              aria-label="关闭管理说话人"
+              disabled={props.saving}
+              onClick={props.onCancel}
+            >
+              <X size={19} />
+            </button>
+          </AppTooltip>
         </header>
 
         <div className={`speaker-analysis-banner status-${props.analysisStatus}`}>

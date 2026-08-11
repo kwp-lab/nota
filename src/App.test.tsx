@@ -75,6 +75,8 @@ vi.mock("./api", () => ({
       activeAsrProviderId: testState.activeAsrProviderId,
       voiceprintProviderId: testState.voiceprintProviderId,
       autoTranscribe: testState.autoTranscribe,
+      aiDocumentsDirectory: "C:\\Users\\tester\\Documents\\Nota\\AI Documents",
+      activeLlmProviderId: null,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
     listRecordings: vi.fn(async () => testState.recordings),
@@ -91,6 +93,41 @@ vi.mock("./api", () => ({
     exportTranscript: vi.fn(async () => undefined),
     revealTranscriptExport: vi.fn(async () => undefined),
     listAsrProviders: vi.fn(async () => testState.providers),
+    listLlmProviders: vi.fn(async () => []),
+    saveLlmProvider: vi.fn(async () => undefined),
+    deleteLlmProvider: vi.fn(async () => undefined),
+    testLlmProvider: vi.fn(async () => ({
+      reachable: true,
+      message: "服务可用",
+      models: [],
+    })),
+    listLlmModels: vi.fn(async () => []),
+    listAiTemplates: vi.fn(async () => []),
+    saveAiTemplate: vi.fn(async () => undefined),
+    cloneAiTemplate: vi.fn(async () => undefined),
+    archiveAiTemplate: vi.fn(async () => undefined),
+    getAiWorkspace: vi.fn(async () => ({
+      profile: null,
+      documents: [],
+      templates: [],
+      activeGeneration: null,
+    })),
+    estimateAiGenerationTokens: vi.fn(async () => 100),
+    listAiDocumentVersions: vi.fn(async () => []),
+    readAiDocumentVersion: vi.fn(async () => ({
+      version: null,
+      markdown: "",
+      fileState: "missing" as const,
+    })),
+    generateAiDocument: vi.fn(async () => undefined),
+    cancelAiGeneration: vi.fn(async () => undefined),
+    updateAiMeetingContext: vi.fn(async () => undefined),
+    relinkAiDocumentVersion: vi.fn(async () => undefined),
+    findMovedAiDocumentVersion: vi.fn(async () => null),
+    copyAiDocument: vi.fn(async () => undefined),
+    openAiDocument: vi.fn(async () => undefined),
+    revealAiDocument: vi.fn(async () => undefined),
+    onAiStatus: vi.fn(async () => () => undefined),
     listParticipants: vi.fn(async () => []),
     onSnapshot: vi.fn(
       async (handler: (snapshot: RecordingSnapshot) => void) => {
@@ -509,17 +546,18 @@ describe("Nota UI states", () => {
         transcription: null,
       },
     ];
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
     expect(await screen.findByRole("heading", { name: "待删除录音" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多录音操作" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "永久删除" }));
+    expect(await screen.findByRole("dialog", { name: "永久删除录音" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /同时删除关联的 AI Markdown 文件/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
     await waitFor(() =>
-      expect(vi.mocked(api.deleteRecording)).toHaveBeenCalledWith("first-recording", true),
+      expect(vi.mocked(api.deleteRecording)).toHaveBeenCalledWith("first-recording", true, false),
     );
     expect(await screen.findByRole("status")).toHaveTextContent("录音已永久删除");
     expect(screen.getByRole("heading", { name: "选择一条录音" })).toBeInTheDocument();

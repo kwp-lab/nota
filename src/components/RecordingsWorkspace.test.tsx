@@ -139,6 +139,7 @@ const renderWorkspace = (
     onDiscardRecovery: vi.fn(),
     onRename: vi.fn(),
     onPermanentDelete: vi.fn(),
+    onAiMessage: vi.fn(),
   };
   render(
     <RecordingsWorkspace
@@ -151,6 +152,8 @@ const renderWorkspace = (
       hasProvider
       activeProviderKind={activeProviderKind}
       hasVoiceprintProvider={hasVoiceprintProvider}
+      llmProviders={[]}
+      activeLlmProviderId={null}
       participants={participants}
       {...actions}
     />,
@@ -558,7 +561,7 @@ describe("RecordingsWorkspace", () => {
 
   it("uses the same controlled menu in details and closes it before deletion", () => {
     const actions = renderWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多录音操作" }));
 
     const menu = screen.getByRole("menu", { name: "产品周会 操作" });
     expect(within(menu).queryByRole("menuitem", { name: "打开所在文件夹" })).not.toBeInTheDocument();

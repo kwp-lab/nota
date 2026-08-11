@@ -1,5 +1,6 @@
 import { AlertTriangle, Users } from "lucide-react";
 import { useState } from "react";
+import { AppTooltip } from "./AppTooltip";
 
 interface TranscriptionOptionsModalProps {
   recordingTitle: string;
@@ -28,7 +29,9 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
             <h2 id="transcription-options-title">
               {props.retranscription ? "重新转写" : "开始转写"}
             </h2>
-            <p title={props.recordingTitle}>{props.recordingTitle}</p>
+            <AppTooltip content={props.recordingTitle} side="bottom" align="start">
+              <p>{props.recordingTitle}</p>
+            </AppTooltip>
           </div>
           <Users size={26} />
         </header>

@@ -60,6 +60,7 @@ Nota gives Windows one focused recording workflow:
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
+| **Shareable AI documents** | Turn a completed transcript into versioned Markdown summaries or action lists with a user-configured OpenAI or OpenAI-compatible LLM. |
 | **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
 | **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
 | **Meeting-end reminder** | When the selected meeting window or application target disappears, Nota asks whether to continue or stop and save instead of ending the recording automatically—even if the meeting engine remains resident for warm-up. |
@@ -131,6 +132,17 @@ Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then
 
 Completed transcripts can be copied or exported as UTF-8 TXT. When the provider returns speaker labels, both outputs use one `speaker_N：transcribed text` line per segment, replacing `speaker_N` with a locally confirmed participant name when available; otherwise Nota preserves the provider's plain transcript.
 
+### Optional AI meeting documents
+
+Open **Settings → AI documents** to configure either a Responses API service
+(OpenAI's official URL is only the default and can be replaced) or an
+OpenAI-compatible Chat Completions service. A completed transcript then gains
+an **AI documents** tab with built-in meeting-summary, action-item, speaker-
+summary, and speaker stand-up templates. Each successful generation creates a
+new Markdown file under `Documents\Nota\AI Documents`; regeneration never
+overwrites an earlier version, and intentional edits made in an external editor
+remain the document content Nota previews and revises.
+
 Speaker identification is an independent, user-triggered action. Select a
 compatible Nota ASR Server in **Voiceprints**, then use **Identify speakers**
 from a completed recording. Nota sends only bounded voice samples for
@@ -184,7 +196,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings, the recor
 - Simplified Chinese interface in the current preview
 - Browser capture cannot be restricted to one tab
 - One mixed output file; no separate microphone/system tracks
-- No video, summaries, translation, transcript editing, or real-time streaming transcription
+- No video, translation, transcript editing, real-time streaming transcription, autonomous agents, or cross-meeting AI retrieval
 - Speaker identification requires provider-supplied diarization labels and a compatible Nota ASR Server; suggestions remain probabilistic until the user confirms them
 - Transcription requires a user-configured FunASR or OpenAI-compatible service
 - Echo-cancellation quality depends on the microphone, speakers, room, and device mode
@@ -197,7 +209,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings, the recor
 - [ ] Expand the tested device and meeting-client matrix
 - [ ] Add an English interface and improve accessibility
 - [ ] Add Windows on ARM64 support
-- [ ] Add summaries and optional transcript editing
+- [ ] Add optional transcript editing
 
 The roadmap intentionally stays focused on reliable local recording. Feature proposals are welcome in [Issues](../../issues).
 

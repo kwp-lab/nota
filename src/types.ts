@@ -96,6 +96,7 @@ export interface MeetingEndPrompt {
 
 export interface AppSettings {
   outputDirectory: string;
+  aiDocumentsDirectory: string;
   aecMode: AecMode;
   microphoneEnabled: boolean;
   firstRunComplete: boolean;
@@ -105,6 +106,7 @@ export interface AppSettings {
   activeAsrProviderId: string | null;
   voiceprintProviderId: string | null;
   autoTranscribe: boolean;
+  activeLlmProviderId: string | null;
 }
 
 export type AsrProviderKind = "funAsr" | "openAiCompatible";
@@ -154,6 +156,52 @@ export interface AsrConnectionTest {
   message: string;
   models: AsrModel[];
   device: string | null;
+}
+
+export type LlmProviderKind = "openAi" | "openAiCompatible";
+
+export interface LlmProvider {
+  id: string;
+  name: string;
+  kind: LlmProviderKind;
+  baseUrl: string;
+  modelId: string;
+  inputTokenBudget: number;
+  maxOutputTokens: number;
+  hasApiKey: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveLlmProviderRequest {
+  id: string | null;
+  name: string;
+  kind: LlmProviderKind;
+  baseUrl: string;
+  modelId: string;
+  inputTokenBudget: number;
+  maxOutputTokens: number;
+  apiKey: AsrApiKeyUpdate;
+}
+
+export interface LlmProviderProbeRequest {
+  id: string | null;
+  kind: LlmProviderKind;
+  baseUrl: string;
+  modelId: string;
+  inputTokenBudget: number;
+  maxOutputTokens: number;
+  apiKey: AsrApiKeyUpdate;
+}
+
+export interface LlmModel {
+  id: string;
+  ownedBy: string | null;
+}
+
+export interface LlmConnectionTest {
+  reachable: boolean;
+  message: string;
 }
 
 export type TranscriptionStatus =
@@ -274,4 +322,111 @@ export interface SpeakerIdentificationAssignment {
 export interface TranscriptionEvent {
   recordingId: string;
   summary: TranscriptionSummary;
+}
+
+export interface AiTemplate {
+  id: string;
+  name: string;
+  description: string;
+  builtinKey: string | null;
+  taskInstructions: string;
+  outputRequirements: string;
+  requiresSpeakerLabels: boolean;
+  revision: number;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveAiTemplateRequest {
+  id: string | null;
+  name: string;
+  description: string;
+  taskInstructions: string;
+  outputRequirements: string;
+  requiresSpeakerLabels: boolean;
+}
+
+export interface AiMeetingProfile {
+  recordingId: string;
+  workspacePath: string;
+  meetingContext: string;
+  updatedAt: string;
+}
+
+export type AiGenerationMode = "create" | "regenerate" | "revise";
+export type AiGenerationStatus =
+  | "queued"
+  | "generating"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export type AiFileState = "pending" | "ready" | "modified" | "missing";
+
+export interface AiDocumentVersion {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  mode: AiGenerationMode;
+  parentVersionId: string | null;
+  status: AiGenerationStatus;
+  filePath: string | null;
+  fileState: AiFileState;
+  providerName: string;
+  providerKind: LlmProviderKind;
+  modelId: string;
+  templateName: string;
+  templateRevision: number;
+  transcriptionGeneration: number;
+  estimatedInputTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AiDocument {
+  id: string;
+  recordingId: string;
+  templateId: string;
+  title: string;
+  requirements: string;
+  templateName: string;
+  templateBuiltinKey: string | null;
+  latestVersion: AiDocumentVersion | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiWorkspace {
+  profile: AiMeetingProfile;
+  documents: AiDocument[];
+  templates: AiTemplate[];
+}
+
+export interface AiGenerationRequest {
+  recordingId: string;
+  mode: AiGenerationMode;
+  documentId: string | null;
+  templateId: string | null;
+  title: string | null;
+  meetingContext: string;
+  documentRequirements: string;
+  runRequest: string;
+  providerId: string | null;
+  modelId: string | null;
+  sourceVersionId: string | null;
+}
+
+export interface AiDocumentContent {
+  version: AiDocumentVersion;
+  markdown: string;
+}
+
+export interface AiGenerationEvent {
+  recordingId: string;
+  documentId: string;
+  version: AiDocumentVersion;
 }

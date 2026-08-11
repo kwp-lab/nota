@@ -1,13 +1,14 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-08
+- Last updated: 2026-08-09
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
-  `src-tauri/src/voiceprints.rs`
+  `src-tauri/src/voiceprints.rs`, `src-tauri/src/ai.rs`
 - Related decisions:
-  [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md)
+  [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
+  [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md)
 
 ## Purpose
 
@@ -42,6 +43,9 @@ flowchart LR
     N -->|"bounded anonymous samples"| L
     N --> O["Local participants and embeddings"]
     O --> J
+    J --> P["AI document manager"]
+    P -->|"explicit generation only"| Q["Configured LLM provider"]
+    P --> R["New versioned Markdown file"]
 ```
 
 ## Component Ownership
@@ -54,7 +58,9 @@ flowchart LR
 | Storage | Settings, recording index, provider snapshots, transcription state and results | Audio capture or HTTP retry policy |
 | ASR manager | Queueing, cancellation, provider protocol selection, retry and result normalization | UI rendering or raw credential disclosure |
 | Voiceprint manager | Timestamp candidate planning, bounded Ogg sampling, clean-range response mapping, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
+| AI document manager | Prompt assembly, LLM requests, cancellation, version lifecycle, atomic Markdown creation, and relinking | Automatic generation, transcript mutation, or in-place overwrite of generated files |
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
+| Configured LLM provider | Explicitly requested text generation | Local Markdown, SQLite, or recording ownership |
 
 ## Non-Negotiable Invariants
 
@@ -73,6 +79,10 @@ flowchart LR
 - Rust and TypeScript IPC models must change together.
 - Raw transcript speaker labels remain immutable; confirmed real names are
   resolved from generation-scoped local assignments.
+- AI generation must be explicit and must not modify the transcript or a
+  previously generated Markdown version.
+- Generated Markdown is authoritative content; SQLite stores its association
+  and version ledger rather than a duplicate body.
 
 ## Concurrency and Lifecycle
 
@@ -92,6 +102,13 @@ User cancellation and application shutdown differ:
   local job resumable.
 - Application shutdown interrupts local work without intentionally cancelling
   the remote FunASR job. A later resume can recover server progress.
+
+The AI document manager has a separate single background worker. It serializes
+LLM jobs, rejects concurrent work for the same document, and marks locally
+queued or generating versions `interrupted` on application startup. AI versions
+are not resumed implicitly because a retry must append a new Markdown version.
+Cancellation is checked before request dispatch and again before the new file
+is committed.
 
 ## Meeting-target Exit Reminder
 
@@ -200,9 +217,19 @@ The local SQLite database and recording directory contain private meeting data.
 Configured ASR providers are external trust boundaries even when they run on
 localhost or the LAN.
 
+Configured LLM providers are a separate external trust boundary. Only an
+explicit generation action sends the current transcript, supplied context, and
+for `revise` the selected Markdown body. Provider connection tests never send
+meeting content. OpenAI requests set `store: false`, but the interface must not
+describe that flag as a zero-retention guarantee.
+
 Provider responses are normalized into Nota-owned types before reaching the
 frontend. Technical logs may include opaque recording identifiers and state
 names, but never credentials, audio, or transcript text.
+
+LLM responses are also normalized in Rust. Technical logs must not contain the
+assembled prompt or generated body. React previews Markdown without raw HTML
+and does not automatically load remote images.
 
 ## Change Impact
 

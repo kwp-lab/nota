@@ -22,8 +22,15 @@ import type {
   AsrProvider,
   AsrProviderKind,
   AsrProviderProbeRequest,
+  LlmConnectionTest,
+  LlmModel,
+  LlmProvider,
+  LlmProviderProbeRequest,
+  SaveLlmProviderRequest,
   SaveAsrProviderRequest,
 } from "../types";
+import { AiSettingsSection } from "./AiSettingsSection";
+import { AppTooltip } from "./AppTooltip";
 
 interface SettingsWorkspaceProps {
   firstRun: boolean;
@@ -31,15 +38,21 @@ interface SettingsWorkspaceProps {
   recordingActive: boolean;
   settings: AppSettings;
   providers: AsrProvider[];
+  llmProviders: LlmProvider[];
   microphoneCount: number;
   appVersion: string;
   onChange: (settings: AppSettings) => void;
   onChooseOutput: () => void;
+  onChooseAiDocuments: () => void;
   onOpenMicrophoneSettings: () => void;
   onSaveProvider: (request: SaveAsrProviderRequest) => Promise<AsrProvider>;
   onDeleteProvider: (id: string) => Promise<void>;
   onTestProvider: (request: AsrProviderProbeRequest) => Promise<AsrConnectionTest>;
   onListModels: (request: AsrProviderProbeRequest) => Promise<AsrModel[]>;
+  onSaveLlmProvider: (request: SaveLlmProviderRequest) => Promise<LlmProvider>;
+  onDeleteLlmProvider: (id: string) => Promise<void>;
+  onTestLlmProvider: (request: LlmProviderProbeRequest) => Promise<LlmConnectionTest>;
+  onListLlmModels: (request: LlmProviderProbeRequest) => Promise<LlmModel[]>;
   onDiscardChanges: () => void;
   onSave: () => void;
   onSkipFirstRun: () => void;
@@ -328,6 +341,17 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
         </label>
       </div>
 
+      <AiSettingsSection
+        settings={props.settings}
+        providers={props.llmProviders}
+        onChange={props.onChange}
+        onChooseDirectory={props.onChooseAiDocuments}
+        onSaveProvider={props.onSaveLlmProvider}
+        onDeleteProvider={props.onDeleteLlmProvider}
+        onTestProvider={props.onTestLlmProvider}
+        onListModels={props.onListLlmModels}
+      />
+
       <div className="settings-group">
         <div className="settings-heading">
           <Folder size={17} />
@@ -413,14 +437,16 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
           <div className="provider-editor">
             <div className="provider-editor-title">
               <strong>{editing.id ? "编辑服务" : "添加服务"}</strong>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="关闭服务编辑"
-                onClick={() => setEditing(null)}
-              >
-                <X size={15} />
-              </button>
+              <AppTooltip content="关闭">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="关闭服务编辑"
+                  onClick={() => setEditing(null)}
+                >
+                  <X size={15} />
+                </button>
+              </AppTooltip>
             </div>
             <div className="provider-form">
               <label>
