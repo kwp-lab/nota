@@ -893,6 +893,7 @@
 | react | 19.2.8 | MIT |
 | react-dom | 19.2.8 | MIT |
 | react-is | 17.0.2 | MIT |
+| react-json-view-lite | 2.5.0 | MIT |
 | react-markdown | 10.1.0 | MIT |
 | react-refresh | 0.18.0 | MIT |
 | redent | 3.0.0 | MIT |

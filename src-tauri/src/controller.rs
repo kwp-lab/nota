@@ -1727,6 +1727,17 @@ fn copy_ai_request_body(request_body: String) -> std::result::Result<(), String>
 }
 
 #[tauri::command]
+fn copy_ai_generation_json(json: String) -> std::result::Result<(), String> {
+    command_result((|| {
+        if json.trim().is_empty() {
+            bail!("当前没有可复制的生成详情 JSON");
+        }
+        arboard::Clipboard::new()?.set_text(json)?;
+        Ok(())
+    })())
+}
+
+#[tauri::command]
 fn list_ai_document_versions(
     state: State<AppState>,
     document_id: String,
@@ -1757,6 +1768,14 @@ fn read_ai_document_version(
     version_id: String,
 ) -> std::result::Result<AiDocumentContent, String> {
     command_result(read_document_content(&state.storage, &version_id))
+}
+
+#[tauri::command]
+fn read_ai_generation_details(
+    state: State<AppState>,
+    version_id: String,
+) -> std::result::Result<AiGenerationDetails, String> {
+    command_result(state.storage.find_ai_generation_details(&version_id))
 }
 
 #[tauri::command]
@@ -2580,10 +2599,12 @@ pub fn run_app() {
             get_ai_workspace,
             preview_ai_generation_request,
             copy_ai_request_body,
+            copy_ai_generation_json,
             list_ai_document_versions,
             generate_ai_document,
             cancel_ai_generation,
             read_ai_document_version,
+            read_ai_generation_details,
             relink_ai_document_version,
             find_ai_document_version,
             open_ai_document_version,

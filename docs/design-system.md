@@ -46,6 +46,11 @@ semantic type roles. Read-only code and structured request previews use the
 shared `--font-family-mono` stack; ordinary controls and content must not use
 the monospace role.
 
+Read-only JSON trees use the shared `JsonTreeView` component and the
+`--color-syntax-*` semantic roles for keys, strings, numbers, booleans, nulls,
+and punctuation. Long values must wrap, nested values must remain keyboard
+expandable, and product pages must not import a third-party JSON theme.
+
 | Role | Size / line height | Weight | Usage |
 |---|---|---|---|
 | Caption | 12 / 16 px | 400 or 600 | Tooltips, timestamps, badges, secondary metadata, dense toolbar actions |

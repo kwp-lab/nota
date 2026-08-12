@@ -48,14 +48,14 @@ struct AiJob {
     version_id: String,
     target_path: PathBuf,
     provider: LlmProviderCredentials,
-    system_prompt: String,
-    input: String,
+    request_body: Value,
 }
 
 struct ProviderOutput {
     text: String,
     input_tokens: Option<u32>,
     output_tokens: Option<u32>,
+    response_body: Value,
 }
 
 struct PreparedGeneration {
@@ -127,6 +127,8 @@ impl AiManager {
                 provider.provider.input_token_budget
             );
         }
+        let request_body = generation_request_body(&provider, &system_prompt, &input);
+        let request_body_json = serde_json::to_string(&request_body)?;
 
         let workspace = self.storage.ai_workspace(&request.recording_id)?;
         let reserved_id = existing_document
@@ -192,6 +194,7 @@ impl AiManager {
                 document_requirements: &request.document_requirements,
                 run_request: &request.run_request,
                 estimated_input_tokens,
+                request_body_json: &request_body_json,
             })?;
             let cancellation = Arc::new(AtomicBool::new(false));
             self.cancellations
@@ -206,8 +209,7 @@ impl AiManager {
                     version_id: version.id.clone(),
                     target_path,
                     provider,
-                    system_prompt,
-                    input,
+                    request_body,
                 })
                 .map_err(|error| anyhow!("无法加入 AI 文档生成队列：{error}"))?;
             Ok(version)
@@ -300,18 +302,20 @@ fn process_job(job: &AiJob, storage: &Storage, cancellation: &AtomicBool) -> Res
     let generating =
         storage.set_ai_version_status(&job.version_id, AiGenerationStatus::Generating, None)?;
     emit_status(&job.app, &job.recording_id, &job.document_id, generating);
-    let output = request_completion(&job.provider, &job.system_prompt, &job.input)?;
+    let output = request_completion(&job.provider, &job.request_body)?;
     ensure_not_cancelled(cancellation)?;
     let body = normalize_model_markdown(&output.text)?;
     let version = storage.find_ai_document_version(&job.version_id)?;
     let markdown = assemble_markdown(&job.recording_id, &version, &body);
     write_new_file_atomically(&job.target_path, markdown.as_bytes(), cancellation)?;
     let hash = format!("{:x}", Sha256::digest(markdown.as_bytes()));
+    let response_body_json = serde_json::to_string(&output.response_body)?;
     let completed = storage.complete_ai_document_version(
         &job.version_id,
         &hash,
         output.input_tokens,
         output.output_tokens,
+        &response_body_json,
     )?;
     emit_status(&job.app, &job.recording_id, &job.document_id, completed);
     Ok(())
@@ -330,11 +334,12 @@ fn emit_status(app: &AppHandle, recording_id: &str, document_id: &str, version: 
 
 pub fn test_connection(credentials: &LlmProviderCredentials) -> Result<LlmConnectionTest> {
     validate_runtime_provider(credentials)?;
-    request_completion(
+    let request_body = generation_request_body(
         credentials,
         "Return a short plain-text acknowledgement.",
         "Reply with exactly: OK",
-    )?;
+    );
+    request_completion(credentials, &request_body)?;
     Ok(LlmConnectionTest {
         reachable: true,
         message: "连接成功，模型返回了有效文本".into(),
@@ -347,18 +352,22 @@ pub fn preview_generation_request(
 ) -> Result<AiGenerationRequestPreview> {
     let provider = resolve_generation_provider(storage, request)?;
     let prepared = prepare_generation(storage, request)?;
-    let request_body = match provider.provider.kind {
-        LlmProviderKind::OpenAi => {
-            responses_request_body(&provider, &prepared.system_prompt, &prepared.input)
-        }
-        LlmProviderKind::OpenAiCompatible => {
-            chat_request_body(&provider, &prepared.system_prompt, &prepared.input)
-        }
-    };
+    let request_body = generation_request_body(&provider, &prepared.system_prompt, &prepared.input);
     Ok(AiGenerationRequestPreview {
         provider_kind: provider.provider.kind,
         request_body,
     })
+}
+
+fn generation_request_body(
+    provider: &LlmProviderCredentials,
+    system_prompt: &str,
+    input: &str,
+) -> Value {
+    match provider.provider.kind {
+        LlmProviderKind::OpenAi => responses_request_body(provider, system_prompt, input),
+        LlmProviderKind::OpenAiCompatible => chat_request_body(provider, system_prompt, input),
+    }
 }
 
 fn resolve_generation_provider(
@@ -530,8 +539,7 @@ pub fn normalize_provider_base_url(kind: LlmProviderKind, value: &str) -> Result
 
 fn request_completion(
     credentials: &LlmProviderCredentials,
-    system_prompt: &str,
-    input: &str,
+    request_body: &Value,
 ) -> Result<ProviderOutput> {
     validate_runtime_provider(credentials)?;
     let client = http_client()?;
@@ -539,14 +547,14 @@ fn request_completion(
         LlmProviderKind::OpenAi => {
             let url = responses_url(&credentials.provider.base_url);
             with_authorization(client.post(url), credentials)
-                .json(&responses_request_body(credentials, system_prompt, input))
+                .json(request_body)
                 .send()
                 .context("无法连接 Responses API")?
         }
         LlmProviderKind::OpenAiCompatible => {
             let url = compatible_chat_url(&credentials.provider.base_url);
             with_authorization(client.post(url), credentials)
-                .json(&chat_request_body(credentials, system_prompt, input))
+                .json(request_body)
                 .send()
                 .context("无法连接 OpenAI-compatible Chat Completions API")?
         }
@@ -712,6 +720,7 @@ fn parse_responses_output(value: &Value) -> Result<ProviderOutput> {
             .pointer("/usage/output_tokens")
             .and_then(Value::as_u64)
             .map(|value| value.min(u32::MAX as u64) as u32),
+        response_body: value.clone(),
     })
 }
 
@@ -744,6 +753,7 @@ fn parse_chat_output(value: &Value) -> Result<ProviderOutput> {
             .pointer("/usage/completion_tokens")
             .and_then(Value::as_u64)
             .map(|value| value.min(u32::MAX as u64) as u32),
+        response_body: value.clone(),
     })
 }
 
@@ -1258,6 +1268,7 @@ mod tests {
         assert_eq!(responses["instructions"], "system rules");
         assert_eq!(responses["input"], "meeting input");
         assert_eq!(responses["store"], false);
+        assert!(!responses.to_string().contains("secret"));
 
         let chat = chat_request_body(&credentials, "system rules", "meeting input");
         assert_eq!(chat["model"], "test-model");
@@ -1282,6 +1293,24 @@ mod tests {
         assert_eq!(output.text, "# Summary");
         assert_eq!(output.input_tokens, Some(10));
         assert_eq!(output.output_tokens, Some(4));
+        assert_eq!(output.response_body, value);
+    }
+
+    #[test]
+    fn chat_output_retains_raw_response_and_normalizes_usage() {
+        let value = json!({
+            "id": "chat-1",
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": "# Summary"}
+            }],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 5}
+        });
+        let output = parse_chat_output(&value).unwrap();
+        assert_eq!(output.text, "# Summary");
+        assert_eq!(output.input_tokens, Some(12));
+        assert_eq!(output.output_tokens, Some(5));
+        assert_eq!(output.response_body, value);
     }
 
     #[test]

@@ -5,6 +5,7 @@ import type {
   AiDocumentContent,
   AiDocumentVersion,
   AiGenerationDraftRequest,
+  AiGenerationDetails,
   AiGenerationEvent,
   AiGenerationRequest,
   AiGenerationRequestPreview,
@@ -126,6 +127,8 @@ export const api = {
     invoke<AiGenerationRequestPreview>("preview_ai_generation_request", { request }),
   copyAiRequestBody: (requestBody: string) =>
     invoke<void>("copy_ai_request_body", { requestBody }),
+  copyAiGenerationJson: (json: string) =>
+    invoke<void>("copy_ai_generation_json", { json }),
   listAiDocumentVersions: (documentId: string) =>
     invoke<AiDocumentVersion[]>("list_ai_document_versions", { documentId }),
   generateAiDocument: (request: AiGenerationRequest) =>
@@ -134,6 +137,8 @@ export const api = {
     invoke<AiDocumentVersion>("cancel_ai_generation", { versionId }),
   readAiDocumentVersion: (versionId: string) =>
     invoke<AiDocumentContent>("read_ai_document_version", { versionId }),
+  readAiGenerationDetails: (versionId: string) =>
+    invoke<AiGenerationDetails>("read_ai_generation_details", { versionId }),
   relinkAiDocumentVersion: (versionId: string, path: string) =>
     invoke<AiDocumentVersion>("relink_ai_document_version", {
       versionId,

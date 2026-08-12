@@ -164,6 +164,12 @@ Automated coverage for AI documents must include:
 - document-first and version-second UI selection, with newest successful
   version selected by default;
 - three context lifetimes and per-version prompt/provider/template snapshots;
+- credential-free request JSON matching the submitted body, successful raw
+  response JSON and normalized usage persistence, nullable-column migration
+  for historical databases, and on-demand IPC reads;
+- keyboard-operable Document/Generation details and Request/Response tabs,
+  collapsible syntax-highlighted JSON, copy actions, long-value wrapping, and
+  explicit unavailable states for historical versions;
 - recording deletion preserving Markdown by default and deleting exact linked
   paths only after explicit opt-in, completed-status filtering, and an immediate
   YAML identity check;

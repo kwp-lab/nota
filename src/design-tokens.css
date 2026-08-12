@@ -37,6 +37,14 @@
   --color-text-danger: #a23e3e;
   --color-text-tooltip: #f7faf8;
 
+  /* Read-only structured-data syntax roles. */
+  --color-syntax-key: var(--color-text-brand);
+  --color-syntax-string: var(--color-text-info);
+  --color-syntax-number: var(--color-text-warning);
+  --color-syntax-boolean: var(--color-text-danger);
+  --color-syntax-null: var(--color-text-muted);
+  --color-syntax-punctuation: var(--color-text-secondary);
+
   --color-surface-canvas: #f4f3ef;
   --color-surface-primary: #fbfaf7;
   --color-surface-raised: #ffffff;

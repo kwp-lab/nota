@@ -165,6 +165,12 @@ vi.mock("./api", () => ({
       markdown: "",
       fileState: "missing" as const,
     })),
+    readAiGenerationDetails: vi.fn(async (versionId: string) => ({
+      versionId,
+      requestBody: null,
+      responseBody: null,
+    })),
+    copyAiGenerationJson: vi.fn(),
     generateAiDocument: vi.fn(async () => undefined),
     cancelAiGeneration: vi.fn(async () => undefined),
     updateAiMeetingContext: vi.fn(async () => undefined),

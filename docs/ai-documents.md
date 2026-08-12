@@ -102,6 +102,17 @@ contain credentials, prompt bodies, transcript content, or model output.
 - A non-empty but incomplete provider response, including a Responses
   `incomplete` status or Chat Completions `finish_reason: length`, fails the
   version instead of publishing a truncated document.
+- Every newly reserved version stores the exact request body that Rust will
+  send. A successfully completed version also stores the original Provider
+  response JSON and normalized input/output usage. Request snapshots never
+  include API keys or authorization headers. Response snapshots preserve the
+  Provider-controlled JSON verbatim but Nota never adds runtime credentials to
+  it. Both snapshots are loaded by React only when the user opens **Generation
+  details**.
+- The document preview has top-level **Document** and **Generation details**
+  tabs. Generation details shows normalized usage plus separate request and
+  response JSON trees. Historical versions created before snapshot persistence
+  explicitly report that their original JSON is unavailable.
 
 The initial implementation intentionally does not include transcript chunking,
 ACP, autonomous tools, cross-meeting retrieval, or task-system synchronization.
@@ -133,15 +144,41 @@ stateDiagram-v2
     Missing --> Completed: "matching YAML identity is relinked"
 ```
 
+The persisted diagnostic exchange follows the same payload used for network
+submission; it is not reconstructed later from mutable settings or the current
+transcript:
+
+```mermaid
+sequenceDiagram
+    participant UI as React generation dialog
+    participant Rust as Rust AI manager
+    participant DB as Local SQLite ledger
+    participant LLM as Configured LLM Provider
+    participant FS as Versioned Markdown file
+
+    UI->>Rust: submit generation request and token estimate
+    Rust->>Rust: assemble request body once
+    Rust->>DB: append version and request JSON snapshot
+    Rust->>LLM: POST the same request body with runtime authorization
+    LLM-->>Rust: raw response JSON
+    Rust->>Rust: validate and normalize Markdown plus usage
+    Rust->>FS: atomically create new Markdown version
+    Rust->>DB: complete version with response JSON and usage
+    UI->>Rust: read generation details on demand
+    Rust-->>UI: saved JSON; request excludes runtime authorization
+```
+
 Successful file commit ordering is:
 
-1. validate the provider response and normalize a Markdown body;
-2. assemble Nota YAML identity metadata and the body in memory;
-3. write a new same-directory temporary file and call `sync_all`;
-4. atomically move it to a previously unused `.md` path with replacement
+1. reserve the version ledger row with the exact request JSON;
+2. validate the provider response and normalize a Markdown body and usage;
+3. assemble Nota YAML identity metadata and the body in memory;
+4. write a new same-directory temporary file and call `sync_all`;
+5. atomically move it to a previously unused `.md` path with replacement
    disabled, so a concurrently created user file is never overwritten;
-5. commit the content hash and `completed` status to SQLite;
-6. emit the typed status event.
+6. atomically commit the response JSON, usage, content hash, and `completed`
+   status to SQLite;
+7. emit the typed status event.
 
 The generated YAML front matter contains opaque Nota document, version, and
 recording identities plus generation metadata. It does not contain prompts,

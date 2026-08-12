@@ -28,6 +28,7 @@
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
 | LLM provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
 | AI templates, context, document/version ledger, and prompt snapshots | Local SQLite | Until recording or template deletion rules apply |
+| AI request and successful Provider response JSON snapshots | Local SQLite, loaded on demand | Until the owning recording is deleted |
 | Generated AI document body | Versioned Markdown file in the user-selected AI document directory | Until the user moves or deletes it |
 | AI generation temporary file | Same directory as its target Markdown | One atomic write attempt; removed on failure |
 
@@ -90,8 +91,11 @@ constraint permits at most one row for each `(recording_id, template_id)`.
 
 `ai_document_versions` is append-only generation history. It stores mode,
 optional parent version, status, path and hash, provider/template/transcript
-snapshots, three context layers, token estimates and usage, and bounded failure
-detail. It intentionally does not store the generated Markdown body.
+snapshots, three context layers, the exact credential-free request JSON,
+successful raw response JSON, token estimates and usage, and bounded failure
+detail. Request and response snapshots are nullable so databases and versions
+created before this feature remain valid. It intentionally does not store the
+generated Markdown body.
 
 A successful generation first creates and synchronizes a new file, atomically
 moves it without replacement, then marks the row `completed` with its hash. A
