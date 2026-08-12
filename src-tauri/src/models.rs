@@ -914,6 +914,14 @@ pub struct AiGenerationRequestPreview {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AiGenerationDetails {
+    pub version_id: String,
+    pub request_body: Option<Value>,
+    pub response_body: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AiDocumentContent {
     pub version: AiDocumentVersion,
     pub markdown: String,

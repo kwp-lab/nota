@@ -1,10 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import type {
   AiDocumentContent,
   AiDocumentVersion,
+  AiGenerationDetails,
   AiTemplate,
   AiWorkspace,
   LlmProvider,
@@ -16,6 +17,7 @@ const testState = vi.hoisted(() => ({
   workspace: null as AiWorkspace | null,
   versions: [] as AiDocumentVersion[],
   contents: new Map<string, AiDocumentContent>(),
+  details: new Map<string, AiGenerationDetails>(),
   readDocument: null as null | ((id: string) => Promise<AiDocumentContent | undefined>),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
@@ -37,6 +39,12 @@ vi.mock("../api", () => ({
     listAiDocumentVersions: vi.fn(async () => testState.versions),
     readAiDocumentVersion: vi.fn(async (id: string) =>
       testState.readDocument ? testState.readDocument(id) : testState.contents.get(id)),
+    readAiGenerationDetails: vi.fn(async (id: string) => testState.details.get(id) ?? ({
+      versionId: id,
+      requestBody: null,
+      responseBody: null,
+    })),
+    copyAiGenerationJson: vi.fn(),
     onAiStatus: vi.fn(async () => () => undefined),
     generateAiDocument: vi.fn(),
     cancelAiGeneration: vi.fn(),
@@ -138,6 +146,7 @@ describe("AI documents panel", () => {
   beforeEach(() => {
     testState.versions = [];
     testState.contents.clear();
+    testState.details.clear();
     testState.readDocument = null;
     testState.workspace = {
       profile: {
@@ -203,6 +212,76 @@ describe("AI documents panel", () => {
     expect(screen.getByRole("button", { name: "重新生成" })).not.toHaveAttribute("title");
     expect(screen.getByRole("button", { name: "AI修改" })).toHaveClass("compact");
     expect(screen.getByRole("button", { name: "AI修改" })).not.toHaveAttribute("title");
+    fireEvent.click(screen.getByRole("tab", { name: "生成详情" }));
+    expect(await screen.findByText("该版本生成时尚未记录原始请求 JSON。")).toBeInTheDocument();
+  });
+
+  it("shows persisted request and response JSON with normalized token usage", async () => {
+    const summaryTemplate = template("summary", "meeting_summary");
+    const completedVersion = version("v1", 1, "completed");
+    testState.workspace = {
+      ...testState.workspace!,
+      templates: [summaryTemplate],
+      documents: [{
+        id: "document-1",
+        recordingId: recording.id,
+        templateId: summaryTemplate.id,
+        title: "Meeting summary",
+        requirements: "",
+        templateName: summaryTemplate.name,
+        templateBuiltinKey: summaryTemplate.builtinKey,
+        latestVersion: completedVersion,
+        createdAt: "2026-08-09T00:00:00Z",
+        updatedAt: "2026-08-09T00:03:00Z",
+      }],
+    };
+    testState.versions = [completedVersion];
+    testState.contents.set("v1", {
+      version: completedVersion,
+      markdown: "# Current summary",
+    });
+    testState.details.set("v1", {
+      versionId: "v1",
+      requestBody: {
+        model: "test-model",
+        instructions: "Follow the policy.",
+        input: "Summarize the meeting.",
+      },
+      responseBody: {
+        id: "response-1",
+        usage: { input_tokens: 90, output_tokens: 20 },
+      },
+    });
+
+    render(
+      <AiDocumentsPanel
+        recording={recording}
+        transcript={transcript}
+        providers={[provider]}
+        activeProviderId={provider.id}
+        onMessage={vi.fn()}
+      />,
+    );
+
+    const documentTab = await screen.findByRole("tab", { name: "文档" });
+    fireEvent.keyDown(documentTab.parentElement!, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "生成详情" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("90 tokens")).toBeInTheDocument();
+    expect(screen.getByText("20 tokens")).toBeInTheDocument();
+    expect(screen.getByText("110 tokens")).toBeInTheDocument();
+    const requestJson = await screen.findByLabelText("AI 请求 JSON");
+    expect(requestJson).toHaveTextContent(/"model":.*"test-model"/);
+
+    const requestTab = screen.getByRole("tab", { name: "请求 JSON" });
+    fireEvent.keyDown(requestTab.parentElement!, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "响应 JSON" })).toHaveAttribute("aria-selected", "true");
+    const responseJson = await screen.findByLabelText("AI 响应 JSON");
+    fireEvent.click(within(responseJson).getByLabelText("展开 JSON 节点"));
+    expect(responseJson).toHaveTextContent(/"output_tokens":.*20/);
+    fireEvent.click(screen.getByRole("button", { name: "复制 JSON" }));
+    await waitFor(() => expect(api.copyAiGenerationJson).toHaveBeenCalledWith(
+      expect.stringContaining('"response-1"'),
+    ));
   });
 
   it("skips an unavailable speaker template when opening a new document dialog", async () => {

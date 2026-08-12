@@ -7,8 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-12
+
 ### Added
 
+- Added per-version AI generation details with request/response JSON tabs,
+  collapsible syntax highlighting, copy actions, and normalized input/output
+  token usage. New versions retain credential-free request and successful raw
+  response snapshots locally; older versions show an explicit unavailable
+  state.
 - Added a two-tab AI generation dialog with a wrapping, read-only preview of
   the exact Responses or Chat Completions request body, one-click copying, and
   a shared local input-token estimate powered by `tokenx`.
@@ -261,7 +268,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kwp-lab/nota/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kwp-lab/nota/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kwp-lab/nota/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...v0.3.0

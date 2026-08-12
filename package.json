@@ -1,7 +1,7 @@
 {
   "name": "nota",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "packageManager": "npm@11.16.0",
   "engines": {
@@ -29,6 +29,7 @@
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-json-view-lite": "^2.5.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tokenx": "^1.6.0"

@@ -241,9 +241,14 @@ for `revise` the selected Markdown body. Provider connection tests never send
 meeting content. OpenAI requests set `store: false`, but the interface must not
 describe that flag as a zero-retention guarantee.
 
-Provider responses are normalized into Nota-owned types before reaching the
-frontend. Technical logs may include opaque recording identifiers and state
-names, but never credentials, audio, or transcript text.
+Provider responses are normalized into Nota-owned types for ordinary product
+state. The explicit AI **Generation details** read path may additionally return
+the locally persisted raw request and response JSON for one selected version.
+That path is on demand and never adds runtime authorization or API keys to the
+saved request. The raw response remains Provider-controlled data. Neither
+payload may be written to technical logs. Technical logs may include
+opaque recording identifiers and state names, but never credentials, audio,
+transcript text, request bodies, or model output.
 
 LLM responses are also normalized in Rust. Technical logs must not contain the
 assembled prompt or generated body. React previews Markdown without raw HTML

@@ -1,7 +1,7 @@
 use crate::models::{
-    AecMode, AiDocument, AiDocumentVersion, AiFileState, AiGenerationMode, AiGenerationStatus,
-    AiMeetingProfile, AiTemplate, AiWorkspace, AppSettings, AsrApiKeyUpdate, AsrProvider,
-    AsrProviderCredentials, AsrProviderKind, AsrProviderProbeRequest, LlmProvider,
+    AecMode, AiDocument, AiDocumentVersion, AiFileState, AiGenerationDetails, AiGenerationMode,
+    AiGenerationStatus, AiMeetingProfile, AiTemplate, AiWorkspace, AppSettings, AsrApiKeyUpdate,
+    AsrProvider, AsrProviderCredentials, AsrProviderKind, AsrProviderProbeRequest, LlmProvider,
     LlmProviderCredentials, LlmProviderKind, LlmProviderProbeRequest, ParticipantProfile,
     RecordingItem, RecordingOrigin, RecordingSpeakerAssignment, SaveAiTemplateRequest,
     SaveAsrProviderRequest, SaveLlmProviderRequest, SpeakerIdentificationAssignment,
@@ -72,6 +72,7 @@ pub struct NewAiVersion<'a> {
     pub document_requirements: &'a str,
     pub run_request: &'a str,
     pub estimated_input_tokens: u32,
+    pub request_body_json: &'a str,
 }
 
 fn resolve_assignment_participant(
@@ -434,6 +435,8 @@ impl Storage {
               estimated_input_tokens INTEGER NOT NULL DEFAULT 0,
               input_tokens INTEGER,
               output_tokens INTEGER,
+              request_body_json TEXT,
+              response_body_json TEXT,
               error_message TEXT,
               created_at TEXT NOT NULL,
               completed_at TEXT,
@@ -444,6 +447,7 @@ impl Storage {
         ensure_recording_import_columns(&connection)?;
         ensure_audio_import_schema(&connection)?;
         ensure_ai_template_columns(&connection)?;
+        ensure_ai_generation_detail_columns(&connection)?;
         seed_ai_templates(&connection)?;
         ensure_transcription_job_columns(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
@@ -1453,9 +1457,10 @@ impl Storage {
               template_name, template_revision, template_instructions,
               template_output_requirements, system_policy_version,
               transcription_generation, speaker_names_json, meeting_context,
-              document_requirements, run_request, estimated_input_tokens, created_at)
+              document_requirements, run_request, estimated_input_tokens,
+              request_body_json, created_at)
              VALUES(?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, ?9, ?10,
-                    ?11, ?12, ?13, ?14, 1, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                    ?11, ?12, ?13, ?14, 1, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
             params![
                 value.id,
                 value.document_id,
@@ -1477,6 +1482,7 @@ impl Storage {
                 value.document_requirements,
                 value.run_request,
                 value.estimated_input_tokens,
+                value.request_body_json,
                 now,
             ],
         )?;
@@ -1513,16 +1519,51 @@ impl Storage {
         generated_hash: &str,
         input_tokens: Option<u32>,
         output_tokens: Option<u32>,
+        response_body_json: &str,
     ) -> Result<AiDocumentVersion> {
         let now = Utc::now().to_rfc3339();
         self.connection.lock().execute(
             "UPDATE ai_document_versions
              SET status = 'completed', generated_hash = ?1, input_tokens = ?2,
-                 output_tokens = ?3, error_message = NULL, completed_at = ?4
-             WHERE id = ?5",
-            params![generated_hash, input_tokens, output_tokens, now, id],
+                 output_tokens = ?3, response_body_json = ?4,
+                 error_message = NULL, completed_at = ?5
+             WHERE id = ?6",
+            params![
+                generated_hash,
+                input_tokens,
+                output_tokens,
+                response_body_json,
+                now,
+                id
+            ],
         )?;
         self.find_ai_document_version(id)
+    }
+
+    pub fn find_ai_generation_details(&self, version_id: &str) -> Result<AiGenerationDetails> {
+        let (request_body_json, response_body_json): (Option<String>, Option<String>) = self
+            .connection
+            .lock()
+            .query_row(
+                "SELECT request_body_json, response_body_json
+                 FROM ai_document_versions WHERE id = ?1",
+                [version_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .context("找不到该 AI 文档版本")?;
+        let parse = |value: Option<String>, label: &str| -> Result<Option<serde_json::Value>> {
+            value
+                .map(|value| {
+                    serde_json::from_str(&value)
+                        .with_context(|| format!("该版本保存的 {label} JSON 已损坏"))
+                })
+                .transpose()
+        };
+        Ok(AiGenerationDetails {
+            version_id: version_id.to_owned(),
+            request_body: parse(request_body_json, "请求")?,
+            response_body: parse(response_body_json, "响应")?,
+        })
     }
 
     pub fn find_ai_document_version(&self, id: &str) -> Result<AiDocumentVersion> {
@@ -2538,6 +2579,28 @@ fn ensure_ai_template_columns(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn ensure_ai_generation_detail_columns(connection: &Connection) -> Result<()> {
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(ai_document_versions)")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    if !columns.contains("request_body_json") {
+        connection.execute(
+            "ALTER TABLE ai_document_versions ADD COLUMN request_body_json TEXT",
+            [],
+        )?;
+    }
+    if !columns.contains("response_body_json") {
+        connection.execute(
+            "ALTER TABLE ai_document_versions ADD COLUMN response_body_json TEXT",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 fn ai_meeting_profile_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiMeetingProfile> {
     Ok(AiMeetingProfile {
         recording_id: row.get(0)?,
@@ -3081,6 +3144,51 @@ mod tests {
     }
 
     #[test]
+    fn existing_ai_version_tables_gain_generation_detail_columns() {
+        let root = std::env::temp_dir().join(format!(
+            "nota-ai-generation-detail-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let nota = root.join("Nota");
+        let recordings = nota.join("Recordings");
+        let recovery = nota.join("Recovery");
+        std::fs::create_dir_all(&recordings).unwrap();
+        std::fs::create_dir_all(&recovery).unwrap();
+        let database = nota.join("nota.db");
+        let connection = Connection::open(&database).unwrap();
+        connection
+            .execute_batch("CREATE TABLE ai_document_versions (id TEXT PRIMARY KEY);")
+            .unwrap();
+        drop(connection);
+
+        let storage = Storage::open(AppPaths {
+            recovery,
+            logs: nota.join("Logs"),
+            default_ai_documents: nota.join("AI Documents"),
+            default_recordings: recordings,
+            legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
+            database,
+        })
+        .unwrap();
+        let columns = {
+            let connection = storage.connection.lock();
+            let mut statement = connection
+                .prepare("PRAGMA table_info(ai_document_versions)")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .collect::<std::collections::HashSet<_>>()
+        };
+        assert!(columns.contains("request_body_json"));
+        assert!(columns.contains("response_body_json"));
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn llm_provider_keys_stay_in_rust_and_support_keep_and_clear() {
         let (root, storage) = test_storage();
         let saved = storage
@@ -3287,14 +3395,24 @@ mod tests {
                 document_requirements: "For the team",
                 run_request: "",
                 estimated_input_tokens: 120,
+                request_body_json: r#"{"model":"test-model","input":"meeting"}"#,
             })
             .unwrap();
         assert_eq!(first.version_number, 1);
         let first_hash = format!("{:x}", Sha256::digest(first_markdown.as_bytes()));
         let completed = storage
-            .complete_ai_document_version("v1", &first_hash, Some(100), Some(20))
+            .complete_ai_document_version(
+                "v1",
+                &first_hash,
+                Some(100),
+                Some(20),
+                r#"{"usage":{"input_tokens":100,"output_tokens":20}}"#,
+            )
             .unwrap();
         assert_eq!(completed.file_state, AiFileState::Ready);
+        let details = storage.find_ai_generation_details("v1").unwrap();
+        assert_eq!(details.request_body.unwrap()["model"], "test-model");
+        assert_eq!(details.response_body.unwrap()["usage"]["output_tokens"], 20);
 
         std::fs::write(&first_path, format!("{first_markdown}\nExternal edit\n")).unwrap();
         assert_eq!(
@@ -3320,12 +3438,16 @@ mod tests {
                 document_requirements: "For the team",
                 run_request: "Shorter",
                 estimated_input_tokens: 125,
+                request_body_json: r#"{"model":"test-model","input":"shorter"}"#,
             })
             .unwrap();
         assert_eq!(second.version_number, 2);
         storage
             .set_ai_version_status("v2", AiGenerationStatus::Failed, Some("synthetic failure"))
             .unwrap();
+        let failed_details = storage.find_ai_generation_details("v2").unwrap();
+        assert!(failed_details.request_body.is_some());
+        assert!(failed_details.response_body.is_none());
         assert_eq!(
             storage.ai_document_file_links("ai-meeting").unwrap(),
             vec![(

@@ -20,10 +20,12 @@ import { api, type UnlistenFn } from "../api";
 import { estimateAiRequestInputTokens } from "../ai-token-estimate";
 import { llmProviderReady } from "../llm";
 import { AppTooltip } from "./AppTooltip";
+import { JsonTreeView } from "./JsonTreeView";
 import type {
   AiDocument,
   AiDocumentContent,
   AiDocumentVersion,
+  AiGenerationDetails,
   AiGenerationDraftRequest,
   AiGenerationMode,
   AiGenerationRequestPreview,
@@ -79,6 +81,14 @@ const hasSpeakerLabels = (transcript: TranscriptDocument | null) =>
 
 const isSpeakerTemplate = (template: AiTemplate) => template.requiresSpeakerLabels;
 
+const tokenFormatter = new Intl.NumberFormat("zh-CN");
+
+const formatTokenUsage = (value: number | null) =>
+  value === null ? "Provider 未返回" : `${tokenFormatter.format(value)} tokens`;
+
+const isJsonContainer = (value: unknown): value is object | unknown[] =>
+  value !== null && typeof value === "object";
+
 export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const [workspace, setWorkspace] = useState<AiWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +100,11 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const [dialog, setDialog] = useState<GenerationDialogState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [contentReloadKey, setContentReloadKey] = useState(0);
+  const [previewTab, setPreviewTab] = useState<"document" | "details">("document");
+  const [generationDetailTab, setGenerationDetailTab] = useState<"request" | "response">("request");
+  const [generationDetails, setGenerationDetails] = useState<AiGenerationDetails | null>(null);
+  const [generationDetailsLoading, setGenerationDetailsLoading] = useState(false);
+  const [generationDetailsError, setGenerationDetailsError] = useState<string | null>(null);
   const [dialogTab, setDialogTab] = useState<"settings" | "request">("settings");
   const [requestPreview, setRequestPreview] = useState<AiGenerationRequestPreview | null>(null);
   const [estimatedTokens, setEstimatedTokens] = useState<number | null>(null);
@@ -98,6 +113,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const recordingIdRef = useRef(props.recording.id);
   const selectedDocumentIdRef = useRef(selectedDocumentId);
   const contentRequestRef = useRef(0);
+  const generationDetailsRequestRef = useRef(0);
   recordingIdRef.current = props.recording.id;
   selectedDocumentIdRef.current = selectedDocumentId;
 
@@ -139,6 +155,10 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     setVersions([]);
     setSelectedVersionId(null);
     setContent(null);
+    setPreviewTab("document");
+    setGenerationDetailTab("request");
+    setGenerationDetails(null);
+    setGenerationDetailsError(null);
     void refreshWorkspace()
       .catch((error) => props.onMessage("error", String(error)))
       .finally(() => {
@@ -195,6 +215,47 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   }, [contentReloadKey, props.onMessage, selectedVersionId, versions]);
 
   useEffect(() => {
+    const requestId = ++generationDetailsRequestRef.current;
+    const version = versions.find((item) => item.id === selectedVersionId);
+    if (previewTab !== "details" || !version) {
+      setGenerationDetailsLoading(false);
+      if (!version) {
+        setGenerationDetails(null);
+        setGenerationDetailsError(null);
+      }
+      return;
+    }
+    setGenerationDetails(null);
+    setGenerationDetailsError(null);
+    setGenerationDetailsLoading(true);
+    void api
+      .readAiGenerationDetails(version.id)
+      .then((next) => {
+        if (
+          generationDetailsRequestRef.current === requestId
+          && next.versionId === version.id
+        ) {
+          setGenerationDetails(next);
+        }
+      })
+      .catch((error) => {
+        if (generationDetailsRequestRef.current === requestId) {
+          setGenerationDetailsError(String(error));
+        }
+      })
+      .finally(() => {
+        if (generationDetailsRequestRef.current === requestId) {
+          setGenerationDetailsLoading(false);
+        }
+      });
+    return () => {
+      if (generationDetailsRequestRef.current === requestId) {
+        generationDetailsRequestRef.current += 1;
+      }
+    };
+  }, [previewTab, selectedVersionId, versions]);
+
+  useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     let disposed = false;
     void api.onAiStatus((event) => {
@@ -227,6 +288,14 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     (document) => document.id === selectedDocumentId,
   ) ?? null;
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
+  const selectedGenerationJson = generationDetailTab === "request"
+    ? generationDetails?.requestBody ?? null
+    : generationDetails?.responseBody ?? null;
+  const totalTokens = selectedVersion?.inputTokens !== null
+    && selectedVersion?.inputTokens !== undefined
+    && selectedVersion.outputTokens !== null
+    ? selectedVersion.inputTokens + selectedVersion.outputTokens
+    : null;
   const unusedTemplates = useMemo(() => {
     if (!workspace) return [];
     const used = new Set(workspace.documents.map((document) => document.templateId));
@@ -350,6 +419,39 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     window.requestAnimationFrame(() => {
       window.document.getElementById(`ai-generation-${nextTab}-tab`)?.focus();
     });
+  };
+
+  const handlePreviewTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = previewTab === "document" ? "details" : "document";
+    setPreviewTab(nextTab);
+    window.requestAnimationFrame(() => {
+      window.document.getElementById(`ai-document-${nextTab}-tab`)?.focus();
+    });
+  };
+
+  const handleGenerationDetailTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = generationDetailTab === "request" ? "response" : "request";
+    setGenerationDetailTab(nextTab);
+    window.requestAnimationFrame(() => {
+      window.document.getElementById(`ai-generation-detail-${nextTab}-tab`)?.focus();
+    });
+  };
+
+  const copyGenerationJson = async () => {
+    if (!selectedGenerationJson) return;
+    try {
+      await api.copyAiGenerationJson(JSON.stringify(selectedGenerationJson, null, 2));
+      props.onMessage(
+        "success",
+        generationDetailTab === "request" ? "请求 JSON 已复制" : "响应 JSON 已复制",
+      );
+    } catch (error) {
+      props.onMessage("error", String(error));
+    }
   };
 
   const submitGeneration = async () => {
@@ -528,6 +630,38 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
               </div>
             </header>
 
+            <div
+              className="app-tab-bar ai-document-view-tabs"
+              role="tablist"
+              aria-label="AI 文档内容"
+              onKeyDown={handlePreviewTabKeyDown}
+            >
+              <button
+                id="ai-document-document-tab"
+                type="button"
+                role="tab"
+                aria-selected={previewTab === "document"}
+                aria-controls="ai-document-document-panel"
+                tabIndex={previewTab === "document" ? 0 : -1}
+                className={previewTab === "document" ? "active" : ""}
+                onClick={() => setPreviewTab("document")}
+              >
+                文档
+              </button>
+              <button
+                id="ai-document-details-tab"
+                type="button"
+                role="tab"
+                aria-selected={previewTab === "details"}
+                aria-controls="ai-document-details-panel"
+                tabIndex={previewTab === "details" ? 0 : -1}
+                className={previewTab === "details" ? "active" : ""}
+                onClick={() => setPreviewTab("details")}
+              >
+                生成详情
+              </button>
+            </div>
+
             {selectedVersion?.status === "generating" || selectedVersion?.status === "queued" ? (
               <div className="ai-generation-progress">
                 <LoaderCircle className="spin" />
@@ -556,38 +690,150 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
               <div className="ai-external-edit">文件已在外部修改；预览和“基于此版本修改”都会使用磁盘上的当前内容。</div>
             )}
 
-            <div className="ai-preview-toolbar">
-              <span>
-                {selectedVersion
-                  ? `${selectedVersion.providerName} · ${selectedVersion.modelId}`
-                  : "尚未生成版本"}
-              </span>
-              {selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing" && (
-                <div>
-                  <AppTooltip content="刷新预览"><button aria-label="刷新预览" onClick={() => setContentReloadKey((current) => current + 1)}><RefreshCw size={14} /></button></AppTooltip>
-                  <AppTooltip content="复制 Markdown"><button aria-label="复制 Markdown" onClick={() => void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error)))}><Clipboard size={14} /></button></AppTooltip>
-                  <AppTooltip content="复制文件路径"><button aria-label="复制文件路径" onClick={() => void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error)))}><Link2 size={14} /></button></AppTooltip>
-                  <AppTooltip content="使用默认应用打开"><button aria-label="使用默认应用打开" onClick={() => void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FileText size={14} /></button></AppTooltip>
-                  <AppTooltip content="在资源管理器中显示"><button aria-label="在资源管理器中显示" onClick={() => void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FolderOpen size={14} /></button></AppTooltip>
+            {previewTab === "document" ? (
+              <>
+                <div className="ai-preview-toolbar">
+                  <span>
+                    {selectedVersion
+                      ? `${selectedVersion.providerName} · ${selectedVersion.modelId}`
+                      : "尚未生成版本"}
+                  </span>
+                  {selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing" && (
+                    <div>
+                      <AppTooltip content="刷新预览"><button aria-label="刷新预览" onClick={() => setContentReloadKey((current) => current + 1)}><RefreshCw size={14} /></button></AppTooltip>
+                      <AppTooltip content="复制 Markdown"><button aria-label="复制 Markdown" onClick={() => void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error)))}><Clipboard size={14} /></button></AppTooltip>
+                      <AppTooltip content="复制文件路径"><button aria-label="复制文件路径" onClick={() => void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error)))}><Link2 size={14} /></button></AppTooltip>
+                      <AppTooltip content="使用默认应用打开"><button aria-label="使用默认应用打开" onClick={() => void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FileText size={14} /></button></AppTooltip>
+                      <AppTooltip content="在资源管理器中显示"><button aria-label="在资源管理器中显示" onClick={() => void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FolderOpen size={14} /></button></AppTooltip>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="ai-markdown-body">
-              {contentLoading ? (
-                <div className="ai-documents-loading"><LoaderCircle className="spin" />读取 Markdown…</div>
-              ) : content ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    img: ({ alt }) => <span className="ai-remote-image">[图片未自动加载：{alt || "无标题"}]</span>,
-                  }}
+                <div
+                  id="ai-document-document-panel"
+                  className="ai-markdown-body"
+                  role="tabpanel"
+                  aria-labelledby="ai-document-document-tab"
                 >
-                  {content.markdown}
-                </ReactMarkdown>
-              ) : (
-                <div className="ai-documents-empty"><FileText size={24} /><p>选择一个已完成版本查看内容。</p></div>
-              )}
-            </div>
+                  {contentLoading ? (
+                    <div className="ai-documents-loading"><LoaderCircle className="spin" />读取 Markdown…</div>
+                  ) : content ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        img: ({ alt }) => <span className="ai-remote-image">[图片未自动加载：{alt || "无标题"}]</span>,
+                      }}
+                    >
+                      {content.markdown}
+                    </ReactMarkdown>
+                  ) : (
+                    <div className="ai-documents-empty"><FileText size={24} /><p>选择一个已完成版本查看内容。</p></div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div
+                id="ai-document-details-panel"
+                className="ai-generation-details"
+                role="tabpanel"
+                aria-labelledby="ai-document-details-tab"
+              >
+                {selectedVersion ? (
+                  <>
+                    <dl className="ai-generation-summary">
+                      <div><dt>Provider</dt><dd>{selectedVersion.providerName}</dd></div>
+                      <div><dt>API 类型</dt><dd>{selectedVersion.providerKind === "openAi" ? "Responses API" : "Chat Completions"}</dd></div>
+                      <div><dt>模型</dt><dd>{selectedVersion.modelId}</dd></div>
+                      <div><dt>状态</dt><dd>{statusLabels[selectedVersion.status]}</dd></div>
+                      <div><dt>预计输入</dt><dd>{formatTokenUsage(selectedVersion.estimatedInputTokens)}</dd></div>
+                      <div><dt>实际输入</dt><dd className={selectedVersion.inputTokens === null ? "muted" : ""}>{formatTokenUsage(selectedVersion.inputTokens)}</dd></div>
+                      <div><dt>实际输出</dt><dd className={selectedVersion.outputTokens === null ? "muted" : ""}>{formatTokenUsage(selectedVersion.outputTokens)}</dd></div>
+                      <div><dt>合计用量</dt><dd className={totalTokens === null ? "muted" : ""}>{formatTokenUsage(totalTokens)}</dd></div>
+                    </dl>
+                    <div
+                      className="app-tab-bar ai-generation-detail-tabs"
+                      role="tablist"
+                      aria-label="生成详情 JSON"
+                      onKeyDown={handleGenerationDetailTabKeyDown}
+                    >
+                      <button
+                        id="ai-generation-detail-request-tab"
+                        type="button"
+                        role="tab"
+                        aria-selected={generationDetailTab === "request"}
+                        aria-controls="ai-generation-detail-json-panel"
+                        tabIndex={generationDetailTab === "request" ? 0 : -1}
+                        className={generationDetailTab === "request" ? "active" : ""}
+                        onClick={() => setGenerationDetailTab("request")}
+                      >
+                        请求 JSON
+                      </button>
+                      <button
+                        id="ai-generation-detail-response-tab"
+                        type="button"
+                        role="tab"
+                        aria-selected={generationDetailTab === "response"}
+                        aria-controls="ai-generation-detail-json-panel"
+                        tabIndex={generationDetailTab === "response" ? 0 : -1}
+                        className={generationDetailTab === "response" ? "active" : ""}
+                        onClick={() => setGenerationDetailTab("response")}
+                      >
+                        响应 JSON
+                      </button>
+                    </div>
+                    <section
+                      id="ai-generation-detail-json-panel"
+                      className="ai-generation-json-panel"
+                      role="tabpanel"
+                      aria-labelledby={`ai-generation-detail-${generationDetailTab}-tab`}
+                    >
+                      <header className="ai-generation-json-header">
+                        <div>
+                          <strong>{generationDetailTab === "request" ? "请求 JSON" : "响应 JSON"}</strong>
+                          <small>
+                            {generationDetailTab === "request"
+                              ? "实际发送给模型的请求体，不包含 API Key 或 Authorization。"
+                              : "Provider 返回并由 Nota 解析的原始 JSON。"}
+                          </small>
+                        </div>
+                        <button
+                          type="button"
+                          className="button secondary compact"
+                          disabled={!selectedGenerationJson}
+                          onClick={() => void copyGenerationJson()}
+                        >
+                          <Clipboard size={14} />复制 JSON
+                        </button>
+                      </header>
+                      {generationDetailsLoading ? (
+                        <div className="ai-generation-detail-state"><LoaderCircle className="spin" size={18} />正在读取生成详情…</div>
+                      ) : generationDetailsError ? (
+                        <div className="ai-generation-detail-state"><AlertCircle size={18} /><p>{generationDetailsError}</p></div>
+                      ) : isJsonContainer(selectedGenerationJson) ? (
+                        <div className="ai-generation-json-scroll">
+                          <JsonTreeView
+                            data={selectedGenerationJson}
+                            ariaLabel={generationDetailTab === "request" ? "AI 请求 JSON" : "AI 响应 JSON"}
+                          />
+                        </div>
+                      ) : (
+                        <div className="ai-generation-detail-state">
+                          <FileText size={22} />
+                          <p>
+                            {generationDetailTab === "request"
+                              ? "该版本生成时尚未记录原始请求 JSON。"
+                              : selectedVersion.status === "completed"
+                                ? "该版本生成时尚未记录原始响应 JSON。"
+                                : "该版本未成功完成，因此没有可显示的响应 JSON。"}
+                          </p>
+                        </div>
+                      )}
+                    </section>
+                  </>
+                ) : (
+                  <div className="ai-generation-detail-state"><FileText size={24} /><p>选择一个版本查看生成详情。</p></div>
+                )}
+              </div>
+            )}
           </>
         )}
       </section>

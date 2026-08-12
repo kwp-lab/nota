@@ -466,6 +466,12 @@ export interface AiGenerationRequestPreview {
   requestBody: unknown;
 }
 
+export interface AiGenerationDetails {
+  versionId: string;
+  requestBody: unknown | null;
+  responseBody: unknown | null;
+}
+
 export interface AiDocumentContent {
   version: AiDocumentVersion;
   markdown: string;
