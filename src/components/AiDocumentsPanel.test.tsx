@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "../api";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import type {
   AiDocumentContent,
@@ -17,13 +18,22 @@ const testState = vi.hoisted(() => ({
   contents: new Map<string, AiDocumentContent>(),
   readDocument: null as null | ((id: string) => Promise<AiDocumentContent | undefined>),
 }));
-
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 vi.mock("../api", () => ({
   api: {
     getAiWorkspace: vi.fn(async () => testState.workspace),
-    estimateAiGenerationTokens: vi.fn(async () => 100),
+    previewAiGenerationRequest: vi.fn(async () => ({
+      providerKind: "openAi",
+      requestBody: {
+        model: "test-model",
+        instructions: "Follow the policy.",
+        input: "Summarize the meeting.",
+        max_output_tokens: 4_096,
+        store: false,
+      },
+    })),
+    copyAiRequestBody: vi.fn(),
     listAiDocumentVersions: vi.fn(async () => testState.versions),
     readAiDocumentVersion: vi.fn(async (id: string) =>
       testState.readDocument ? testState.readDocument(id) : testState.contents.get(id)),
@@ -218,6 +228,40 @@ describe("AI documents panel", () => {
     const selector = await screen.findByLabelText("场景模板");
     expect(selector).toHaveValue(summaryTemplate.id);
     expect(screen.getByRole("option", { name: /按发言人总结/ })).toBeDisabled();
+  });
+
+  it("previews the exact request body and shares the tokenx estimate across tabs", async () => {
+    const summaryTemplate = template("summary", "meeting_summary");
+    testState.workspace = {
+      ...testState.workspace!,
+      templates: [summaryTemplate],
+    };
+
+    render(
+      <AiDocumentsPanel
+        recording={recording}
+        transcript={transcript}
+        providers={[provider]}
+        activeProviderId={provider.id}
+        onMessage={vi.fn()}
+      />,
+    );
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "生成文档" })).at(-1)!);
+    const settingsTab = await screen.findByRole("tab", { name: "生成设置" });
+    expect(settingsTab).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/预计输入约 .* tokens/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "请求预览" }));
+    const requestBody = await screen.findByLabelText("AI 请求 Request Body");
+    expect(requestBody).toHaveTextContent('"instructions": "Follow the policy."');
+    expect(requestBody).toHaveClass("ai-request-json");
+    expect(screen.getByText(/由 tokenx 本地估算/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "复制请求体" }));
+    await waitFor(() => expect(api.copyAiRequestBody).toHaveBeenCalledWith(
+      expect.stringContaining('"input": "Summarize the meeting."'),
+    ));
   });
 
   it("ignores a stale preview response after the selected version changes", async () => {

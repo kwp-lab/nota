@@ -4,6 +4,7 @@
   /* Typography: Fluent-inspired Windows ramp, tuned for Chinese UI text. */
   --font-family-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
   --font-family-display: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-family-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
   --font-size-caption: 12px;
   --line-height-caption: 16px;
   --font-size-body: 14px;

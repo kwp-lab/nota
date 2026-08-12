@@ -922,6 +922,7 @@
 | tinyrainbow | 3.1.0 | MIT |
 | tldts | 7.4.9 | MIT |
 | tldts-core | 7.4.9 | MIT |
+| tokenx | 1.6.0 | MIT |
 | tough-cookie | 6.0.2 | BSD-3-Clause |
 | tr46 | 6.0.0 | MIT |
 | trim-lines | 3.0.1 | MIT |

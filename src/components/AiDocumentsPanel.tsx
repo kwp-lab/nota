@@ -13,18 +13,20 @@ import {
   Square,
   WandSparkles,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type UnlistenFn } from "../api";
+import { estimateAiRequestInputTokens } from "../ai-token-estimate";
 import { llmProviderReady } from "../llm";
 import { AppTooltip } from "./AppTooltip";
 import type {
   AiDocument,
   AiDocumentContent,
   AiDocumentVersion,
+  AiGenerationDraftRequest,
   AiGenerationMode,
-  AiGenerationRequest,
+  AiGenerationRequestPreview,
   AiTemplate,
   AiWorkspace,
   LlmProvider,
@@ -88,6 +90,8 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const [dialog, setDialog] = useState<GenerationDialogState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [contentReloadKey, setContentReloadKey] = useState(0);
+  const [dialogTab, setDialogTab] = useState<"settings" | "request">("settings");
+  const [requestPreview, setRequestPreview] = useState<AiGenerationRequestPreview | null>(null);
   const [estimatedTokens, setEstimatedTokens] = useState<number | null>(null);
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -243,7 +247,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const provider = dialog
     ? availableProviders.find((item) => item.id === dialog.providerId) ?? null
     : null;
-  const generationRequest = useMemo<AiGenerationRequest | null>(() => dialog ? ({
+  const generationDraft = useMemo<AiGenerationDraftRequest | null>(() => dialog ? ({
     recordingId: props.recording.id,
     mode: dialog.mode,
     documentId: dialog.document?.id ?? null,
@@ -256,12 +260,28 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     modelId: dialog.modelId,
     sourceVersionId: dialog.mode === "revise" ? dialog.sourceVersion?.id ?? null : null,
   }) : null, [dialog, props.recording.id]);
+  const requestBodyJson = useMemo(
+    () => requestPreview ? JSON.stringify(requestPreview.requestBody, null, 2) : "",
+    [requestPreview],
+  );
+  const tokenEstimateOver = Boolean(
+    (provider && estimatedTokens !== null && estimatedTokens > provider.inputTokenBudget)
+    || estimateError,
+  );
+  const tokenEstimateLabel = estimating
+    ? "正在估算输入 tokens…"
+    : estimateError
+      ? estimateError
+      : estimatedTokens === null
+        ? "等待估算输入 tokens"
+        : `预计输入约 ${estimatedTokens.toLocaleString()} tokens${provider ? ` / 上限 ${provider.inputTokenBudget.toLocaleString()}` : ""}`;
 
   useEffect(() => {
     if (
-      !generationRequest
-      || (!generationRequest.templateId && !generationRequest.documentId)
+      !generationDraft
+      || (!generationDraft.templateId && !generationDraft.documentId)
     ) {
+      setRequestPreview(null);
       setEstimatedTokens(null);
       setEstimateError(null);
       setEstimating(false);
@@ -270,10 +290,14 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     let active = true;
     setEstimating(true);
     setEstimateError(null);
+    setRequestPreview(null);
+    setEstimatedTokens(null);
     const timer = window.setTimeout(() => {
-      void api.estimateAiGenerationTokens(generationRequest)
-        .then((estimate) => {
-          if (active) setEstimatedTokens(estimate);
+      void api.previewAiGenerationRequest(generationDraft)
+        .then((preview) => {
+          if (!active) return;
+          setRequestPreview(preview);
+          setEstimatedTokens(estimateAiRequestInputTokens(preview));
         })
         .catch((error) => {
           if (active) {
@@ -289,13 +313,14 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [generationRequest]);
+  }, [generationDraft]);
 
   const openDialog = (
     mode: AiGenerationMode,
     document: AiDocument | null,
     sourceVersion: AiDocumentVersion | null = null,
   ) => {
+    setDialogTab("settings");
     const templateId = document?.templateId
       ?? unusedTemplates.find((template) => !isSpeakerTemplate(template) || speakerLabelsAvailable)?.id
       ?? unusedTemplates[0]?.id
@@ -317,15 +342,34 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     });
   };
 
+  const handleDialogTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = dialogTab === "settings" ? "request" : "settings";
+    setDialogTab(nextTab);
+    window.requestAnimationFrame(() => {
+      window.document.getElementById(`ai-generation-${nextTab}-tab`)?.focus();
+    });
+  };
+
   const submitGeneration = async () => {
-    if (!dialog || !generationRequest || !dialog.providerId || !dialog.templateId) return;
+    if (
+      !dialog
+      || !generationDraft
+      || estimatedTokens === null
+      || !dialog.providerId
+      || !dialog.templateId
+    ) return;
     if (dialog.mode === "revise" && !dialog.runRequest.trim()) {
       props.onMessage("error", "请填写希望如何修改这个版本");
       return;
     }
     setSubmitting(true);
     try {
-      const version = await api.generateAiDocument(generationRequest);
+      const version = await api.generateAiDocument({
+        ...generationDraft,
+        estimatedInputTokens: estimatedTokens,
+      });
       setDialog(null);
       const next = await refreshWorkspace();
       const document = next.documents.find((item) => item.id === version.documentId);
@@ -335,6 +379,16 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
       props.onMessage("error", String(error));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const copyRequestBody = async () => {
+    if (!requestBodyJson) return;
+    try {
+      await api.copyAiRequestBody(requestBodyJson);
+      props.onMessage("success", "AI Request Body 已复制");
+    } catch (error) {
+      props.onMessage("error", String(error));
     }
   };
 
@@ -551,58 +605,127 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
               </div>
               <AppTooltip content="关闭"><button className="icon-button" aria-label="关闭生成窗口" onClick={() => setDialog(null)}>×</button></AppTooltip>
             </header>
-            {dialog.mode === "create" && (
-              <label>
-                <span>场景模板</span>
-                <select value={dialog.templateId} onChange={(event) => {
-                  const template = workspace.templates.find((item) => item.id === event.target.value);
-                  setDialog({ ...dialog, templateId: event.target.value, title: template?.name ?? dialog.title });
-                }}>
-                  {unusedTemplates.map((template) => (
-                    <option
-                      key={template.id}
-                      value={template.id}
-                      disabled={isSpeakerTemplate(template) && !speakerLabelsAvailable}
-                    >
-                      {template.name}{isSpeakerTemplate(template) && !speakerLabelsAvailable ? "（需要说话人标签）" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div
+              className="app-tab-bar ai-generation-tabs"
+              role="tablist"
+              aria-label="生成 AI 文档"
+              onKeyDown={handleDialogTabKeyDown}
+            >
+              <button
+                id="ai-generation-settings-tab"
+                type="button"
+                role="tab"
+                aria-selected={dialogTab === "settings"}
+                aria-controls="ai-generation-settings-panel"
+                tabIndex={dialogTab === "settings" ? 0 : -1}
+                className={dialogTab === "settings" ? "active" : ""}
+                onClick={() => setDialogTab("settings")}
+              >
+                生成设置
+              </button>
+              <button
+                id="ai-generation-request-tab"
+                type="button"
+                role="tab"
+                aria-selected={dialogTab === "request"}
+                aria-controls="ai-generation-request-panel"
+                tabIndex={dialogTab === "request" ? 0 : -1}
+                className={dialogTab === "request" ? "active" : ""}
+                onClick={() => setDialogTab("request")}
+              >
+                请求预览
+              </button>
+            </div>
+            {dialogTab === "settings" ? (
+              <div
+                id="ai-generation-settings-panel"
+                className="ai-generation-tab-panel"
+                role="tabpanel"
+                aria-labelledby="ai-generation-settings-tab"
+              >
+                {dialog.mode === "create" && (
+                  <label>
+                    <span>场景模板</span>
+                    <select value={dialog.templateId} onChange={(event) => {
+                      const template = workspace.templates.find((item) => item.id === event.target.value);
+                      setDialog({ ...dialog, templateId: event.target.value, title: template?.name ?? dialog.title });
+                    }}>
+                      {unusedTemplates.map((template) => (
+                        <option
+                          key={template.id}
+                          value={template.id}
+                          disabled={isSpeakerTemplate(template) && !speakerLabelsAvailable}
+                        >
+                          {template.name}{isSpeakerTemplate(template) && !speakerLabelsAvailable ? "（需要说话人标签）" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label><span>文档标题</span><input value={dialog.title} onChange={(event) => setDialog({ ...dialog, title: event.target.value })} /></label>
+                <label>
+                  <span>会议级上下文 <small>会保存到当前会议</small></span>
+                  <textarea rows={3} value={dialog.meetingContext} placeholder="项目背景、缩写、参会人角色、会议目标…" onChange={(event) => setDialog({ ...dialog, meetingContext: event.target.value })} />
+                </label>
+                <label>
+                  <span>文档要求 <small>会保存到这条文档版本链</small></span>
+                  <textarea rows={3} value={dialog.documentRequirements} placeholder="受众、用途、语言、语气、篇幅、重点…" onChange={(event) => setDialog({ ...dialog, documentRequirements: event.target.value })} />
+                </label>
+                <label>
+                  <span>{dialog.mode === "revise" ? "修改意见" : "本次附加要求"}</span>
+                  <textarea rows={3} value={dialog.runRequest} placeholder={dialog.mode === "revise" ? "说明需要补充、删除或调整的内容…" : "仅对本次生成生效，可留空"} onChange={(event) => setDialog({ ...dialog, runRequest: event.target.value })} />
+                </label>
+                <div className="ai-provider-row">
+                  <label><span>Provider</span><select value={dialog.providerId} onChange={(event) => {
+                    const next = availableProviders.find((item) => item.id === event.target.value);
+                    setDialog({ ...dialog, providerId: event.target.value, modelId: next?.modelId ?? "" });
+                  }}>{availableProviders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                  <label><span>模型</span><input value={dialog.modelId} onChange={(event) => setDialog({ ...dialog, modelId: event.target.value })} /></label>
+                </div>
+                <div className={`ai-token-estimate ${tokenEstimateOver ? "over" : ""}`}>
+                  {tokenEstimateLabel}
+                </div>
+              </div>
+            ) : (
+              <div
+                id="ai-generation-request-panel"
+                className="ai-generation-tab-panel ai-request-preview"
+                role="tabpanel"
+                aria-labelledby="ai-generation-request-tab"
+              >
+                <div className="ai-request-preview-header">
+                  <div>
+                    <strong>Request Body</strong>
+                    <small>
+                      {(requestPreview?.providerKind ?? provider?.kind) === "openAi"
+                        ? "Responses API"
+                        : "Chat Completions"}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="button secondary compact"
+                    disabled={!requestBodyJson}
+                    onClick={() => void copyRequestBody()}
+                  >
+                    <Clipboard size={14} />复制请求体
+                  </button>
+                </div>
+                {estimating ? (
+                  <div className="ai-request-preview-state"><LoaderCircle className="spin" size={18} />正在生成请求预览…</div>
+                ) : estimateError ? (
+                  <div className="ai-request-preview-state error"><AlertCircle size={18} />{estimateError}</div>
+                ) : requestBodyJson ? (
+                  <pre className="ai-request-json" aria-label="AI 请求 Request Body"><code>{requestBodyJson}</code></pre>
+                ) : (
+                  <div className="ai-request-preview-state">等待生成请求预览</div>
+                )}
+                <div className={`ai-token-estimate ai-request-token-estimate ${tokenEstimateOver ? "over" : ""}`}>
+                  <span>{tokenEstimateLabel}</span>
+                  {!estimateError && <small>由 tokenx 本地估算，实际用量以 Provider 返回结果为准。</small>}
+                </div>
+              </div>
             )}
-            <label><span>文档标题</span><input value={dialog.title} onChange={(event) => setDialog({ ...dialog, title: event.target.value })} /></label>
-            <label>
-              <span>会议级上下文 <small>会保存到当前会议</small></span>
-              <textarea rows={3} value={dialog.meetingContext} placeholder="项目背景、缩写、参会人角色、会议目标…" onChange={(event) => setDialog({ ...dialog, meetingContext: event.target.value })} />
-            </label>
-            <label>
-              <span>文档要求 <small>会保存到这条文档版本链</small></span>
-              <textarea rows={3} value={dialog.documentRequirements} placeholder="受众、用途、语言、语气、篇幅、重点…" onChange={(event) => setDialog({ ...dialog, documentRequirements: event.target.value })} />
-            </label>
-            <label>
-              <span>{dialog.mode === "revise" ? "修改意见" : "本次附加要求"}</span>
-              <textarea rows={3} value={dialog.runRequest} placeholder={dialog.mode === "revise" ? "说明需要补充、删除或调整的内容…" : "仅对本次生成生效，可留空"} onChange={(event) => setDialog({ ...dialog, runRequest: event.target.value })} />
-            </label>
-            <div className="ai-provider-row">
-              <label><span>Provider</span><select value={dialog.providerId} onChange={(event) => {
-                const next = availableProviders.find((item) => item.id === event.target.value);
-                setDialog({ ...dialog, providerId: event.target.value, modelId: next?.modelId ?? "" });
-              }}>{availableProviders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-              <label><span>模型</span><input value={dialog.modelId} onChange={(event) => setDialog({ ...dialog, modelId: event.target.value })} /></label>
-            </div>
-            <div className={`ai-token-estimate ${(
-              provider
-              && estimatedTokens !== null
-              && estimatedTokens > provider.inputTokenBudget
-            ) || estimateError ? "over" : ""}`}>
-              {estimating
-                ? "正在本地精确估算输入 tokens…"
-                : estimateError
-                  ? estimateError
-                  : estimatedTokens === null
-                    ? "等待估算输入 tokens"
-                    : `预计输入约 ${estimatedTokens.toLocaleString()} tokens${provider ? ` / 上限 ${provider.inputTokenBudget.toLocaleString()}` : ""}`}
-            </div>
             <footer>
               <button className="button secondary" disabled={submitting} onClick={() => setDialog(null)}>取消</button>
               <button

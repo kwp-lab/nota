@@ -4,8 +4,10 @@ import { getVersion } from "@tauri-apps/api/app";
 import type {
   AiDocumentContent,
   AiDocumentVersion,
+  AiGenerationDraftRequest,
   AiGenerationEvent,
   AiGenerationRequest,
+  AiGenerationRequestPreview,
   AiTemplate,
   AiWorkspace,
   AppSettings,
@@ -120,8 +122,10 @@ export const api = {
     invoke<void>("archive_ai_template", { id }),
   getAiWorkspace: (recordingId: string) =>
     invoke<AiWorkspace>("get_ai_workspace", { recordingId }),
-  estimateAiGenerationTokens: (request: AiGenerationRequest) =>
-    invoke<number>("estimate_ai_generation_tokens", { request }),
+  previewAiGenerationRequest: (request: AiGenerationDraftRequest) =>
+    invoke<AiGenerationRequestPreview>("preview_ai_generation_request", { request }),
+  copyAiRequestBody: (requestBody: string) =>
+    invoke<void>("copy_ai_request_body", { requestBody }),
   listAiDocumentVersions: (documentId: string) =>
     invoke<AiDocumentVersion[]>("list_ai_document_versions", { documentId }),
   generateAiDocument: (request: AiGenerationRequest) =>

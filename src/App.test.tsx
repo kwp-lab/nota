@@ -148,7 +148,17 @@ vi.mock("./api", () => ({
       templates: [],
       activeGeneration: null,
     })),
-    estimateAiGenerationTokens: vi.fn(async () => 100),
+    previewAiGenerationRequest: vi.fn(async () => ({
+      providerKind: "openAi",
+      requestBody: {
+        model: "test-model",
+        instructions: "Follow the policy.",
+        input: "Summarize the meeting.",
+        max_output_tokens: 4_096,
+        store: false,
+      },
+    })),
+    copyAiRequestBody: vi.fn(),
     listAiDocumentVersions: vi.fn(async () => []),
     readAiDocumentVersion: vi.fn(async () => ({
       version: null,

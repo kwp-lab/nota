@@ -42,7 +42,9 @@ flowchart LR
 
 Use `Segoe UI Variable` on supported Windows versions, then `Segoe UI` and
 `Microsoft YaHei UI` as fallbacks. Chinese and Latin content must use the same
-semantic type roles.
+semantic type roles. Read-only code and structured request previews use the
+shared `--font-family-mono` stack; ordinary controls and content must not use
+the monospace role.
 
 | Role | Size / line height | Weight | Usage |
 |---|---|---|---|
