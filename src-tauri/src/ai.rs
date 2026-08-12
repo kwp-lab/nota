@@ -1,7 +1,8 @@
 use crate::models::{
-    AiDocumentContent, AiDocumentVersion, AiFileState, AiGenerationEvent, AiGenerationMode,
-    AiGenerationRequest, AiGenerationStatus, AiTemplate, LlmConnectionTest, LlmModel,
-    LlmProviderCredentials, LlmProviderKind, TranscriptDocument,
+    AiDocument, AiDocumentContent, AiDocumentVersion, AiFileState, AiGenerationEvent,
+    AiGenerationMode, AiGenerationRequest, AiGenerationRequestPreview, AiGenerationStatus,
+    AiTemplate, LlmConnectionTest, LlmModel, LlmProviderCredentials, LlmProviderKind,
+    RecordingItem, TranscriptDocument,
 };
 use crate::storage::{NewAiVersion, Storage, sanitize_path_component};
 use anyhow::{Context, Result, anyhow, bail};
@@ -57,6 +58,16 @@ struct ProviderOutput {
     output_tokens: Option<u32>,
 }
 
+struct PreparedGeneration {
+    recording: RecordingItem,
+    transcript: TranscriptDocument,
+    existing_document: Option<AiDocument>,
+    template: AiTemplate,
+    title: String,
+    system_prompt: String,
+    input: String,
+}
+
 pub struct AiManager {
     storage: Arc<Storage>,
     sender: Sender<AiJob>,
@@ -92,116 +103,24 @@ impl AiManager {
     }
 
     pub fn start(&self, app: AppHandle, request: AiGenerationRequest) -> Result<AiDocumentVersion> {
-        let recording = self.storage.find_recording(&request.recording_id)?;
-        let transcript = self.storage.transcript(&request.recording_id)?;
-        if transcript.status != crate::models::TranscriptionStatus::Completed
-            || transcript.text.trim().is_empty()
-        {
-            bail!("请先完成这条录音的文字转写");
-        }
         let transcription_generation = self
             .storage
             .transcription_generation(&request.recording_id)?;
-        let settings = self.storage.settings()?;
-        let provider_id = request
-            .provider_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .map(str::to_owned)
-            .or(settings.active_llm_provider_id)
-            .context("请先在设置中配置并选择默认 AI 模型服务")?;
-        let mut provider = self.storage.find_llm_provider(&provider_id)?;
-        if let Some(model_id) = request
-            .model_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            provider.provider.model_id = model_id.to_owned();
-        }
-        validate_runtime_provider(&provider)?;
-
-        let (existing_document, template) = match request.mode {
-            AiGenerationMode::Create => {
-                let template_id = request.template_id.as_deref().context("请选择 AI 模板")?;
-                let template = self.storage.find_ai_template(template_id)?;
-                if template.archived {
-                    bail!("该 AI 模板已经归档");
-                }
-                if self
-                    .storage
-                    .find_ai_document_for_template(&request.recording_id, template_id)?
-                    .is_some()
-                {
-                    bail!("当前会议已经使用过该模板，请打开已有文档重新生成");
-                }
-                (None, template)
-            }
-            AiGenerationMode::Regenerate | AiGenerationMode::Revise => {
-                let document_id = request.document_id.as_deref().context("缺少 AI 文档 ID")?;
-                let document = self.storage.find_ai_document(document_id)?;
-                if document.recording_id != request.recording_id {
-                    bail!("AI 文档与当前录音不匹配");
-                }
-                let template = self.storage.find_ai_template(&document.template_id)?;
-                (Some(document), template)
-            }
-        };
-        ensure_speaker_template_supported(&template, &transcript)?;
-
-        let source_markdown = if request.mode == AiGenerationMode::Revise {
-            let source_id = request
-                .source_version_id
-                .as_deref()
-                .context("请选择要修改的文档版本")?;
-            let source = self.storage.find_ai_document_version(source_id)?;
-            let document = existing_document.as_ref().context("缺少 AI 文档")?;
-            if source.document_id != document.id
-                || source.status != AiGenerationStatus::Completed
-                || !matches!(
-                    source.file_state,
-                    AiFileState::Ready | AiFileState::Modified
-                )
-            {
-                bail!("所选版本不可读取，请先重新关联 Markdown 文件");
-            }
-            Some(read_markdown_body(
-                source
-                    .file_path
-                    .as_deref()
-                    .context("所选版本没有文件路径")?,
-            )?)
-        } else {
-            None
-        };
-
-        let title = request
-            .title
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
-                existing_document
-                    .as_ref()
-                    .map(|document| document.title.clone())
-            })
-            .unwrap_or_else(|| template.name.clone());
-        if title.chars().count() > 100 {
-            bail!("AI 文档标题不能超过 100 个字符");
-        }
-        let (system_prompt, input) = build_prompts(
-            &recording.title,
-            &recording.created_at,
-            &template,
-            &request.meeting_context,
-            &request.document_requirements,
-            &request.run_request,
-            &transcript,
-            source_markdown.as_deref(),
-            request.mode,
-        );
-        let estimated_input_tokens = estimate_tokens(&format!("{system_prompt}\n{input}"));
+        let provider = resolve_generation_provider(&self.storage, &request)?;
+        let provider_id = provider.provider.id.clone();
+        let PreparedGeneration {
+            recording,
+            transcript,
+            existing_document,
+            template,
+            title,
+            system_prompt,
+            input,
+        } = prepare_generation(&self.storage, &request)?;
+        let estimated_input_tokens = request
+            .estimated_input_tokens
+            .filter(|value| *value > 0)
+            .context("请等待输入 token 估算完成后再生成")?;
         if estimated_input_tokens > provider.provider.input_token_budget {
             bail!(
                 "预计输入约 {estimated_input_tokens} tokens，超过当前服务配置的 {} tokens 上限。请精简上下文、选择其他模型或调整服务预算。",
@@ -422,7 +341,55 @@ pub fn test_connection(credentials: &LlmProviderCredentials) -> Result<LlmConnec
     })
 }
 
-pub fn estimate_generation_tokens(storage: &Storage, request: &AiGenerationRequest) -> Result<u32> {
+pub fn preview_generation_request(
+    storage: &Storage,
+    request: &AiGenerationRequest,
+) -> Result<AiGenerationRequestPreview> {
+    let provider = resolve_generation_provider(storage, request)?;
+    let prepared = prepare_generation(storage, request)?;
+    let request_body = match provider.provider.kind {
+        LlmProviderKind::OpenAi => {
+            responses_request_body(&provider, &prepared.system_prompt, &prepared.input)
+        }
+        LlmProviderKind::OpenAiCompatible => {
+            chat_request_body(&provider, &prepared.system_prompt, &prepared.input)
+        }
+    };
+    Ok(AiGenerationRequestPreview {
+        provider_kind: provider.provider.kind,
+        request_body,
+    })
+}
+
+fn resolve_generation_provider(
+    storage: &Storage,
+    request: &AiGenerationRequest,
+) -> Result<LlmProviderCredentials> {
+    let settings = storage.settings()?;
+    let provider_id = request
+        .provider_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+        .or(settings.active_llm_provider_id)
+        .context("请先在设置中配置并选择默认 AI 模型服务")?;
+    let mut provider = storage.find_llm_provider(&provider_id)?;
+    if let Some(model_id) = request
+        .model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        provider.provider.model_id = model_id.to_owned();
+    }
+    validate_runtime_provider(&provider)?;
+    Ok(provider)
+}
+
+fn prepare_generation(
+    storage: &Storage,
+    request: &AiGenerationRequest,
+) -> Result<PreparedGeneration> {
     let recording = storage.find_recording(&request.recording_id)?;
     let transcript = storage.transcript(&request.recording_id)?;
     if transcript.status != crate::models::TranscriptionStatus::Completed
@@ -430,7 +397,7 @@ pub fn estimate_generation_tokens(storage: &Storage, request: &AiGenerationReque
     {
         bail!("请先完成这条录音的文字转写");
     }
-    let (document, template) = match request.mode {
+    let (existing_document, template) = match request.mode {
         AiGenerationMode::Create => {
             let template_id = request.template_id.as_deref().context("请选择 AI 模板")?;
             let template = storage.find_ai_template(template_id)?;
@@ -462,7 +429,7 @@ pub fn estimate_generation_tokens(storage: &Storage, request: &AiGenerationReque
             .as_deref()
             .context("请选择要修改的文档版本")?;
         let source = storage.find_ai_document_version(source_id)?;
-        let document = document.as_ref().context("缺少 AI 文档")?;
+        let document = existing_document.as_ref().context("缺少 AI 文档")?;
         if source.document_id != document.id
             || source.status != AiGenerationStatus::Completed
             || !matches!(
@@ -481,6 +448,21 @@ pub fn estimate_generation_tokens(storage: &Storage, request: &AiGenerationReque
     } else {
         None
     };
+    let title = request
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            existing_document
+                .as_ref()
+                .map(|document| document.title.clone())
+        })
+        .unwrap_or_else(|| template.name.clone());
+    if title.chars().count() > 100 {
+        bail!("AI 文档标题不能超过 100 个字符");
+    }
     let (system_prompt, input) = build_prompts(
         &recording.title,
         &recording.created_at,
@@ -492,7 +474,15 @@ pub fn estimate_generation_tokens(storage: &Storage, request: &AiGenerationReque
         source_markdown.as_deref(),
         request.mode,
     );
-    Ok(estimate_tokens(&format!("{system_prompt}\n{input}")))
+    Ok(PreparedGeneration {
+        recording,
+        transcript,
+        existing_document,
+        template,
+        title,
+        system_prompt,
+        input,
+    })
 }
 
 pub fn list_models(credentials: &LlmProviderCredentials) -> Result<Vec<LlmModel>> {
@@ -880,14 +870,6 @@ fn empty_as_not_provided(value: &str) -> &str {
     } else {
         value.trim()
     }
-}
-
-fn estimate_tokens(value: &str) -> u32 {
-    let mut estimate = 64.0_f64;
-    for character in value.chars() {
-        estimate += if character.is_ascii() { 0.3 } else { 1.2 };
-    }
-    (estimate * 1.15).ceil().min(u32::MAX as f64) as u32
 }
 
 fn choose_target_path(
@@ -1334,11 +1316,6 @@ mod tests {
         assert!(document_file_matches_identity(&path, "doc", "version"));
         assert!(!document_file_matches_identity(&path, "doc", "other"));
         std::fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn token_estimate_is_higher_for_cjk_than_ascii_of_same_length() {
-        assert!(estimate_tokens("会议总结") > estimate_tokens("summary"));
     }
 
     #[test]

@@ -845,7 +845,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 />
               </div>
 
-              <div className="record-detail-tabs" role="tablist" aria-label="会议详情">
+              <div className="app-tab-bar" role="tablist" aria-label="会议详情">
                 <button
                   role="tab"
                   aria-selected={detailTab === "transcript"}

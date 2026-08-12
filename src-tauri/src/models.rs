@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -900,6 +901,15 @@ pub struct AiGenerationRequest {
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
     pub source_version_id: Option<String>,
+    #[serde(default)]
+    pub estimated_input_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiGenerationRequestPreview {
+    pub provider_kind: LlmProviderKind,
+    pub request_body: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

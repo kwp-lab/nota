@@ -82,12 +82,23 @@ contain credentials, prompt bodies, transcript content, or model output.
   allows that.
 - OpenAI-compatible providers use non-streaming Chat Completions with separate
   system and user messages.
+- The generation dialog can request a read-only preview assembled by the same
+  Rust request-body builders used for submission. Responses previews expose
+  `instructions` and `input`; Chat Completions previews expose the system and
+  user `messages`. Preview payloads never include API keys or authorization
+  headers.
 - Generation is never automatic. A provider is contacted only after the user
   explicitly submits the generation dialog.
-- The configured input-token budget is enforced locally before a request. The
-  generation dialog asks Rust to assemble the same prompt and return the same
-  estimate used at submission. The estimate remains guidance rather than
-  provider billing truth.
+- React uses the `tokenx` dependency to estimate only the model-visible input
+  fields in that preview. Responses and Chat Completions use separate field
+  adapters over the shared estimator. The same estimate appears on the
+  generation-settings and request-preview tabs, is recorded with the version,
+  and is checked against the configured input-token budget before submission.
+  The estimate remains guidance rather than provider billing truth; successful
+  responses retain provider-reported usage when available.
+- The read-only JSON preview preserves indentation while wrapping long values
+  within the container; users should not need horizontal scrolling to inspect
+  `input` or `instructions`.
 - A non-empty but incomplete provider response, including a Responses
   `incomplete` status or Chat Completions `finish_reason: length`, fails the
   version instead of publishing a truncated document.

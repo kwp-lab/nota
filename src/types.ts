@@ -443,7 +443,7 @@ export interface AiWorkspace {
   templates: AiTemplate[];
 }
 
-export interface AiGenerationRequest {
+export interface AiGenerationDraftRequest {
   recordingId: string;
   mode: AiGenerationMode;
   documentId: string | null;
@@ -455,6 +455,15 @@ export interface AiGenerationRequest {
   providerId: string | null;
   modelId: string | null;
   sourceVersionId: string | null;
+}
+
+export interface AiGenerationRequest extends AiGenerationDraftRequest {
+  estimatedInputTokens: number;
+}
+
+export interface AiGenerationRequestPreview {
+  providerKind: LlmProviderKind;
+  requestBody: unknown;
 }
 
 export interface AiDocumentContent {

@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added a two-tab AI generation dialog with a wrapping, read-only preview of
+  the exact Responses or Chat Completions request body, one-click copying, and
+  a shared local input-token estimate powered by `tokenx`.
 - Added offline, multi-file import for MP3, M4A, WAV, and FLAC phone or
   external recordings, with local progress, cancellation, per-file failures,
   exact-file duplicate detection, and immediate access to playback,
@@ -16,6 +19,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Replaced Nota's handwritten input-token character heuristic with
+  provider-aware `tokenx` estimation over the model-visible request fields;
+  actual usage reported by the configured provider remains authoritative.
 - Imported media is decoded locally and normalized to a Nota-managed 48 kHz
   mono Ogg Opus copy without FFmpeg; deleting the Nota recording does not
   modify the originally selected file.

@@ -1,7 +1,7 @@
 use crate::ai::{
-    AiManager, document_file_matches_identity, estimate_generation_tokens,
-    find_moved_document_version, list_models as list_llm_provider_models,
-    normalize_provider_base_url, read_document_content, relink_document_version,
+    AiManager, document_file_matches_identity, find_moved_document_version,
+    list_models as list_llm_provider_models, normalize_provider_base_url,
+    preview_generation_request, read_document_content, relink_document_version,
     test_connection as test_llm_connection,
 };
 use crate::asr::{
@@ -1708,11 +1708,22 @@ fn get_ai_workspace(
 }
 
 #[tauri::command]
-fn estimate_ai_generation_tokens(
+fn preview_ai_generation_request(
     state: State<AppState>,
     request: AiGenerationRequest,
-) -> std::result::Result<u32, String> {
-    command_result(estimate_generation_tokens(&state.storage, &request))
+) -> std::result::Result<AiGenerationRequestPreview, String> {
+    command_result(preview_generation_request(&state.storage, &request))
+}
+
+#[tauri::command]
+fn copy_ai_request_body(request_body: String) -> std::result::Result<(), String> {
+    command_result((|| {
+        if request_body.trim().is_empty() {
+            bail!("当前没有可复制的 AI Request Body");
+        }
+        arboard::Clipboard::new()?.set_text(request_body)?;
+        Ok(())
+    })())
 }
 
 #[tauri::command]
@@ -2567,7 +2578,8 @@ pub fn run_app() {
             clone_ai_template,
             archive_ai_template,
             get_ai_workspace,
-            estimate_ai_generation_tokens,
+            preview_ai_generation_request,
+            copy_ai_request_body,
             list_ai_document_versions,
             generate_ai_document,
             cancel_ai_generation,
