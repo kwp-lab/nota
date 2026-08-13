@@ -82,4 +82,6 @@ release.
 - SBOM Cargo and npm links are derived from locked package identities instead
   of installation metadata, whose repository URL normalization may vary by
   host toolchain. Manually audited components retain their exact source URL.
+- The deterministic SBOM serial number hashes LF-normalized lock-file content,
+  so Windows checkout line-ending policy cannot change the artifact identity.
 - An SBOM is an inventory, not a substitute for license texts or source offers.

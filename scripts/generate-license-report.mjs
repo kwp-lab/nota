@@ -30,6 +30,10 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function normalizedText(path) {
+  return readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+}
+
 function compareStable(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -377,7 +381,8 @@ function sbomJson(cargoPackages, npmPackages, manual) {
   ].sort((a, b) => compareStable(a["bom-ref"], b["bom-ref"]));
 
   const lockDigest = sha256(
-    readFileSync(resolve(root, "src-tauri/Cargo.lock")) + readFileSync(resolve(root, "package-lock.json")),
+    normalizedText(resolve(root, "src-tauri/Cargo.lock")) +
+      normalizedText(resolve(root, "package-lock.json")),
   );
   const uuid = `${lockDigest.slice(0, 8)}-${lockDigest.slice(8, 12)}-4${lockDigest.slice(13, 16)}-a${lockDigest.slice(17, 20)}-${lockDigest.slice(20, 32)}`;
   return `${JSON.stringify(
