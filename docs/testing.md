@@ -4,7 +4,8 @@
 - Last updated: 2026-08-13
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
-  `.github/workflows/ci.yml`
+  `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
+  `.github/workflows/native.yml`, `.github/workflows/compliance.yml`
 
 ## Standard Verification
 
@@ -18,10 +19,21 @@ npm run check
 bypass Nota design tokens, builds and tests the frontend, checks Rust
 formatting, runs locked Rust tests, and treats every Clippy warning as an
 error. It delegates the Windows-specific orchestration to `scripts/check.ps1`.
-This local command is the required routine quality gate. `.github/workflows/ci.yml`
-exposes the same clean-Windows verification as a manual `workflow_dispatch`;
-pull requests and pushes do not start cloud CI automatically. The tag-triggered
-release workflow remains independent and automatic.
+This local command is the required routine quality gate. Cloud CI is layered
+by changed path so ordinary contributions receive relevant feedback without
+paying for an unnecessary full Windows build:
+
+- frontend source and configuration changes run design-token validation,
+  frontend tests, and a web-only production build on Linux;
+- Rust and Tauri changes run formatting, locked tests, and Clippy on Windows;
+- dependency or legal-artifact changes run the locked license policy gate;
+- documentation-only changes do not start application CI.
+
+Each layer runs for pull requests and pushes to `main`, cancels an older run
+for the same ref, and can also be started manually. `.github/workflows/ci.yml`
+remains a manual full-verification fallback. None of these verification
+workflows calls `npm run build`, produces `Nota.exe`, or creates an installer.
+Only the tag-triggered release workflow builds distribution artifacts.
 
 During focused development, the narrower commands remain available:
 

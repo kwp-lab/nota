@@ -48,6 +48,7 @@ $env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"
 Push-Location $workspace
 try {
     & ".\scripts\verify-version.ps1"
+    Invoke-NativeCommand "npm.cmd" @("run", "licenses:check") "The license compliance check failed."
     Invoke-NativeCommand "npm.cmd" @("run", "check:design") "The design token check failed."
     Invoke-NativeCommand "npm.cmd" @("run", "build:web") "The frontend build failed."
     Invoke-NativeCommand "npm.cmd" @("test") "The frontend tests failed."

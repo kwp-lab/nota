@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   test:
-    name: Test on Windows 11 x64
+    name: Full verification on Windows 11 x64
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -40,12 +40,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Install pinned cargo-about
+        run: cargo install cargo-about --locked --version 0.9.1 --features cli
+
+      - name: Verify license policy and generated artifacts
+        run: npm run licenses:check
+
       - name: Verify synchronized versions
         shell: pwsh
         run: .\scripts\verify-version.ps1
 
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Verify design tokens
+        run: npm run check:design
 
       - name: Test frontend
         run: npm test
@@ -55,3 +64,6 @@ jobs:
 
       - name: Test Rust
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Lint Rust
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

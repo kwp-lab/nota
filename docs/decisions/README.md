@@ -20,6 +20,7 @@ rejected alternatives, and consequences.
 | [0006](0006-fluent-inspired-nota-design-tokens.md) | Accepted | Use Fluent-inspired semantic tokens while keeping Nota's own visual identity |
 | [0007](0007-normalize-imported-audio-to-managed-ogg.md) | Accepted | Normalize imported audio to a Nota-owned Ogg copy with built-in Rust codecs |
 | [0008](0008-local-privacy-safe-diagnostic-logs.md) | Accepted | Keep bounded diagnostic event logs local, text-based, and privacy-safe |
+| [0009](0009-generated-release-license-compliance.md) | Accepted | Generate release legal artifacts and reciprocal-license source archives from locked dependencies |
 
 ## Lifecycle
 

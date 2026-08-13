@@ -20,7 +20,9 @@ release preparation:
 | `npm run build:exe` | Build the optimized raw executable and skip installer bundling. |
 | `npm run build` | Run Tauri's frontend hook, compile the optimized Rust executable, and build the NSIS installer. It does not run the full test suite or create portable/checksum assets. |
 | `npm run check` | Run all repository quality gates without creating release assets. |
-| `npm run release:windows` | Reinstall locked npm dependencies, run `check`, generate the license report, run `build`, then create the renamed installer, portable ZIP, and SHA-256 file under `release/`. |
+| `npm run licenses:generate` | Regenerate notices, source map, dependency inventory, and CycloneDX SBOM from locked dependencies. |
+| `npm run licenses:check` | Verify policy, manual native checksums, and that committed compliance artifacts are current. |
+| `npm run release:windows` | Reinstall locked npm dependencies, run `check`, build NSIS, then create the installer, portable ZIP, MPL source archive, legal assets, SBOM, and SHA-256 file under `release/`. |
 
 The PowerShell files under `scripts/` implement complex Windows workflows but
 are not separate contributor-facing entry points. CI may call the narrower
@@ -66,9 +68,11 @@ The release workflow will:
 1. verify the tag against all application manifests;
 2. run frontend and Rust tests on a Windows runner;
 3. build the per-user NSIS installer;
-4. create the portable ZIP and SHA-256 checksum file;
-5. upload the assets to a draft GitHub Release;
-6. generate categorized release notes from merged pull requests.
+4. verify the locked third-party license policy and committed legal artifacts;
+5. create the portable ZIP, MPL source archive, standalone notices, SBOM, and
+   SHA-256 checksum file;
+6. upload the assets to a draft GitHub Release;
+7. generate categorized release notes from merged pull requests.
 
 ## Review and publish
 
@@ -77,6 +81,8 @@ Open the draft on the repository's Releases page and verify:
 - install, launch, record, stop, and playback with the NSIS build;
 - launch, record, stop, and playback with the portable build;
 - file names and SHA-256 checksums;
+- `LICENSE`, third-party notices, source map, CycloneDX SBOM, and the MPL source
+  archive are present and correspond to the tag's lock files;
 - generated release notes and any migration or known-issue notes;
 - the pre-release checkbox for preview builds.
 
