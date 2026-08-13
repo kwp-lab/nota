@@ -79,4 +79,7 @@ release.
 - Regenerate after every dependency or lock-file change and review the diff.
 - Generated package and SBOM ordering must use locale-independent comparison
   so Windows developer machines and GitHub runners produce identical bytes.
+- SBOM Cargo and npm links are derived from locked package identities instead
+  of installation metadata, whose repository URL normalization may vary by
+  host toolchain. Manually audited components retain their exact source URL.
 - An SBOM is an inventory, not a substitute for license texts or source offers.

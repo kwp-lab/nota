@@ -30,7 +30,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   compliance checks, while keeping executable and installer builds exclusive
   to tagged releases.
 - Made generated dependency inventories and SBOM component ordering independent
-  of the host locale for reproducible local and CI verification.
+  of the host locale and installed-package repository metadata for reproducible
+  local and CI verification.
 - Standardized locked frontend dependency downloads and CI installs on the
   official npm registry for reproducible public builds.
 - Added locked dependency license policy gates for Rust, production npm, and

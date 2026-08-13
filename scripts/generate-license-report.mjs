@@ -324,7 +324,7 @@ native snapshot changes, regenerate and review all compliance artifacts.
 `;
 }
 
-function component(name, version, license, purl, externalReference) {
+function component(name, version, license, purl, externalReference, referenceType = "website") {
   const value = {
     type: "library",
     "bom-ref": purl,
@@ -334,7 +334,7 @@ function component(name, version, license, purl, externalReference) {
     purl,
   };
   if (externalReference) {
-    value.externalReferences = [{ type: "vcs", url: externalReference }];
+    value.externalReferences = [{ type: referenceType, url: externalReference }];
   }
   return value;
 }
@@ -349,7 +349,7 @@ function sbomJson(cargoPackages, npmPackages, manual) {
           item.version,
           item.license,
           `pkg:cargo/${encodeURIComponent(item.name)}@${item.version}`,
-          item.repository,
+          `https://crates.io/crates/${encodeURIComponent(item.name)}/${item.version}`,
         ),
       ),
     ...npmPackages.map((item) => {
@@ -361,7 +361,7 @@ function sbomJson(cargoPackages, npmPackages, manual) {
         version,
         item.licenses,
         `pkg:npm/${name.replace("/", "%2F")}@${version}`,
-        item.repository,
+        `https://www.npmjs.com/package/${encodeURIComponent(name).replace("%2F", "/")}/v/${version}`,
       );
     }),
     ...manual.map((item) =>
@@ -371,6 +371,7 @@ function sbomJson(cargoPackages, npmPackages, manual) {
         item.license,
         `pkg:generic/${item.name}@${encodeURIComponent(item.version)}`,
         item.source,
+        "vcs",
       ),
     ),
   ].sort((a, b) => compareStable(a["bom-ref"], b["bom-ref"]));

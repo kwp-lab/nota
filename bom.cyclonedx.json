@@ -46,8 +46,8 @@
       "purl": "pkg:cargo/adler2@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/oyvindln/adler2"
+          "type": "website",
+          "url": "https://crates.io/crates/adler2/2.0.1"
         }
       ]
     },
@@ -64,8 +64,8 @@
       "purl": "pkg:cargo/aho-corasick@1.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/BurntSushi/aho-corasick"
+          "type": "website",
+          "url": "https://crates.io/crates/aho-corasick/1.1.4"
         }
       ]
     },
@@ -82,8 +82,8 @@
       "purl": "pkg:cargo/alloc-no-stdlib@2.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dropbox/rust-alloc-no-stdlib"
+          "type": "website",
+          "url": "https://crates.io/crates/alloc-no-stdlib/2.0.4"
         }
       ]
     },
@@ -100,8 +100,8 @@
       "purl": "pkg:cargo/alloc-stdlib@0.2.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dropbox/rust-alloc-no-stdlib"
+          "type": "website",
+          "url": "https://crates.io/crates/alloc-stdlib/0.2.4"
         }
       ]
     },
@@ -118,8 +118,8 @@
       "purl": "pkg:cargo/anyhow@1.0.104",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/anyhow"
+          "type": "website",
+          "url": "https://crates.io/crates/anyhow/1.0.104"
         }
       ]
     },
@@ -136,8 +136,8 @@
       "purl": "pkg:cargo/arboard@3.6.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/1Password/arboard"
+          "type": "website",
+          "url": "https://crates.io/crates/arboard/3.6.1"
         }
       ]
     },
@@ -154,8 +154,8 @@
       "purl": "pkg:cargo/atomic-waker@1.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/smol-rs/atomic-waker"
+          "type": "website",
+          "url": "https://crates.io/crates/atomic-waker/1.1.2"
         }
       ]
     },
@@ -172,8 +172,8 @@
       "purl": "pkg:cargo/audiopus_sys@0.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/lakelezz/audiopus_sys.git"
+          "type": "website",
+          "url": "https://crates.io/crates/audiopus_sys/0.2.2"
         }
       ]
     },
@@ -190,8 +190,8 @@
       "purl": "pkg:cargo/autocfg@1.5.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/cuviper/autocfg"
+          "type": "website",
+          "url": "https://crates.io/crates/autocfg/1.5.1"
         }
       ]
     },
@@ -208,8 +208,8 @@
       "purl": "pkg:cargo/base64@0.22.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/marshallpierce/rust-base64"
+          "type": "website",
+          "url": "https://crates.io/crates/base64/0.22.1"
         }
       ]
     },
@@ -226,8 +226,8 @@
       "purl": "pkg:cargo/bit-set@0.8.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/contain-rs/bit-set"
+          "type": "website",
+          "url": "https://crates.io/crates/bit-set/0.8.0"
         }
       ]
     },
@@ -244,8 +244,8 @@
       "purl": "pkg:cargo/bit-vec@0.8.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/contain-rs/bit-vec"
+          "type": "website",
+          "url": "https://crates.io/crates/bit-vec/0.8.0"
         }
       ]
     },
@@ -262,8 +262,8 @@
       "purl": "pkg:cargo/bitflags@1.3.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/bitflags/bitflags"
+          "type": "website",
+          "url": "https://crates.io/crates/bitflags/1.3.2"
         }
       ]
     },
@@ -280,8 +280,8 @@
       "purl": "pkg:cargo/bitflags@2.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/bitflags/bitflags"
+          "type": "website",
+          "url": "https://crates.io/crates/bitflags/2.13.1"
         }
       ]
     },
@@ -298,8 +298,8 @@
       "purl": "pkg:cargo/block-buffer@0.10.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/utils"
+          "type": "website",
+          "url": "https://crates.io/crates/block-buffer/0.10.4"
         }
       ]
     },
@@ -316,8 +316,8 @@
       "purl": "pkg:cargo/brotli-decompressor@5.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dropbox/rust-brotli-decompressor"
+          "type": "website",
+          "url": "https://crates.io/crates/brotli-decompressor/5.0.3"
         }
       ]
     },
@@ -334,8 +334,8 @@
       "purl": "pkg:cargo/brotli@8.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dropbox/rust-brotli"
+          "type": "website",
+          "url": "https://crates.io/crates/brotli/8.0.4"
         }
       ]
     },
@@ -352,8 +352,8 @@
       "purl": "pkg:cargo/bs58@0.5.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Nullus157/bs58-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/bs58/0.5.1"
         }
       ]
     },
@@ -370,8 +370,8 @@
       "purl": "pkg:cargo/bytemuck@1.25.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Lokathor/bytemuck"
+          "type": "website",
+          "url": "https://crates.io/crates/bytemuck/1.25.2"
         }
       ]
     },
@@ -388,8 +388,8 @@
       "purl": "pkg:cargo/bytemuck_derive@1.11.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Lokathor/bytemuck"
+          "type": "website",
+          "url": "https://crates.io/crates/bytemuck_derive/1.11.0"
         }
       ]
     },
@@ -406,8 +406,8 @@
       "purl": "pkg:cargo/byteorder-lite@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/byteorder-lite"
+          "type": "website",
+          "url": "https://crates.io/crates/byteorder-lite/0.1.0"
         }
       ]
     },
@@ -424,8 +424,8 @@
       "purl": "pkg:cargo/byteorder@1.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/BurntSushi/byteorder"
+          "type": "website",
+          "url": "https://crates.io/crates/byteorder/1.5.0"
         }
       ]
     },
@@ -442,8 +442,8 @@
       "purl": "pkg:cargo/bytes@1.12.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/bytes"
+          "type": "website",
+          "url": "https://crates.io/crates/bytes/1.12.1"
         }
       ]
     },
@@ -460,8 +460,8 @@
       "purl": "pkg:cargo/camino@1.2.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/camino-rs/camino"
+          "type": "website",
+          "url": "https://crates.io/crates/camino/1.2.4"
         }
       ]
     },
@@ -478,8 +478,8 @@
       "purl": "pkg:cargo/cargo-platform@0.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/cargo"
+          "type": "website",
+          "url": "https://crates.io/crates/cargo-platform/0.1.9"
         }
       ]
     },
@@ -496,8 +496,8 @@
       "purl": "pkg:cargo/cargo_metadata@0.19.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/oli-obk/cargo_metadata"
+          "type": "website",
+          "url": "https://crates.io/crates/cargo_metadata/0.19.2"
         }
       ]
     },
@@ -514,8 +514,8 @@
       "purl": "pkg:cargo/cargo_toml@0.22.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://gitlab.com/lib.rs/cargo_toml"
+          "type": "website",
+          "url": "https://crates.io/crates/cargo_toml/0.22.3"
         }
       ]
     },
@@ -532,8 +532,8 @@
       "purl": "pkg:cargo/cc@1.3.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/cc-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/cc/1.3.0"
         }
       ]
     },
@@ -550,8 +550,8 @@
       "purl": "pkg:cargo/cfb@0.7.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mdsteele/rust-cfb"
+          "type": "website",
+          "url": "https://crates.io/crates/cfb/0.7.3"
         }
       ]
     },
@@ -568,8 +568,8 @@
       "purl": "pkg:cargo/cfg-if@1.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/cfg-if"
+          "type": "website",
+          "url": "https://crates.io/crates/cfg-if/1.0.4"
         }
       ]
     },
@@ -586,8 +586,8 @@
       "purl": "pkg:cargo/cfg_aliases@0.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/katharostech/cfg_aliases"
+          "type": "website",
+          "url": "https://crates.io/crates/cfg_aliases/0.2.2"
         }
       ]
     },
@@ -604,8 +604,8 @@
       "purl": "pkg:cargo/chacha20@0.10.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/stream-ciphers"
+          "type": "website",
+          "url": "https://crates.io/crates/chacha20/0.10.1"
         }
       ]
     },
@@ -622,8 +622,8 @@
       "purl": "pkg:cargo/chrono@0.4.45",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/chronotope/chrono"
+          "type": "website",
+          "url": "https://crates.io/crates/chrono/0.4.45"
         }
       ]
     },
@@ -640,8 +640,8 @@
       "purl": "pkg:cargo/clipboard-win@5.4.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DoumanAsh/clipboard-win"
+          "type": "website",
+          "url": "https://crates.io/crates/clipboard-win/5.4.1"
         }
       ]
     },
@@ -658,8 +658,8 @@
       "purl": "pkg:cargo/cmake@0.1.58",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/cmake-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/cmake/0.1.58"
         }
       ]
     },
@@ -676,8 +676,8 @@
       "purl": "pkg:cargo/cookie@0.18.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/SergioBenitez/cookie-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/cookie/0.18.1"
         }
       ]
     },
@@ -694,8 +694,8 @@
       "purl": "pkg:cargo/cpufeatures@0.2.17",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/utils"
+          "type": "website",
+          "url": "https://crates.io/crates/cpufeatures/0.2.17"
         }
       ]
     },
@@ -712,8 +712,8 @@
       "purl": "pkg:cargo/cpufeatures@0.3.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/utils"
+          "type": "website",
+          "url": "https://crates.io/crates/cpufeatures/0.3.0"
         }
       ]
     },
@@ -730,8 +730,8 @@
       "purl": "pkg:cargo/crc32fast@1.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/srijs/rust-crc32fast"
+          "type": "website",
+          "url": "https://crates.io/crates/crc32fast/1.5.0"
         }
       ]
     },
@@ -748,8 +748,8 @@
       "purl": "pkg:cargo/crossbeam-channel@0.5.16",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/crossbeam-rs/crossbeam"
+          "type": "website",
+          "url": "https://crates.io/crates/crossbeam-channel/0.5.16"
         }
       ]
     },
@@ -766,8 +766,8 @@
       "purl": "pkg:cargo/crossbeam-utils@0.8.22",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/crossbeam-rs/crossbeam"
+          "type": "website",
+          "url": "https://crates.io/crates/crossbeam-utils/0.8.22"
         }
       ]
     },
@@ -784,8 +784,8 @@
       "purl": "pkg:cargo/crypto-common@0.1.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/traits"
+          "type": "website",
+          "url": "https://crates.io/crates/crypto-common/0.1.7"
         }
       ]
     },
@@ -802,8 +802,8 @@
       "purl": "pkg:cargo/cssparser-macros@0.6.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-cssparser"
+          "type": "website",
+          "url": "https://crates.io/crates/cssparser-macros/0.6.1"
         }
       ]
     },
@@ -820,8 +820,8 @@
       "purl": "pkg:cargo/cssparser@0.36.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-cssparser"
+          "type": "website",
+          "url": "https://crates.io/crates/cssparser/0.36.0"
         }
       ]
     },
@@ -838,8 +838,8 @@
       "purl": "pkg:cargo/ctor-proc-macro@0.0.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mmastrac/rust-ctor"
+          "type": "website",
+          "url": "https://crates.io/crates/ctor-proc-macro/0.0.7"
         }
       ]
     },
@@ -856,8 +856,8 @@
       "purl": "pkg:cargo/ctor@0.8.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mmastrac/rust-ctor"
+          "type": "website",
+          "url": "https://crates.io/crates/ctor/0.8.0"
         }
       ]
     },
@@ -874,8 +874,8 @@
       "purl": "pkg:cargo/darling@0.23.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/TedDriggs/darling"
+          "type": "website",
+          "url": "https://crates.io/crates/darling/0.23.0"
         }
       ]
     },
@@ -892,8 +892,8 @@
       "purl": "pkg:cargo/darling_core@0.23.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/TedDriggs/darling"
+          "type": "website",
+          "url": "https://crates.io/crates/darling_core/0.23.0"
         }
       ]
     },
@@ -910,8 +910,8 @@
       "purl": "pkg:cargo/darling_macro@0.23.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/TedDriggs/darling"
+          "type": "website",
+          "url": "https://crates.io/crates/darling_macro/0.23.0"
         }
       ]
     },
@@ -928,8 +928,8 @@
       "purl": "pkg:cargo/deranged@0.5.8",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/jhpratt/deranged"
+          "type": "website",
+          "url": "https://crates.io/crates/deranged/0.5.8"
         }
       ]
     },
@@ -946,8 +946,8 @@
       "purl": "pkg:cargo/derive_more-impl@2.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/JelteF/derive_more"
+          "type": "website",
+          "url": "https://crates.io/crates/derive_more-impl/2.1.1"
         }
       ]
     },
@@ -964,8 +964,8 @@
       "purl": "pkg:cargo/derive_more@2.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/JelteF/derive_more"
+          "type": "website",
+          "url": "https://crates.io/crates/derive_more/2.1.1"
         }
       ]
     },
@@ -982,8 +982,8 @@
       "purl": "pkg:cargo/digest@0.10.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/traits"
+          "type": "website",
+          "url": "https://crates.io/crates/digest/0.10.7"
         }
       ]
     },
@@ -1000,8 +1000,8 @@
       "purl": "pkg:cargo/dirs-sys@0.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dirs-dev/dirs-sys-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/dirs-sys/0.5.0"
         }
       ]
     },
@@ -1018,8 +1018,8 @@
       "purl": "pkg:cargo/dirs@6.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/soc/dirs-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/dirs/6.0.0"
         }
       ]
     },
@@ -1036,8 +1036,8 @@
       "purl": "pkg:cargo/displaydoc@0.2.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/yaahc/displaydoc"
+          "type": "website",
+          "url": "https://crates.io/crates/displaydoc/0.2.6"
         }
       ]
     },
@@ -1054,8 +1054,8 @@
       "purl": "pkg:cargo/dom_query@0.27.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/niklak/dom_query"
+          "type": "website",
+          "url": "https://crates.io/crates/dom_query/0.27.0"
         }
       ]
     },
@@ -1072,8 +1072,8 @@
       "purl": "pkg:cargo/dpi@0.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-windowing/winit"
+          "type": "website",
+          "url": "https://crates.io/crates/dpi/0.1.2"
         }
       ]
     },
@@ -1090,8 +1090,8 @@
       "purl": "pkg:cargo/dtoa-short@0.3.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/upsuper/dtoa-short"
+          "type": "website",
+          "url": "https://crates.io/crates/dtoa-short/0.3.5"
         }
       ]
     },
@@ -1108,8 +1108,8 @@
       "purl": "pkg:cargo/dtoa@1.0.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/dtoa"
+          "type": "website",
+          "url": "https://crates.io/crates/dtoa/1.0.11"
         }
       ]
     },
@@ -1126,8 +1126,8 @@
       "purl": "pkg:cargo/dtor-proc-macro@0.0.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mmastrac/rust-ctor"
+          "type": "website",
+          "url": "https://crates.io/crates/dtor-proc-macro/0.0.6"
         }
       ]
     },
@@ -1144,8 +1144,8 @@
       "purl": "pkg:cargo/dtor@0.3.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mmastrac/rust-ctor"
+          "type": "website",
+          "url": "https://crates.io/crates/dtor/0.3.0"
         }
       ]
     },
@@ -1162,8 +1162,8 @@
       "purl": "pkg:cargo/dunce@1.0.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://gitlab.com/kornelski/dunce"
+          "type": "website",
+          "url": "https://crates.io/crates/dunce/1.0.5"
         }
       ]
     },
@@ -1180,8 +1180,8 @@
       "purl": "pkg:cargo/dyn-clone@1.0.20",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/dyn-clone"
+          "type": "website",
+          "url": "https://crates.io/crates/dyn-clone/1.0.20"
         }
       ]
     },
@@ -1198,8 +1198,8 @@
       "purl": "pkg:cargo/embed-resource@3.0.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/nabijaczleweli/rust-embed-resource"
+          "type": "website",
+          "url": "https://crates.io/crates/embed-resource/3.0.11"
         }
       ]
     },
@@ -1216,8 +1216,8 @@
       "purl": "pkg:cargo/equivalent@1.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/indexmap-rs/equivalent"
+          "type": "website",
+          "url": "https://crates.io/crates/equivalent/1.0.2"
         }
       ]
     },
@@ -1234,8 +1234,8 @@
       "purl": "pkg:cargo/erased-serde@0.4.10",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/erased-serde"
+          "type": "website",
+          "url": "https://crates.io/crates/erased-serde/0.4.10"
         }
       ]
     },
@@ -1252,8 +1252,8 @@
       "purl": "pkg:cargo/error-code@3.3.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DoumanAsh/error-code"
+          "type": "website",
+          "url": "https://crates.io/crates/error-code/3.3.2"
         }
       ]
     },
@@ -1270,8 +1270,8 @@
       "purl": "pkg:cargo/extended@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/depp/extended-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/extended/0.1.0"
         }
       ]
     },
@@ -1288,8 +1288,8 @@
       "purl": "pkg:cargo/fallible-iterator@0.3.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/sfackler/rust-fallible-iterator"
+          "type": "website",
+          "url": "https://crates.io/crates/fallible-iterator/0.3.0"
         }
       ]
     },
@@ -1306,8 +1306,8 @@
       "purl": "pkg:cargo/fallible-streaming-iterator@0.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/sfackler/fallible-streaming-iterator"
+          "type": "website",
+          "url": "https://crates.io/crates/fallible-streaming-iterator/0.1.9"
         }
       ]
     },
@@ -1324,8 +1324,8 @@
       "purl": "pkg:cargo/fastrand@2.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/smol-rs/fastrand"
+          "type": "website",
+          "url": "https://crates.io/crates/fastrand/2.5.0"
         }
       ]
     },
@@ -1342,8 +1342,8 @@
       "purl": "pkg:cargo/fax@0.2.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdf-rs/fax"
+          "type": "website",
+          "url": "https://crates.io/crates/fax/0.2.7"
         }
       ]
     },
@@ -1360,8 +1360,8 @@
       "purl": "pkg:cargo/fdeflate@0.3.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/fdeflate"
+          "type": "website",
+          "url": "https://crates.io/crates/fdeflate/0.3.7"
         }
       ]
     },
@@ -1378,8 +1378,8 @@
       "purl": "pkg:cargo/find-msvc-tools@0.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/cc-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/find-msvc-tools/0.1.9"
         }
       ]
     },
@@ -1396,8 +1396,8 @@
       "purl": "pkg:cargo/flate2@1.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/flate2-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/flate2/1.1.9"
         }
       ]
     },
@@ -1414,8 +1414,8 @@
       "purl": "pkg:cargo/fnv@1.0.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-fnv"
+          "type": "website",
+          "url": "https://crates.io/crates/fnv/1.0.7"
         }
       ]
     },
@@ -1432,8 +1432,8 @@
       "purl": "pkg:cargo/foldhash@0.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/orlp/foldhash"
+          "type": "website",
+          "url": "https://crates.io/crates/foldhash/0.2.0"
         }
       ]
     },
@@ -1450,8 +1450,8 @@
       "purl": "pkg:cargo/form_urlencoded@1.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-url"
+          "type": "website",
+          "url": "https://crates.io/crates/form_urlencoded/1.2.2"
         }
       ]
     },
@@ -1468,8 +1468,8 @@
       "purl": "pkg:cargo/fs2@0.4.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/danburkert/fs2-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/fs2/0.4.3"
         }
       ]
     },
@@ -1486,8 +1486,8 @@
       "purl": "pkg:cargo/futures-channel@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-channel/0.3.33"
         }
       ]
     },
@@ -1504,8 +1504,8 @@
       "purl": "pkg:cargo/futures-core@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-core/0.3.33"
         }
       ]
     },
@@ -1522,8 +1522,8 @@
       "purl": "pkg:cargo/futures-io@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-io/0.3.33"
         }
       ]
     },
@@ -1540,8 +1540,8 @@
       "purl": "pkg:cargo/futures-macro@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-macro/0.3.33"
         }
       ]
     },
@@ -1558,8 +1558,8 @@
       "purl": "pkg:cargo/futures-sink@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-sink/0.3.33"
         }
       ]
     },
@@ -1576,8 +1576,8 @@
       "purl": "pkg:cargo/futures-task@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-task/0.3.33"
         }
       ]
     },
@@ -1594,8 +1594,8 @@
       "purl": "pkg:cargo/futures-util@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/futures-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/futures-util/0.3.33"
         }
       ]
     },
@@ -1612,8 +1612,8 @@
       "purl": "pkg:cargo/generic-array@0.14.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/fizyk20/generic-array.git"
+          "type": "website",
+          "url": "https://crates.io/crates/generic-array/0.14.7"
         }
       ]
     },
@@ -1630,8 +1630,8 @@
       "purl": "pkg:cargo/getrandom@0.2.17",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/getrandom"
+          "type": "website",
+          "url": "https://crates.io/crates/getrandom/0.2.17"
         }
       ]
     },
@@ -1648,8 +1648,8 @@
       "purl": "pkg:cargo/getrandom@0.3.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/getrandom"
+          "type": "website",
+          "url": "https://crates.io/crates/getrandom/0.3.4"
         }
       ]
     },
@@ -1666,8 +1666,8 @@
       "purl": "pkg:cargo/getrandom@0.4.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/getrandom"
+          "type": "website",
+          "url": "https://crates.io/crates/getrandom/0.4.3"
         }
       ]
     },
@@ -1684,8 +1684,8 @@
       "purl": "pkg:cargo/glob@0.3.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/glob"
+          "type": "website",
+          "url": "https://crates.io/crates/glob/0.3.4"
         }
       ]
     },
@@ -1702,8 +1702,8 @@
       "purl": "pkg:cargo/global-hotkey@0.8.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/global-hotkey"
+          "type": "website",
+          "url": "https://crates.io/crates/global-hotkey/0.8.0"
         }
       ]
     },
@@ -1720,8 +1720,8 @@
       "purl": "pkg:cargo/half@2.7.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/VoidStarKat/half-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/half/2.7.1"
         }
       ]
     },
@@ -1738,8 +1738,8 @@
       "purl": "pkg:cargo/hashbrown@0.12.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/hashbrown"
+          "type": "website",
+          "url": "https://crates.io/crates/hashbrown/0.12.3"
         }
       ]
     },
@@ -1756,8 +1756,8 @@
       "purl": "pkg:cargo/hashbrown@0.17.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/hashbrown"
+          "type": "website",
+          "url": "https://crates.io/crates/hashbrown/0.17.1"
         }
       ]
     },
@@ -1774,8 +1774,8 @@
       "purl": "pkg:cargo/hashlink@0.12.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/djc/hashlink"
+          "type": "website",
+          "url": "https://crates.io/crates/hashlink/0.12.1"
         }
       ]
     },
@@ -1792,8 +1792,8 @@
       "purl": "pkg:cargo/heck@0.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/withoutboats/heck"
+          "type": "website",
+          "url": "https://crates.io/crates/heck/0.5.0"
         }
       ]
     },
@@ -1810,8 +1810,8 @@
       "purl": "pkg:cargo/hex@0.4.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/KokaKiwi/rust-hex"
+          "type": "website",
+          "url": "https://crates.io/crates/hex/0.4.3"
         }
       ]
     },
@@ -1828,8 +1828,8 @@
       "purl": "pkg:cargo/html5ever@0.38.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/html5ever"
+          "type": "website",
+          "url": "https://crates.io/crates/html5ever/0.38.0"
         }
       ]
     },
@@ -1846,8 +1846,8 @@
       "purl": "pkg:cargo/http-body-util@0.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hyperium/http-body"
+          "type": "website",
+          "url": "https://crates.io/crates/http-body-util/0.1.4"
         }
       ]
     },
@@ -1864,8 +1864,8 @@
       "purl": "pkg:cargo/http-body@1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hyperium/http-body"
+          "type": "website",
+          "url": "https://crates.io/crates/http-body/1.1.0"
         }
       ]
     },
@@ -1882,8 +1882,8 @@
       "purl": "pkg:cargo/http-range@0.1.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/bancek/rust-http-range.git"
+          "type": "website",
+          "url": "https://crates.io/crates/http-range/0.1.5"
         }
       ]
     },
@@ -1900,8 +1900,8 @@
       "purl": "pkg:cargo/http@1.4.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hyperium/http"
+          "type": "website",
+          "url": "https://crates.io/crates/http/1.4.2"
         }
       ]
     },
@@ -1918,8 +1918,8 @@
       "purl": "pkg:cargo/httparse@1.10.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/seanmonstar/httparse"
+          "type": "website",
+          "url": "https://crates.io/crates/httparse/1.10.1"
         }
       ]
     },
@@ -1936,8 +1936,8 @@
       "purl": "pkg:cargo/hyper-rustls@0.27.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rustls/hyper-rustls"
+          "type": "website",
+          "url": "https://crates.io/crates/hyper-rustls/0.27.9"
         }
       ]
     },
@@ -1954,8 +1954,8 @@
       "purl": "pkg:cargo/hyper-util@0.1.20",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hyperium/hyper-util"
+          "type": "website",
+          "url": "https://crates.io/crates/hyper-util/0.1.20"
         }
       ]
     },
@@ -1972,8 +1972,8 @@
       "purl": "pkg:cargo/hyper@1.11.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hyperium/hyper"
+          "type": "website",
+          "url": "https://crates.io/crates/hyper/1.11.0"
         }
       ]
     },
@@ -1990,8 +1990,8 @@
       "purl": "pkg:cargo/ico@0.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mdsteele/rust-ico"
+          "type": "website",
+          "url": "https://crates.io/crates/ico/0.5.0"
         }
       ]
     },
@@ -2008,8 +2008,8 @@
       "purl": "pkg:cargo/icu_collections@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_collections/2.2.0"
         }
       ]
     },
@@ -2026,8 +2026,8 @@
       "purl": "pkg:cargo/icu_locale_core@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_locale_core/2.2.0"
         }
       ]
     },
@@ -2044,8 +2044,8 @@
       "purl": "pkg:cargo/icu_normalizer@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_normalizer/2.2.0"
         }
       ]
     },
@@ -2062,8 +2062,8 @@
       "purl": "pkg:cargo/icu_normalizer_data@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_normalizer_data/2.2.0"
         }
       ]
     },
@@ -2080,8 +2080,8 @@
       "purl": "pkg:cargo/icu_properties@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_properties/2.2.0"
         }
       ]
     },
@@ -2098,8 +2098,8 @@
       "purl": "pkg:cargo/icu_properties_data@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_properties_data/2.2.0"
         }
       ]
     },
@@ -2116,8 +2116,8 @@
       "purl": "pkg:cargo/icu_provider@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/icu_provider/2.2.0"
         }
       ]
     },
@@ -2134,8 +2134,8 @@
       "purl": "pkg:cargo/ident_case@1.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/TedDriggs/ident_case"
+          "type": "website",
+          "url": "https://crates.io/crates/ident_case/1.0.1"
         }
       ]
     },
@@ -2152,8 +2152,8 @@
       "purl": "pkg:cargo/idna@1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-url/"
+          "type": "website",
+          "url": "https://crates.io/crates/idna/1.1.0"
         }
       ]
     },
@@ -2170,8 +2170,8 @@
       "purl": "pkg:cargo/idna_adapter@1.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hsivonen/idna_adapter"
+          "type": "website",
+          "url": "https://crates.io/crates/idna_adapter/1.2.2"
         }
       ]
     },
@@ -2188,8 +2188,8 @@
       "purl": "pkg:cargo/image@0.25.10",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/image"
+          "type": "website",
+          "url": "https://crates.io/crates/image/0.25.10"
         }
       ]
     },
@@ -2206,8 +2206,8 @@
       "purl": "pkg:cargo/indexmap@1.9.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/bluss/indexmap"
+          "type": "website",
+          "url": "https://crates.io/crates/indexmap/1.9.3"
         }
       ]
     },
@@ -2224,8 +2224,8 @@
       "purl": "pkg:cargo/indexmap@2.14.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/indexmap-rs/indexmap"
+          "type": "website",
+          "url": "https://crates.io/crates/indexmap/2.14.0"
         }
       ]
     },
@@ -2242,8 +2242,8 @@
       "purl": "pkg:cargo/infer@0.19.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/bojand/infer"
+          "type": "website",
+          "url": "https://crates.io/crates/infer/0.19.0"
         }
       ]
     },
@@ -2260,8 +2260,8 @@
       "purl": "pkg:cargo/ipnet@2.12.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/krisprice/ipnet"
+          "type": "website",
+          "url": "https://crates.io/crates/ipnet/2.12.0"
         }
       ]
     },
@@ -2278,8 +2278,8 @@
       "purl": "pkg:cargo/itoa@1.0.18",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/itoa"
+          "type": "website",
+          "url": "https://crates.io/crates/itoa/1.0.18"
         }
       ]
     },
@@ -2296,8 +2296,8 @@
       "purl": "pkg:cargo/json-patch@3.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/idubrov/json-patch"
+          "type": "website",
+          "url": "https://crates.io/crates/json-patch/3.0.1"
         }
       ]
     },
@@ -2314,8 +2314,8 @@
       "purl": "pkg:cargo/jsonptr@0.6.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/chanced/jsonptr"
+          "type": "website",
+          "url": "https://crates.io/crates/jsonptr/0.6.3"
         }
       ]
     },
@@ -2332,8 +2332,8 @@
       "purl": "pkg:cargo/keyboard-types@0.7.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pyfisch/keyboard-types"
+          "type": "website",
+          "url": "https://crates.io/crates/keyboard-types/0.7.0"
         }
       ]
     },
@@ -2350,8 +2350,8 @@
       "purl": "pkg:cargo/lazy_static@1.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang-nursery/lazy-static.rs"
+          "type": "website",
+          "url": "https://crates.io/crates/lazy_static/1.5.0"
         }
       ]
     },
@@ -2368,8 +2368,8 @@
       "purl": "pkg:cargo/libc@0.2.189",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/libc"
+          "type": "website",
+          "url": "https://crates.io/crates/libc/0.2.189"
         }
       ]
     },
@@ -2386,8 +2386,8 @@
       "purl": "pkg:cargo/libsqlite3-sys@0.38.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rusqlite/rusqlite"
+          "type": "website",
+          "url": "https://crates.io/crates/libsqlite3-sys/0.38.1"
         }
       ]
     },
@@ -2404,8 +2404,8 @@
       "purl": "pkg:cargo/litemap@0.8.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/litemap/0.8.2"
         }
       ]
     },
@@ -2422,8 +2422,8 @@
       "purl": "pkg:cargo/lock_api@0.4.14",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Amanieu/parking_lot"
+          "type": "website",
+          "url": "https://crates.io/crates/lock_api/0.4.14"
         }
       ]
     },
@@ -2440,8 +2440,8 @@
       "purl": "pkg:cargo/log@0.4.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/log"
+          "type": "website",
+          "url": "https://crates.io/crates/log/0.4.33"
         }
       ]
     },
@@ -2458,8 +2458,8 @@
       "purl": "pkg:cargo/lru-slab@0.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Ralith/lru-slab"
+          "type": "website",
+          "url": "https://crates.io/crates/lru-slab/0.1.2"
         }
       ]
     },
@@ -2476,8 +2476,8 @@
       "purl": "pkg:cargo/markup5ever@0.38.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/html5ever"
+          "type": "website",
+          "url": "https://crates.io/crates/markup5ever/0.38.0"
         }
       ]
     },
@@ -2494,8 +2494,8 @@
       "purl": "pkg:cargo/memchr@2.8.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/BurntSushi/memchr"
+          "type": "website",
+          "url": "https://crates.io/crates/memchr/2.8.3"
         }
       ]
     },
@@ -2512,8 +2512,8 @@
       "purl": "pkg:cargo/mime@0.3.17",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hyperium/mime"
+          "type": "website",
+          "url": "https://crates.io/crates/mime/0.3.17"
         }
       ]
     },
@@ -2530,8 +2530,8 @@
       "purl": "pkg:cargo/mime_guess@2.0.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/abonander/mime_guess"
+          "type": "website",
+          "url": "https://crates.io/crates/mime_guess/2.0.5"
         }
       ]
     },
@@ -2548,8 +2548,8 @@
       "purl": "pkg:cargo/miniz_oxide@0.8.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide"
+          "type": "website",
+          "url": "https://crates.io/crates/miniz_oxide/0.8.9"
         }
       ]
     },
@@ -2566,8 +2566,8 @@
       "purl": "pkg:cargo/mio@1.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/mio"
+          "type": "website",
+          "url": "https://crates.io/crates/mio/1.2.2"
         }
       ]
     },
@@ -2584,8 +2584,8 @@
       "purl": "pkg:cargo/moxcms@0.8.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/awxkee/moxcms.git"
+          "type": "website",
+          "url": "https://crates.io/crates/moxcms/0.8.1"
         }
       ]
     },
@@ -2602,8 +2602,8 @@
       "purl": "pkg:cargo/muda@0.19.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/muda"
+          "type": "website",
+          "url": "https://crates.io/crates/muda/0.19.3"
         }
       ]
     },
@@ -2620,8 +2620,8 @@
       "purl": "pkg:cargo/new_debug_unreachable@1.0.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mbrubeck/rust-debug-unreachable"
+          "type": "website",
+          "url": "https://crates.io/crates/new_debug_unreachable/1.0.6"
         }
       ]
     },
@@ -2638,8 +2638,8 @@
       "purl": "pkg:cargo/num-complex@0.4.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-num/num-complex"
+          "type": "website",
+          "url": "https://crates.io/crates/num-complex/0.4.6"
         }
       ]
     },
@@ -2656,8 +2656,8 @@
       "purl": "pkg:cargo/num-conv@0.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/jhpratt/num-conv"
+          "type": "website",
+          "url": "https://crates.io/crates/num-conv/0.2.2"
         }
       ]
     },
@@ -2674,8 +2674,8 @@
       "purl": "pkg:cargo/num-integer@0.1.46",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-num/num-integer"
+          "type": "website",
+          "url": "https://crates.io/crates/num-integer/0.1.46"
         }
       ]
     },
@@ -2692,8 +2692,8 @@
       "purl": "pkg:cargo/num-traits@0.2.19",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-num/num-traits"
+          "type": "website",
+          "url": "https://crates.io/crates/num-traits/0.2.19"
         }
       ]
     },
@@ -2710,8 +2710,8 @@
       "purl": "pkg:cargo/ogg@0.9.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustAudio/ogg"
+          "type": "website",
+          "url": "https://crates.io/crates/ogg/0.9.2"
         }
       ]
     },
@@ -2728,8 +2728,8 @@
       "purl": "pkg:cargo/once_cell@1.21.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/matklad/once_cell"
+          "type": "website",
+          "url": "https://crates.io/crates/once_cell/1.21.4"
         }
       ]
     },
@@ -2746,8 +2746,8 @@
       "purl": "pkg:cargo/option-ext@0.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/soc/option-ext.git"
+          "type": "website",
+          "url": "https://crates.io/crates/option-ext/0.2.0"
         }
       ]
     },
@@ -2764,8 +2764,8 @@
       "purl": "pkg:cargo/opus@0.3.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/SpaceManiac/opus-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/opus/0.3.1"
         }
       ]
     },
@@ -2782,8 +2782,8 @@
       "purl": "pkg:cargo/parking_lot@0.12.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Amanieu/parking_lot"
+          "type": "website",
+          "url": "https://crates.io/crates/parking_lot/0.12.5"
         }
       ]
     },
@@ -2800,8 +2800,8 @@
       "purl": "pkg:cargo/parking_lot_core@0.9.12",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Amanieu/parking_lot"
+          "type": "website",
+          "url": "https://crates.io/crates/parking_lot_core/0.9.12"
         }
       ]
     },
@@ -2818,8 +2818,8 @@
       "purl": "pkg:cargo/percent-encoding@2.3.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-url/"
+          "type": "website",
+          "url": "https://crates.io/crates/percent-encoding/2.3.2"
         }
       ]
     },
@@ -2836,8 +2836,8 @@
       "purl": "pkg:cargo/phf@0.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-phf/rust-phf"
+          "type": "website",
+          "url": "https://crates.io/crates/phf/0.13.1"
         }
       ]
     },
@@ -2854,8 +2854,8 @@
       "purl": "pkg:cargo/phf_codegen@0.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-phf/rust-phf"
+          "type": "website",
+          "url": "https://crates.io/crates/phf_codegen/0.13.1"
         }
       ]
     },
@@ -2872,8 +2872,8 @@
       "purl": "pkg:cargo/phf_generator@0.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-phf/rust-phf"
+          "type": "website",
+          "url": "https://crates.io/crates/phf_generator/0.13.1"
         }
       ]
     },
@@ -2890,8 +2890,8 @@
       "purl": "pkg:cargo/phf_macros@0.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-phf/rust-phf"
+          "type": "website",
+          "url": "https://crates.io/crates/phf_macros/0.13.1"
         }
       ]
     },
@@ -2908,8 +2908,8 @@
       "purl": "pkg:cargo/phf_shared@0.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-phf/rust-phf"
+          "type": "website",
+          "url": "https://crates.io/crates/phf_shared/0.13.1"
         }
       ]
     },
@@ -2926,8 +2926,8 @@
       "purl": "pkg:cargo/pin-project-lite@0.2.17",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/taiki-e/pin-project-lite"
+          "type": "website",
+          "url": "https://crates.io/crates/pin-project-lite/0.2.17"
         }
       ]
     },
@@ -2944,8 +2944,8 @@
       "purl": "pkg:cargo/pkg-config@0.3.33",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/pkg-config-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/pkg-config/0.3.33"
         }
       ]
     },
@@ -2962,8 +2962,8 @@
       "purl": "pkg:cargo/plist@1.10.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/ebarnard/rust-plist/"
+          "type": "website",
+          "url": "https://crates.io/crates/plist/1.10.0"
         }
       ]
     },
@@ -2980,8 +2980,8 @@
       "purl": "pkg:cargo/png@0.17.16",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/image-png"
+          "type": "website",
+          "url": "https://crates.io/crates/png/0.17.16"
         }
       ]
     },
@@ -2998,8 +2998,8 @@
       "purl": "pkg:cargo/png@0.18.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/image-png"
+          "type": "website",
+          "url": "https://crates.io/crates/png/0.18.1"
         }
       ]
     },
@@ -3016,8 +3016,8 @@
       "purl": "pkg:cargo/potential_utf@0.1.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/potential_utf/0.1.5"
         }
       ]
     },
@@ -3034,8 +3034,8 @@
       "purl": "pkg:cargo/powerfmt@0.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/jhpratt/powerfmt"
+          "type": "website",
+          "url": "https://crates.io/crates/powerfmt/0.2.0"
         }
       ]
     },
@@ -3052,8 +3052,8 @@
       "purl": "pkg:cargo/ppv-lite86@0.2.21",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/cryptocorrosion/cryptocorrosion"
+          "type": "website",
+          "url": "https://crates.io/crates/ppv-lite86/0.2.21"
         }
       ]
     },
@@ -3070,8 +3070,8 @@
       "purl": "pkg:cargo/precomputed-hash@0.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/emilio/precomputed-hash"
+          "type": "website",
+          "url": "https://crates.io/crates/precomputed-hash/0.1.1"
         }
       ]
     },
@@ -3088,8 +3088,8 @@
       "purl": "pkg:cargo/primal-check@0.3.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/huonw/primal"
+          "type": "website",
+          "url": "https://crates.io/crates/primal-check/0.3.4"
         }
       ]
     },
@@ -3106,8 +3106,8 @@
       "purl": "pkg:cargo/proc-macro2@1.0.107",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/proc-macro2"
+          "type": "website",
+          "url": "https://crates.io/crates/proc-macro2/1.0.107"
         }
       ]
     },
@@ -3124,8 +3124,8 @@
       "purl": "pkg:cargo/pxfm@0.1.30",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/awxkee/pxfm"
+          "type": "website",
+          "url": "https://crates.io/crates/pxfm/0.1.30"
         }
       ]
     },
@@ -3142,8 +3142,8 @@
       "purl": "pkg:cargo/quick-error@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "http://github.com/tailhook/quick-error"
+          "type": "website",
+          "url": "https://crates.io/crates/quick-error/2.0.1"
         }
       ]
     },
@@ -3160,8 +3160,8 @@
       "purl": "pkg:cargo/quick-xml@0.41.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tafia/quick-xml"
+          "type": "website",
+          "url": "https://crates.io/crates/quick-xml/0.41.0"
         }
       ]
     },
@@ -3178,8 +3178,8 @@
       "purl": "pkg:cargo/quinn-proto@0.11.16",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/quinn-rs/quinn"
+          "type": "website",
+          "url": "https://crates.io/crates/quinn-proto/0.11.16"
         }
       ]
     },
@@ -3196,8 +3196,8 @@
       "purl": "pkg:cargo/quinn-udp@0.5.15",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/quinn-rs/quinn"
+          "type": "website",
+          "url": "https://crates.io/crates/quinn-udp/0.5.15"
         }
       ]
     },
@@ -3214,8 +3214,8 @@
       "purl": "pkg:cargo/quinn@0.11.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/quinn-rs/quinn"
+          "type": "website",
+          "url": "https://crates.io/crates/quinn/0.11.11"
         }
       ]
     },
@@ -3232,8 +3232,8 @@
       "purl": "pkg:cargo/quote@1.0.47",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/quote"
+          "type": "website",
+          "url": "https://crates.io/crates/quote/1.0.47"
         }
       ]
     },
@@ -3250,8 +3250,8 @@
       "purl": "pkg:cargo/rand@0.10.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/rand"
+          "type": "website",
+          "url": "https://crates.io/crates/rand/0.10.2"
         }
       ]
     },
@@ -3268,8 +3268,8 @@
       "purl": "pkg:cargo/rand@0.9.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/rand"
+          "type": "website",
+          "url": "https://crates.io/crates/rand/0.9.5"
         }
       ]
     },
@@ -3286,8 +3286,8 @@
       "purl": "pkg:cargo/rand_chacha@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/rand"
+          "type": "website",
+          "url": "https://crates.io/crates/rand_chacha/0.9.0"
         }
       ]
     },
@@ -3304,8 +3304,8 @@
       "purl": "pkg:cargo/rand_core@0.10.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/rand_core"
+          "type": "website",
+          "url": "https://crates.io/crates/rand_core/0.10.1"
         }
       ]
     },
@@ -3322,8 +3322,8 @@
       "purl": "pkg:cargo/rand_core@0.9.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/rand"
+          "type": "website",
+          "url": "https://crates.io/crates/rand_core/0.9.5"
         }
       ]
     },
@@ -3340,8 +3340,8 @@
       "purl": "pkg:cargo/rand_pcg@0.10.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-random/rngs"
+          "type": "website",
+          "url": "https://crates.io/crates/rand_pcg/0.10.2"
         }
       ]
     },
@@ -3358,8 +3358,8 @@
       "purl": "pkg:cargo/raw-window-handle@0.6.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-windowing/raw-window-handle"
+          "type": "website",
+          "url": "https://crates.io/crates/raw-window-handle/0.6.2"
         }
       ]
     },
@@ -3376,8 +3376,8 @@
       "purl": "pkg:cargo/ref-cast-impl@1.0.26",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/ref-cast"
+          "type": "website",
+          "url": "https://crates.io/crates/ref-cast-impl/1.0.26"
         }
       ]
     },
@@ -3394,8 +3394,8 @@
       "purl": "pkg:cargo/ref-cast@1.0.26",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/ref-cast"
+          "type": "website",
+          "url": "https://crates.io/crates/ref-cast/1.0.26"
         }
       ]
     },
@@ -3412,8 +3412,8 @@
       "purl": "pkg:cargo/regex-automata@0.4.16",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/regex"
+          "type": "website",
+          "url": "https://crates.io/crates/regex-automata/0.4.16"
         }
       ]
     },
@@ -3430,8 +3430,8 @@
       "purl": "pkg:cargo/regex-lite@0.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/regex"
+          "type": "website",
+          "url": "https://crates.io/crates/regex-lite/0.1.9"
         }
       ]
     },
@@ -3448,8 +3448,8 @@
       "purl": "pkg:cargo/regex-syntax@0.8.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/regex"
+          "type": "website",
+          "url": "https://crates.io/crates/regex-syntax/0.8.11"
         }
       ]
     },
@@ -3466,8 +3466,8 @@
       "purl": "pkg:cargo/regex@1.13.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/regex"
+          "type": "website",
+          "url": "https://crates.io/crates/regex/1.13.1"
         }
       ]
     },
@@ -3484,8 +3484,8 @@
       "purl": "pkg:cargo/reqwest@0.12.28",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/seanmonstar/reqwest"
+          "type": "website",
+          "url": "https://crates.io/crates/reqwest/0.12.28"
         }
       ]
     },
@@ -3502,8 +3502,8 @@
       "purl": "pkg:cargo/rfd@0.16.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/PolyMeilex/rfd"
+          "type": "website",
+          "url": "https://crates.io/crates/rfd/0.16.0"
         }
       ]
     },
@@ -3520,8 +3520,8 @@
       "purl": "pkg:cargo/ring@0.17.14",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/briansmith/ring"
+          "type": "website",
+          "url": "https://crates.io/crates/ring/0.17.14"
         }
       ]
     },
@@ -3538,8 +3538,8 @@
       "purl": "pkg:cargo/rubato@0.16.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/HEnquist/rubato"
+          "type": "website",
+          "url": "https://crates.io/crates/rubato/0.16.2"
         }
       ]
     },
@@ -3556,8 +3556,8 @@
       "purl": "pkg:cargo/rusqlite@0.40.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rusqlite/rusqlite"
+          "type": "website",
+          "url": "https://crates.io/crates/rusqlite/0.40.1"
         }
       ]
     },
@@ -3574,8 +3574,8 @@
       "purl": "pkg:cargo/rustc-hash@2.1.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/rustc-hash"
+          "type": "website",
+          "url": "https://crates.io/crates/rustc-hash/2.1.3"
         }
       ]
     },
@@ -3592,8 +3592,8 @@
       "purl": "pkg:cargo/rustc_version@0.4.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/djc/rustc-version-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/rustc_version/0.4.1"
         }
       ]
     },
@@ -3610,8 +3610,8 @@
       "purl": "pkg:cargo/rustfft@6.4.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/ejmahler/RustFFT"
+          "type": "website",
+          "url": "https://crates.io/crates/rustfft/6.4.1"
         }
       ]
     },
@@ -3628,8 +3628,8 @@
       "purl": "pkg:cargo/rustls-pki-types@1.15.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rustls/pki-types"
+          "type": "website",
+          "url": "https://crates.io/crates/rustls-pki-types/1.15.1"
         }
       ]
     },
@@ -3646,8 +3646,8 @@
       "purl": "pkg:cargo/rustls-webpki@0.103.13",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rustls/webpki"
+          "type": "website",
+          "url": "https://crates.io/crates/rustls-webpki/0.103.13"
         }
       ]
     },
@@ -3664,8 +3664,8 @@
       "purl": "pkg:cargo/rustls@0.23.42",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rustls/rustls"
+          "type": "website",
+          "url": "https://crates.io/crates/rustls/0.23.42"
         }
       ]
     },
@@ -3682,8 +3682,8 @@
       "purl": "pkg:cargo/ryu@1.0.23",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/ryu"
+          "type": "website",
+          "url": "https://crates.io/crates/ryu/1.0.23"
         }
       ]
     },
@@ -3700,8 +3700,8 @@
       "purl": "pkg:cargo/same-file@1.0.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/BurntSushi/same-file"
+          "type": "website",
+          "url": "https://crates.io/crates/same-file/1.0.6"
         }
       ]
     },
@@ -3718,8 +3718,8 @@
       "purl": "pkg:cargo/schemars@0.8.22",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/GREsau/schemars"
+          "type": "website",
+          "url": "https://crates.io/crates/schemars/0.8.22"
         }
       ]
     },
@@ -3736,8 +3736,8 @@
       "purl": "pkg:cargo/schemars@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/GREsau/schemars"
+          "type": "website",
+          "url": "https://crates.io/crates/schemars/0.9.0"
         }
       ]
     },
@@ -3754,8 +3754,8 @@
       "purl": "pkg:cargo/schemars@1.2.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/GREsau/schemars"
+          "type": "website",
+          "url": "https://crates.io/crates/schemars/1.2.1"
         }
       ]
     },
@@ -3772,8 +3772,8 @@
       "purl": "pkg:cargo/schemars_derive@0.8.22",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/GREsau/schemars"
+          "type": "website",
+          "url": "https://crates.io/crates/schemars_derive/0.8.22"
         }
       ]
     },
@@ -3790,8 +3790,8 @@
       "purl": "pkg:cargo/scopeguard@1.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/bluss/scopeguard"
+          "type": "website",
+          "url": "https://crates.io/crates/scopeguard/1.2.0"
         }
       ]
     },
@@ -3808,8 +3808,8 @@
       "purl": "pkg:cargo/selectors@0.36.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/stylo"
+          "type": "website",
+          "url": "https://crates.io/crates/selectors/0.36.1"
         }
       ]
     },
@@ -3826,8 +3826,8 @@
       "purl": "pkg:cargo/semver@1.0.28",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/semver"
+          "type": "website",
+          "url": "https://crates.io/crates/semver/1.0.28"
         }
       ]
     },
@@ -3844,8 +3844,8 @@
       "purl": "pkg:cargo/serde-untagged@0.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/serde-untagged"
+          "type": "website",
+          "url": "https://crates.io/crates/serde-untagged/0.1.9"
         }
       ]
     },
@@ -3862,8 +3862,8 @@
       "purl": "pkg:cargo/serde@1.0.229",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/serde-rs/serde"
+          "type": "website",
+          "url": "https://crates.io/crates/serde/1.0.229"
         }
       ]
     },
@@ -3880,8 +3880,8 @@
       "purl": "pkg:cargo/serde_core@1.0.229",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/serde-rs/serde"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_core/1.0.229"
         }
       ]
     },
@@ -3898,8 +3898,8 @@
       "purl": "pkg:cargo/serde_derive@1.0.229",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/serde-rs/serde"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_derive/1.0.229"
         }
       ]
     },
@@ -3916,8 +3916,8 @@
       "purl": "pkg:cargo/serde_derive_internals@0.29.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/serde-rs/serde"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_derive_internals/0.29.1"
         }
       ]
     },
@@ -3934,8 +3934,8 @@
       "purl": "pkg:cargo/serde_json@1.0.151",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/serde-rs/json"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_json/1.0.151"
         }
       ]
     },
@@ -3952,8 +3952,8 @@
       "purl": "pkg:cargo/serde_repr@0.1.21",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/serde-repr"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_repr/0.1.21"
         }
       ]
     },
@@ -3970,8 +3970,8 @@
       "purl": "pkg:cargo/serde_spanned@1.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_spanned/1.1.1"
         }
       ]
     },
@@ -3988,8 +3988,8 @@
       "purl": "pkg:cargo/serde_urlencoded@0.7.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/nox/serde_urlencoded"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_urlencoded/0.7.1"
         }
       ]
     },
@@ -4006,8 +4006,8 @@
       "purl": "pkg:cargo/serde_with@3.21.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/jonasbb/serde_with/"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_with/3.21.0"
         }
       ]
     },
@@ -4024,8 +4024,8 @@
       "purl": "pkg:cargo/serde_with_macros@3.21.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/jonasbb/serde_with/"
+          "type": "website",
+          "url": "https://crates.io/crates/serde_with_macros/3.21.0"
         }
       ]
     },
@@ -4042,8 +4042,8 @@
       "purl": "pkg:cargo/serialize-to-javascript-impl@0.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/chippers/serialize-to-javascript"
+          "type": "website",
+          "url": "https://crates.io/crates/serialize-to-javascript-impl/0.1.2"
         }
       ]
     },
@@ -4060,8 +4060,8 @@
       "purl": "pkg:cargo/serialize-to-javascript@0.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/chippers/serialize-to-javascript"
+          "type": "website",
+          "url": "https://crates.io/crates/serialize-to-javascript/0.1.2"
         }
       ]
     },
@@ -4078,8 +4078,8 @@
       "purl": "pkg:cargo/servo_arc@0.4.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/stylo"
+          "type": "website",
+          "url": "https://crates.io/crates/servo_arc/0.4.3"
         }
       ]
     },
@@ -4096,8 +4096,8 @@
       "purl": "pkg:cargo/sha2@0.10.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/hashes"
+          "type": "website",
+          "url": "https://crates.io/crates/sha2/0.10.9"
         }
       ]
     },
@@ -4114,8 +4114,8 @@
       "purl": "pkg:cargo/shlex@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/comex/rust-shlex"
+          "type": "website",
+          "url": "https://crates.io/crates/shlex/2.0.1"
         }
       ]
     },
@@ -4132,8 +4132,8 @@
       "purl": "pkg:cargo/simd-adler32@0.3.10",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mcountryman/simd-adler32"
+          "type": "website",
+          "url": "https://crates.io/crates/simd-adler32/0.3.10"
         }
       ]
     },
@@ -4150,8 +4150,8 @@
       "purl": "pkg:cargo/siphasher@1.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/jedisct1/rust-siphash"
+          "type": "website",
+          "url": "https://crates.io/crates/siphasher/1.0.3"
         }
       ]
     },
@@ -4168,8 +4168,8 @@
       "purl": "pkg:cargo/slab@0.4.12",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/slab"
+          "type": "website",
+          "url": "https://crates.io/crates/slab/0.4.12"
         }
       ]
     },
@@ -4186,8 +4186,8 @@
       "purl": "pkg:cargo/smallvec@1.15.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-smallvec"
+          "type": "website",
+          "url": "https://crates.io/crates/smallvec/1.15.2"
         }
       ]
     },
@@ -4204,8 +4204,8 @@
       "purl": "pkg:cargo/socket2@0.6.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/socket2"
+          "type": "website",
+          "url": "https://crates.io/crates/socket2/0.6.5"
         }
       ]
     },
@@ -4222,8 +4222,8 @@
       "purl": "pkg:cargo/softbuffer@0.4.8",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rust-windowing/softbuffer"
+          "type": "website",
+          "url": "https://crates.io/crates/softbuffer/0.4.8"
         }
       ]
     },
@@ -4240,8 +4240,8 @@
       "purl": "pkg:cargo/sonora-aec3@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora-aec3/0.1.0"
         }
       ]
     },
@@ -4258,8 +4258,8 @@
       "purl": "pkg:cargo/sonora-agc2@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora-agc2/0.1.0"
         }
       ]
     },
@@ -4276,8 +4276,8 @@
       "purl": "pkg:cargo/sonora-common-audio@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora-common-audio/0.1.0"
         }
       ]
     },
@@ -4294,8 +4294,8 @@
       "purl": "pkg:cargo/sonora-fft@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora-fft/0.1.0"
         }
       ]
     },
@@ -4312,8 +4312,8 @@
       "purl": "pkg:cargo/sonora-ns@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora-ns/0.1.0"
         }
       ]
     },
@@ -4330,8 +4330,8 @@
       "purl": "pkg:cargo/sonora-simd@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora-simd/0.1.0"
         }
       ]
     },
@@ -4348,8 +4348,8 @@
       "purl": "pkg:cargo/sonora@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dignifiedquire/sonora"
+          "type": "website",
+          "url": "https://crates.io/crates/sonora/0.1.0"
         }
       ]
     },
@@ -4366,8 +4366,8 @@
       "purl": "pkg:cargo/stable_deref_trait@1.2.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/storyyeller/stable_deref_trait"
+          "type": "website",
+          "url": "https://crates.io/crates/stable_deref_trait/1.2.1"
         }
       ]
     },
@@ -4384,8 +4384,8 @@
       "purl": "pkg:cargo/strength_reduce@0.2.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "http://github.com/ejmahler/strength_reduce"
+          "type": "website",
+          "url": "https://crates.io/crates/strength_reduce/0.2.4"
         }
       ]
     },
@@ -4402,8 +4402,8 @@
       "purl": "pkg:cargo/string_cache@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/string-cache"
+          "type": "website",
+          "url": "https://crates.io/crates/string_cache/0.9.0"
         }
       ]
     },
@@ -4420,8 +4420,8 @@
       "purl": "pkg:cargo/string_cache_codegen@0.6.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/string-cache"
+          "type": "website",
+          "url": "https://crates.io/crates/string_cache_codegen/0.6.1"
         }
       ]
     },
@@ -4438,8 +4438,8 @@
       "purl": "pkg:cargo/strsim@0.11.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rapidfuzz/strsim-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/strsim/0.11.1"
         }
       ]
     },
@@ -4456,8 +4456,8 @@
       "purl": "pkg:cargo/subtle@2.6.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dalek-cryptography/subtle"
+          "type": "website",
+          "url": "https://crates.io/crates/subtle/2.6.1"
         }
       ]
     },
@@ -4474,8 +4474,8 @@
       "purl": "pkg:cargo/symphonia-bundle-flac@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-bundle-flac/0.6.0"
         }
       ]
     },
@@ -4492,8 +4492,8 @@
       "purl": "pkg:cargo/symphonia-bundle-mp3@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-bundle-mp3/0.6.0"
         }
       ]
     },
@@ -4510,8 +4510,8 @@
       "purl": "pkg:cargo/symphonia-codec-aac@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-codec-aac/0.6.0"
         }
       ]
     },
@@ -4528,8 +4528,8 @@
       "purl": "pkg:cargo/symphonia-codec-adpcm@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-codec-adpcm/0.6.0"
         }
       ]
     },
@@ -4546,8 +4546,8 @@
       "purl": "pkg:cargo/symphonia-codec-alac@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-codec-alac/0.6.0"
         }
       ]
     },
@@ -4564,8 +4564,8 @@
       "purl": "pkg:cargo/symphonia-codec-pcm@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-codec-pcm/0.6.0"
         }
       ]
     },
@@ -4582,8 +4582,8 @@
       "purl": "pkg:cargo/symphonia-common@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-common/0.6.0"
         }
       ]
     },
@@ -4600,8 +4600,8 @@
       "purl": "pkg:cargo/symphonia-core@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-core/0.6.0"
         }
       ]
     },
@@ -4618,8 +4618,8 @@
       "purl": "pkg:cargo/symphonia-format-isomp4@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-format-isomp4/0.6.0"
         }
       ]
     },
@@ -4636,8 +4636,8 @@
       "purl": "pkg:cargo/symphonia-format-riff@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-format-riff/0.6.0"
         }
       ]
     },
@@ -4654,8 +4654,8 @@
       "purl": "pkg:cargo/symphonia-metadata@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia-metadata/0.6.0"
         }
       ]
     },
@@ -4672,8 +4672,8 @@
       "purl": "pkg:cargo/symphonia@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/pdeljanov/Symphonia"
+          "type": "website",
+          "url": "https://crates.io/crates/symphonia/0.6.0"
         }
       ]
     },
@@ -4690,8 +4690,8 @@
       "purl": "pkg:cargo/syn@2.0.119",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/syn"
+          "type": "website",
+          "url": "https://crates.io/crates/syn/2.0.119"
         }
       ]
     },
@@ -4708,8 +4708,8 @@
       "purl": "pkg:cargo/syn@3.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/syn"
+          "type": "website",
+          "url": "https://crates.io/crates/syn/3.0.3"
         }
       ]
     },
@@ -4726,8 +4726,8 @@
       "purl": "pkg:cargo/sync_wrapper@1.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Actyx/sync_wrapper"
+          "type": "website",
+          "url": "https://crates.io/crates/sync_wrapper/1.0.2"
         }
       ]
     },
@@ -4744,8 +4744,8 @@
       "purl": "pkg:cargo/synstructure@0.13.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mystor/synstructure"
+          "type": "website",
+          "url": "https://crates.io/crates/synstructure/0.13.2"
         }
       ]
     },
@@ -4762,8 +4762,8 @@
       "purl": "pkg:cargo/tao@0.35.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tao"
+          "type": "website",
+          "url": "https://crates.io/crates/tao/0.35.3"
         }
       ]
     },
@@ -4780,8 +4780,8 @@
       "purl": "pkg:cargo/tauri-build@2.6.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-build/2.6.3"
         }
       ]
     },
@@ -4798,8 +4798,8 @@
       "purl": "pkg:cargo/tauri-codegen@2.6.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-codegen/2.6.3"
         }
       ]
     },
@@ -4816,8 +4816,8 @@
       "purl": "pkg:cargo/tauri-macros@2.6.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-macros/2.6.3"
         }
       ]
     },
@@ -4834,8 +4834,8 @@
       "purl": "pkg:cargo/tauri-plugin-dialog@2.7.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/plugins-workspace"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-plugin-dialog/2.7.2"
         }
       ]
     },
@@ -4852,8 +4852,8 @@
       "purl": "pkg:cargo/tauri-plugin-fs@2.5.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/plugins-workspace"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-plugin-fs/2.5.1"
         }
       ]
     },
@@ -4870,8 +4870,8 @@
       "purl": "pkg:cargo/tauri-plugin-global-shortcut@2.3.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/plugins-workspace"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-plugin-global-shortcut/2.3.2"
         }
       ]
     },
@@ -4888,8 +4888,8 @@
       "purl": "pkg:cargo/tauri-plugin-single-instance@2.4.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/plugins-workspace"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-plugin-single-instance/2.4.3"
         }
       ]
     },
@@ -4906,8 +4906,8 @@
       "purl": "pkg:cargo/tauri-plugin@2.6.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-plugin/2.6.3"
         }
       ]
     },
@@ -4924,8 +4924,8 @@
       "purl": "pkg:cargo/tauri-runtime-wry@2.11.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-runtime-wry/2.11.4"
         }
       ]
     },
@@ -4942,8 +4942,8 @@
       "purl": "pkg:cargo/tauri-runtime@2.11.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-runtime/2.11.3"
         }
       ]
     },
@@ -4960,8 +4960,8 @@
       "purl": "pkg:cargo/tauri-utils@2.9.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-utils/2.9.3"
         }
       ]
     },
@@ -4978,8 +4978,8 @@
       "purl": "pkg:cargo/tauri-winres@0.3.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/winres"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri-winres/0.3.6"
         }
       ]
     },
@@ -4996,8 +4996,8 @@
       "purl": "pkg:cargo/tauri@2.11.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://crates.io/crates/tauri/2.11.5"
         }
       ]
     },
@@ -5014,8 +5014,8 @@
       "purl": "pkg:cargo/tendril@0.5.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/html5ever"
+          "type": "website",
+          "url": "https://crates.io/crates/tendril/0.5.1"
         }
       ]
     },
@@ -5032,8 +5032,8 @@
       "purl": "pkg:cargo/thiserror-impl@1.0.69",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/thiserror"
+          "type": "website",
+          "url": "https://crates.io/crates/thiserror-impl/1.0.69"
         }
       ]
     },
@@ -5050,8 +5050,8 @@
       "purl": "pkg:cargo/thiserror-impl@2.0.19",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/thiserror"
+          "type": "website",
+          "url": "https://crates.io/crates/thiserror-impl/2.0.19"
         }
       ]
     },
@@ -5068,8 +5068,8 @@
       "purl": "pkg:cargo/thiserror@1.0.69",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/thiserror"
+          "type": "website",
+          "url": "https://crates.io/crates/thiserror/1.0.69"
         }
       ]
     },
@@ -5086,8 +5086,8 @@
       "purl": "pkg:cargo/thiserror@2.0.19",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/thiserror"
+          "type": "website",
+          "url": "https://crates.io/crates/thiserror/2.0.19"
         }
       ]
     },
@@ -5104,8 +5104,8 @@
       "purl": "pkg:cargo/tiff@0.11.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/image-tiff"
+          "type": "website",
+          "url": "https://crates.io/crates/tiff/0.11.3"
         }
       ]
     },
@@ -5122,8 +5122,8 @@
       "purl": "pkg:cargo/time-core@0.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/time-rs/time"
+          "type": "website",
+          "url": "https://crates.io/crates/time-core/0.1.9"
         }
       ]
     },
@@ -5140,8 +5140,8 @@
       "purl": "pkg:cargo/time-macros@0.2.32",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/time-rs/time"
+          "type": "website",
+          "url": "https://crates.io/crates/time-macros/0.2.32"
         }
       ]
     },
@@ -5158,8 +5158,8 @@
       "purl": "pkg:cargo/time@0.3.54",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/time-rs/time"
+          "type": "website",
+          "url": "https://crates.io/crates/time/0.3.54"
         }
       ]
     },
@@ -5176,8 +5176,8 @@
       "purl": "pkg:cargo/tinystr@0.8.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/tinystr/0.8.3"
         }
       ]
     },
@@ -5194,8 +5194,8 @@
       "purl": "pkg:cargo/tinyvec@1.12.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Lokathor/tinyvec"
+          "type": "website",
+          "url": "https://crates.io/crates/tinyvec/1.12.0"
         }
       ]
     },
@@ -5212,8 +5212,8 @@
       "purl": "pkg:cargo/tinyvec_macros@0.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/Soveu/tinyvec_macros"
+          "type": "website",
+          "url": "https://crates.io/crates/tinyvec_macros/0.1.1"
         }
       ]
     },
@@ -5230,8 +5230,8 @@
       "purl": "pkg:cargo/tokio-rustls@0.26.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rustls/tokio-rustls"
+          "type": "website",
+          "url": "https://crates.io/crates/tokio-rustls/0.26.4"
         }
       ]
     },
@@ -5248,8 +5248,8 @@
       "purl": "pkg:cargo/tokio@1.53.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/tokio"
+          "type": "website",
+          "url": "https://crates.io/crates/tokio/1.53.1"
         }
       ]
     },
@@ -5266,8 +5266,8 @@
       "purl": "pkg:cargo/toml@0.9.12+spec-1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/toml/0.9.12+spec-1.1.0"
         }
       ]
     },
@@ -5284,8 +5284,8 @@
       "purl": "pkg:cargo/toml@1.1.3+spec-1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/toml/1.1.3+spec-1.1.0"
         }
       ]
     },
@@ -5302,8 +5302,8 @@
       "purl": "pkg:cargo/toml_datetime@0.7.5+spec-1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/toml_datetime/0.7.5+spec-1.1.0"
         }
       ]
     },
@@ -5320,8 +5320,8 @@
       "purl": "pkg:cargo/toml_datetime@1.1.1+spec-1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/toml_datetime/1.1.1+spec-1.1.0"
         }
       ]
     },
@@ -5338,8 +5338,8 @@
       "purl": "pkg:cargo/toml_parser@1.1.2+spec-1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/toml_parser/1.1.2+spec-1.1.0"
         }
       ]
     },
@@ -5356,8 +5356,8 @@
       "purl": "pkg:cargo/toml_writer@1.1.2+spec-1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/toml-rs/toml"
+          "type": "website",
+          "url": "https://crates.io/crates/toml_writer/1.1.2+spec-1.1.0"
         }
       ]
     },
@@ -5374,8 +5374,8 @@
       "purl": "pkg:cargo/tower-http@0.6.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tower-rs/tower-http"
+          "type": "website",
+          "url": "https://crates.io/crates/tower-http/0.6.11"
         }
       ]
     },
@@ -5392,8 +5392,8 @@
       "purl": "pkg:cargo/tower-layer@0.3.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tower-rs/tower"
+          "type": "website",
+          "url": "https://crates.io/crates/tower-layer/0.3.3"
         }
       ]
     },
@@ -5410,8 +5410,8 @@
       "purl": "pkg:cargo/tower-service@0.3.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tower-rs/tower"
+          "type": "website",
+          "url": "https://crates.io/crates/tower-service/0.3.3"
         }
       ]
     },
@@ -5428,8 +5428,8 @@
       "purl": "pkg:cargo/tower@0.5.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tower-rs/tower"
+          "type": "website",
+          "url": "https://crates.io/crates/tower/0.5.3"
         }
       ]
     },
@@ -5446,8 +5446,8 @@
       "purl": "pkg:cargo/tracing-attributes@0.1.31",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/tracing"
+          "type": "website",
+          "url": "https://crates.io/crates/tracing-attributes/0.1.31"
         }
       ]
     },
@@ -5464,8 +5464,8 @@
       "purl": "pkg:cargo/tracing-core@0.1.36",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/tracing"
+          "type": "website",
+          "url": "https://crates.io/crates/tracing-core/0.1.36"
         }
       ]
     },
@@ -5482,8 +5482,8 @@
       "purl": "pkg:cargo/tracing@0.1.44",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tokio-rs/tracing"
+          "type": "website",
+          "url": "https://crates.io/crates/tracing/0.1.44"
         }
       ]
     },
@@ -5500,8 +5500,8 @@
       "purl": "pkg:cargo/transpose@0.2.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/ejmahler/transpose"
+          "type": "website",
+          "url": "https://crates.io/crates/transpose/0.2.3"
         }
       ]
     },
@@ -5518,8 +5518,8 @@
       "purl": "pkg:cargo/trash@5.2.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/ArturKovacs/trash"
+          "type": "website",
+          "url": "https://crates.io/crates/trash/5.2.6"
         }
       ]
     },
@@ -5536,8 +5536,8 @@
       "purl": "pkg:cargo/tray-icon@0.24.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tray-icon"
+          "type": "website",
+          "url": "https://crates.io/crates/tray-icon/0.24.1"
         }
       ]
     },
@@ -5554,8 +5554,8 @@
       "purl": "pkg:cargo/try-lock@0.2.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/seanmonstar/try-lock"
+          "type": "website",
+          "url": "https://crates.io/crates/try-lock/0.2.5"
         }
       ]
     },
@@ -5572,8 +5572,8 @@
       "purl": "pkg:cargo/typeid@1.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/typeid"
+          "type": "website",
+          "url": "https://crates.io/crates/typeid/1.0.3"
         }
       ]
     },
@@ -5590,8 +5590,8 @@
       "purl": "pkg:cargo/typenum@1.20.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/paholg/typenum"
+          "type": "website",
+          "url": "https://crates.io/crates/typenum/1.20.1"
         }
       ]
     },
@@ -5608,8 +5608,8 @@
       "purl": "pkg:cargo/unic-char-property@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/open-i18n/rust-unic/"
+          "type": "website",
+          "url": "https://crates.io/crates/unic-char-property/0.9.0"
         }
       ]
     },
@@ -5626,8 +5626,8 @@
       "purl": "pkg:cargo/unic-char-range@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/open-i18n/rust-unic/"
+          "type": "website",
+          "url": "https://crates.io/crates/unic-char-range/0.9.0"
         }
       ]
     },
@@ -5644,8 +5644,8 @@
       "purl": "pkg:cargo/unic-common@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/open-i18n/rust-unic/"
+          "type": "website",
+          "url": "https://crates.io/crates/unic-common/0.9.0"
         }
       ]
     },
@@ -5662,8 +5662,8 @@
       "purl": "pkg:cargo/unic-ucd-ident@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/open-i18n/rust-unic/"
+          "type": "website",
+          "url": "https://crates.io/crates/unic-ucd-ident/0.9.0"
         }
       ]
     },
@@ -5680,8 +5680,8 @@
       "purl": "pkg:cargo/unic-ucd-version@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/open-i18n/rust-unic/"
+          "type": "website",
+          "url": "https://crates.io/crates/unic-ucd-version/0.9.0"
         }
       ]
     },
@@ -5698,8 +5698,8 @@
       "purl": "pkg:cargo/unicase@2.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/seanmonstar/unicase"
+          "type": "website",
+          "url": "https://crates.io/crates/unicase/2.9.0"
         }
       ]
     },
@@ -5716,8 +5716,8 @@
       "purl": "pkg:cargo/unicode-ident@1.0.24",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/unicode-ident"
+          "type": "website",
+          "url": "https://crates.io/crates/unicode-ident/1.0.24"
         }
       ]
     },
@@ -5734,8 +5734,8 @@
       "purl": "pkg:cargo/unicode-segmentation@1.13.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-rs/unicode-segmentation"
+          "type": "website",
+          "url": "https://crates.io/crates/unicode-segmentation/1.13.3"
         }
       ]
     },
@@ -5752,8 +5752,8 @@
       "purl": "pkg:cargo/unicode-xid@0.2.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-rs/unicode-xid"
+          "type": "website",
+          "url": "https://crates.io/crates/unicode-xid/0.2.6"
         }
       ]
     },
@@ -5770,8 +5770,8 @@
       "purl": "pkg:cargo/untrusted@0.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/briansmith/untrusted"
+          "type": "website",
+          "url": "https://crates.io/crates/untrusted/0.9.0"
         }
       ]
     },
@@ -5788,8 +5788,8 @@
       "purl": "pkg:cargo/url@2.5.8",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/rust-url"
+          "type": "website",
+          "url": "https://crates.io/crates/url/2.5.8"
         }
       ]
     },
@@ -5806,8 +5806,8 @@
       "purl": "pkg:cargo/urlpattern@0.3.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/denoland/rust-urlpattern"
+          "type": "website",
+          "url": "https://crates.io/crates/urlpattern/0.3.0"
         }
       ]
     },
@@ -5824,8 +5824,8 @@
       "purl": "pkg:cargo/utf8_iter@1.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/hsivonen/utf8_iter"
+          "type": "website",
+          "url": "https://crates.io/crates/utf8_iter/1.0.4"
         }
       ]
     },
@@ -5842,8 +5842,8 @@
       "purl": "pkg:cargo/uuid@1.24.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/uuid-rs/uuid"
+          "type": "website",
+          "url": "https://crates.io/crates/uuid/1.24.0"
         }
       ]
     },
@@ -5860,8 +5860,8 @@
       "purl": "pkg:cargo/vcpkg@0.2.15",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/mcgoo/vcpkg-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/vcpkg/0.2.15"
         }
       ]
     },
@@ -5878,8 +5878,8 @@
       "purl": "pkg:cargo/version_check@0.9.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/SergioBenitez/version_check"
+          "type": "website",
+          "url": "https://crates.io/crates/version_check/0.9.5"
         }
       ]
     },
@@ -5896,8 +5896,8 @@
       "purl": "pkg:cargo/vswhom-sys@0.1.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/nabijaczleweli/vswhom-sys.rs"
+          "type": "website",
+          "url": "https://crates.io/crates/vswhom-sys/0.1.3"
         }
       ]
     },
@@ -5914,8 +5914,8 @@
       "purl": "pkg:cargo/vswhom@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/nabijaczleweli/vswhom.rs"
+          "type": "website",
+          "url": "https://crates.io/crates/vswhom/0.1.0"
         }
       ]
     },
@@ -5932,8 +5932,8 @@
       "purl": "pkg:cargo/walkdir@2.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/BurntSushi/walkdir"
+          "type": "website",
+          "url": "https://crates.io/crates/walkdir/2.5.0"
         }
       ]
     },
@@ -5950,8 +5950,8 @@
       "purl": "pkg:cargo/want@0.3.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/seanmonstar/want"
+          "type": "website",
+          "url": "https://crates.io/crates/want/0.3.1"
         }
       ]
     },
@@ -5968,8 +5968,8 @@
       "purl": "pkg:cargo/web_atoms@0.2.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/servo/html5ever"
+          "type": "website",
+          "url": "https://crates.io/crates/web_atoms/0.2.5"
         }
       ]
     },
@@ -5986,8 +5986,8 @@
       "purl": "pkg:cargo/webpki-roots@1.0.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rustls/webpki-roots"
+          "type": "website",
+          "url": "https://crates.io/crates/webpki-roots/1.0.9"
         }
       ]
     },
@@ -6004,8 +6004,8 @@
       "purl": "pkg:cargo/webview2-com-macros@0.8.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wravery/webview2-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/webview2-com-macros/0.8.1"
         }
       ]
     },
@@ -6022,8 +6022,8 @@
       "purl": "pkg:cargo/webview2-com-sys@0.38.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wravery/webview2-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/webview2-com-sys/0.38.2"
         }
       ]
     },
@@ -6040,8 +6040,8 @@
       "purl": "pkg:cargo/webview2-com@0.38.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wravery/webview2-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/webview2-com/0.38.2"
         }
       ]
     },
@@ -6058,8 +6058,8 @@
       "purl": "pkg:cargo/weezl@0.1.12",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/image-rs/weezl"
+          "type": "website",
+          "url": "https://crates.io/crates/weezl/0.1.12"
         }
       ]
     },
@@ -6076,8 +6076,8 @@
       "purl": "pkg:cargo/winapi-util@0.1.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/BurntSushi/winapi-util"
+          "type": "website",
+          "url": "https://crates.io/crates/winapi-util/0.1.11"
         }
       ]
     },
@@ -6094,8 +6094,8 @@
       "purl": "pkg:cargo/winapi@0.3.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/retep998/winapi-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/winapi/0.3.9"
         }
       ]
     },
@@ -6112,8 +6112,8 @@
       "purl": "pkg:cargo/window-vibrancy@0.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri-plugin-vibrancy"
+          "type": "website",
+          "url": "https://crates.io/crates/window-vibrancy/0.6.0"
         }
       ]
     },
@@ -6130,8 +6130,8 @@
       "purl": "pkg:cargo/windows-collections@0.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-collections/0.2.0"
         }
       ]
     },
@@ -6148,8 +6148,8 @@
       "purl": "pkg:cargo/windows-collections@0.3.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-collections/0.3.2"
         }
       ]
     },
@@ -6166,8 +6166,8 @@
       "purl": "pkg:cargo/windows-core@0.56.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-core/0.56.0"
         }
       ]
     },
@@ -6184,8 +6184,8 @@
       "purl": "pkg:cargo/windows-core@0.61.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-core/0.61.2"
         }
       ]
     },
@@ -6202,8 +6202,8 @@
       "purl": "pkg:cargo/windows-core@0.62.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-core/0.62.2"
         }
       ]
     },
@@ -6220,8 +6220,8 @@
       "purl": "pkg:cargo/windows-future@0.2.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-future/0.2.1"
         }
       ]
     },
@@ -6238,8 +6238,8 @@
       "purl": "pkg:cargo/windows-future@0.3.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-future/0.3.2"
         }
       ]
     },
@@ -6256,8 +6256,8 @@
       "purl": "pkg:cargo/windows-implement@0.56.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-implement/0.56.0"
         }
       ]
     },
@@ -6274,8 +6274,8 @@
       "purl": "pkg:cargo/windows-implement@0.60.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-implement/0.60.2"
         }
       ]
     },
@@ -6292,8 +6292,8 @@
       "purl": "pkg:cargo/windows-interface@0.56.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-interface/0.56.0"
         }
       ]
     },
@@ -6310,8 +6310,8 @@
       "purl": "pkg:cargo/windows-interface@0.59.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-interface/0.59.3"
         }
       ]
     },
@@ -6328,8 +6328,8 @@
       "purl": "pkg:cargo/windows-link@0.1.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-link/0.1.3"
         }
       ]
     },
@@ -6346,8 +6346,8 @@
       "purl": "pkg:cargo/windows-link@0.2.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-link/0.2.1"
         }
       ]
     },
@@ -6364,8 +6364,8 @@
       "purl": "pkg:cargo/windows-numerics@0.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-numerics/0.2.0"
         }
       ]
     },
@@ -6382,8 +6382,8 @@
       "purl": "pkg:cargo/windows-numerics@0.3.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-numerics/0.3.1"
         }
       ]
     },
@@ -6400,8 +6400,8 @@
       "purl": "pkg:cargo/windows-result@0.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-result/0.1.2"
         }
       ]
     },
@@ -6418,8 +6418,8 @@
       "purl": "pkg:cargo/windows-result@0.3.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-result/0.3.4"
         }
       ]
     },
@@ -6436,8 +6436,8 @@
       "purl": "pkg:cargo/windows-result@0.4.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-result/0.4.1"
         }
       ]
     },
@@ -6454,8 +6454,8 @@
       "purl": "pkg:cargo/windows-strings@0.4.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-strings/0.4.2"
         }
       ]
     },
@@ -6472,8 +6472,8 @@
       "purl": "pkg:cargo/windows-strings@0.5.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-strings/0.5.1"
         }
       ]
     },
@@ -6490,8 +6490,8 @@
       "purl": "pkg:cargo/windows-sys@0.59.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-sys/0.59.0"
         }
       ]
     },
@@ -6508,8 +6508,8 @@
       "purl": "pkg:cargo/windows-sys@0.60.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-sys/0.60.2"
         }
       ]
     },
@@ -6526,8 +6526,8 @@
       "purl": "pkg:cargo/windows-sys@0.61.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-sys/0.61.2"
         }
       ]
     },
@@ -6544,8 +6544,8 @@
       "purl": "pkg:cargo/windows-targets@0.52.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-targets/0.52.6"
         }
       ]
     },
@@ -6562,8 +6562,8 @@
       "purl": "pkg:cargo/windows-targets@0.53.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-targets/0.53.5"
         }
       ]
     },
@@ -6580,8 +6580,8 @@
       "purl": "pkg:cargo/windows-threading@0.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-threading/0.1.0"
         }
       ]
     },
@@ -6598,8 +6598,8 @@
       "purl": "pkg:cargo/windows-threading@0.2.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-threading/0.2.1"
         }
       ]
     },
@@ -6616,8 +6616,8 @@
       "purl": "pkg:cargo/windows-version@0.1.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows-version/0.1.7"
         }
       ]
     },
@@ -6634,8 +6634,8 @@
       "purl": "pkg:cargo/windows@0.56.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows/0.56.0"
         }
       ]
     },
@@ -6652,8 +6652,8 @@
       "purl": "pkg:cargo/windows@0.61.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows/0.61.3"
         }
       ]
     },
@@ -6670,8 +6670,8 @@
       "purl": "pkg:cargo/windows@0.62.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows/0.62.2"
         }
       ]
     },
@@ -6688,8 +6688,8 @@
       "purl": "pkg:cargo/windows_x86_64_msvc@0.52.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows_x86_64_msvc/0.52.6"
         }
       ]
     },
@@ -6706,8 +6706,8 @@
       "purl": "pkg:cargo/windows_x86_64_msvc@0.53.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/microsoft/windows-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/windows_x86_64_msvc/0.53.1"
         }
       ]
     },
@@ -6724,8 +6724,8 @@
       "purl": "pkg:cargo/winnow@0.7.15",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/winnow-rs/winnow"
+          "type": "website",
+          "url": "https://crates.io/crates/winnow/0.7.15"
         }
       ]
     },
@@ -6742,8 +6742,8 @@
       "purl": "pkg:cargo/winnow@1.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/winnow-rs/winnow"
+          "type": "website",
+          "url": "https://crates.io/crates/winnow/1.0.4"
         }
       ]
     },
@@ -6760,8 +6760,8 @@
       "purl": "pkg:cargo/winreg@0.55.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/gentoo90/winreg-rs"
+          "type": "website",
+          "url": "https://crates.io/crates/winreg/0.55.0"
         }
       ]
     },
@@ -6778,8 +6778,8 @@
       "purl": "pkg:cargo/writeable@0.6.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/writeable/0.6.3"
         }
       ]
     },
@@ -6796,8 +6796,8 @@
       "purl": "pkg:cargo/wry@0.55.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/wry"
+          "type": "website",
+          "url": "https://crates.io/crates/wry/0.55.1"
         }
       ]
     },
@@ -6814,8 +6814,8 @@
       "purl": "pkg:cargo/yoke-derive@0.8.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/yoke-derive/0.8.2"
         }
       ]
     },
@@ -6832,8 +6832,8 @@
       "purl": "pkg:cargo/yoke@0.8.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/yoke/0.8.3"
         }
       ]
     },
@@ -6850,8 +6850,8 @@
       "purl": "pkg:cargo/zerocopy-derive@0.8.55",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/google/zerocopy"
+          "type": "website",
+          "url": "https://crates.io/crates/zerocopy-derive/0.8.55"
         }
       ]
     },
@@ -6868,8 +6868,8 @@
       "purl": "pkg:cargo/zerocopy@0.8.55",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/google/zerocopy"
+          "type": "website",
+          "url": "https://crates.io/crates/zerocopy/0.8.55"
         }
       ]
     },
@@ -6886,8 +6886,8 @@
       "purl": "pkg:cargo/zerofrom-derive@0.1.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/zerofrom-derive/0.1.7"
         }
       ]
     },
@@ -6904,8 +6904,8 @@
       "purl": "pkg:cargo/zerofrom@0.1.8",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/zerofrom/0.1.8"
         }
       ]
     },
@@ -6922,8 +6922,8 @@
       "purl": "pkg:cargo/zeroize@1.9.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/RustCrypto/utils"
+          "type": "website",
+          "url": "https://crates.io/crates/zeroize/1.9.0"
         }
       ]
     },
@@ -6940,8 +6940,8 @@
       "purl": "pkg:cargo/zerotrie@0.2.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/zerotrie/0.2.4"
         }
       ]
     },
@@ -6958,8 +6958,8 @@
       "purl": "pkg:cargo/zerovec-derive@0.11.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/zerovec-derive/0.11.3"
         }
       ]
     },
@@ -6976,8 +6976,8 @@
       "purl": "pkg:cargo/zerovec@0.11.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unicode-org/icu4x"
+          "type": "website",
+          "url": "https://crates.io/crates/zerovec/0.11.6"
         }
       ]
     },
@@ -6994,8 +6994,8 @@
       "purl": "pkg:cargo/zmij@1.0.23",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/zmij"
+          "type": "website",
+          "url": "https://crates.io/crates/zmij/1.0.23"
         }
       ]
     },
@@ -7012,8 +7012,8 @@
       "purl": "pkg:cargo/zune-core@0.5.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/etemesi254/zune-image"
+          "type": "website",
+          "url": "https://crates.io/crates/zune-core/0.5.1"
         }
       ]
     },
@@ -7030,8 +7030,8 @@
       "purl": "pkg:cargo/zune-jpeg@0.5.15",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg"
+          "type": "website",
+          "url": "https://crates.io/crates/zune-jpeg/0.5.15"
         }
       ]
     },
@@ -7066,8 +7066,8 @@
       "purl": "pkg:npm/@floating-ui%2Fcore@1.8.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/floating-ui/floating-ui"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40floating-ui/core/v/1.8.0"
         }
       ]
     },
@@ -7084,8 +7084,8 @@
       "purl": "pkg:npm/@floating-ui%2Fdom@1.8.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/floating-ui/floating-ui"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40floating-ui/dom/v/1.8.0"
         }
       ]
     },
@@ -7102,8 +7102,8 @@
       "purl": "pkg:npm/@floating-ui%2Freact-dom@2.1.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/floating-ui/floating-ui"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40floating-ui/react-dom/v/2.1.9"
         }
       ]
     },
@@ -7120,8 +7120,8 @@
       "purl": "pkg:npm/@floating-ui%2Futils@0.2.12",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/floating-ui/floating-ui"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40floating-ui/utils/v/0.2.12"
         }
       ]
     },
@@ -7138,8 +7138,8 @@
       "purl": "pkg:npm/@radix-ui%2Fprimitive@1.1.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/primitive/v/1.1.7"
         }
       ]
     },
@@ -7156,8 +7156,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-arrow@1.1.15",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-arrow/v/1.1.15"
         }
       ]
     },
@@ -7174,8 +7174,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-compose-refs@1.1.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-compose-refs/v/1.1.5"
         }
       ]
     },
@@ -7192,8 +7192,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-context@1.2.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-context/v/1.2.2"
         }
       ]
     },
@@ -7210,8 +7210,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-dismissable-layer@1.1.19",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-dismissable-layer/v/1.1.19"
         }
       ]
     },
@@ -7228,8 +7228,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-id@1.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-id/v/1.1.4"
         }
       ]
     },
@@ -7246,8 +7246,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-popper@1.3.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-popper/v/1.3.7"
         }
       ]
     },
@@ -7264,8 +7264,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-portal@1.1.17",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-portal/v/1.1.17"
         }
       ]
     },
@@ -7282,8 +7282,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-presence@1.1.10",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-presence/v/1.1.10"
         }
       ]
     },
@@ -7300,8 +7300,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-primitive@2.1.10",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-primitive/v/2.1.10"
         }
       ]
     },
@@ -7318,8 +7318,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-slot@1.3.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-slot/v/1.3.3"
         }
       ]
     },
@@ -7336,8 +7336,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-tooltip@1.2.16",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-tooltip/v/1.2.16"
         }
       ]
     },
@@ -7354,8 +7354,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-use-callback-ref@1.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-use-callback-ref/v/1.1.4"
         }
       ]
     },
@@ -7372,8 +7372,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-use-controllable-state@1.2.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-use-controllable-state/v/1.2.6"
         }
       ]
     },
@@ -7390,8 +7390,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-use-effect-event@0.0.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-use-effect-event/v/0.0.5"
         }
       ]
     },
@@ -7408,8 +7408,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-use-layout-effect@1.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-use-layout-effect/v/1.1.4"
         }
       ]
     },
@@ -7426,8 +7426,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-use-rect@1.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-use-rect/v/1.1.4"
         }
       ]
     },
@@ -7444,8 +7444,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-use-size@1.1.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-use-size/v/1.1.4"
         }
       ]
     },
@@ -7462,8 +7462,8 @@
       "purl": "pkg:npm/@radix-ui%2Freact-visually-hidden@1.2.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/react-visually-hidden/v/1.2.11"
         }
       ]
     },
@@ -7480,8 +7480,8 @@
       "purl": "pkg:npm/@radix-ui%2Frect@1.1.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/radix-ui/primitives"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40radix-ui/rect/v/1.1.3"
         }
       ]
     },
@@ -7498,8 +7498,8 @@
       "purl": "pkg:npm/@tauri-apps%2Fapi@2.11.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/tauri"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40tauri-apps/api/v/2.11.1"
         }
       ]
     },
@@ -7516,8 +7516,8 @@
       "purl": "pkg:npm/@tauri-apps%2Fplugin-dialog@2.7.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/tauri-apps/plugins-workspace"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40tauri-apps/plugin-dialog/v/2.7.2"
         }
       ]
     },
@@ -7534,8 +7534,8 @@
       "purl": "pkg:npm/@types%2Fdebug@4.1.13",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/debug/v/4.1.13"
         }
       ]
     },
@@ -7552,8 +7552,8 @@
       "purl": "pkg:npm/@types%2Festree-jsx@1.0.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/estree-jsx/v/1.0.5"
         }
       ]
     },
@@ -7570,8 +7570,8 @@
       "purl": "pkg:npm/@types%2Festree@1.0.9",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/estree/v/1.0.9"
         }
       ]
     },
@@ -7588,8 +7588,8 @@
       "purl": "pkg:npm/@types%2Fhast@3.0.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/hast/v/3.0.5"
         }
       ]
     },
@@ -7606,8 +7606,8 @@
       "purl": "pkg:npm/@types%2Fmdast@4.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/mdast/v/4.0.4"
         }
       ]
     },
@@ -7624,8 +7624,8 @@
       "purl": "pkg:npm/@types%2Fms@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/ms/v/2.1.0"
         }
       ]
     },
@@ -7642,8 +7642,8 @@
       "purl": "pkg:npm/@types%2Freact-dom@19.2.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/react-dom/v/19.2.3"
         }
       ]
     },
@@ -7660,8 +7660,8 @@
       "purl": "pkg:npm/@types%2Freact@19.2.17",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/react/v/19.2.17"
         }
       ]
     },
@@ -7678,8 +7678,8 @@
       "purl": "pkg:npm/@types%2Funist@2.0.11",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/unist/v/2.0.11"
         }
       ]
     },
@@ -7696,8 +7696,8 @@
       "purl": "pkg:npm/@types%2Funist@3.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40types/unist/v/3.0.3"
         }
       ]
     },
@@ -7714,8 +7714,8 @@
       "purl": "pkg:npm/@ungap%2Fstructured-clone@1.3.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/ungap/structured-clone"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/%40ungap/structured-clone/v/1.3.3"
         }
       ]
     },
@@ -7732,8 +7732,8 @@
       "purl": "pkg:npm/bail@2.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/bail"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/bail/v/2.0.2"
         }
       ]
     },
@@ -7750,8 +7750,8 @@
       "purl": "pkg:npm/ccount@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/ccount"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/ccount/v/2.0.1"
         }
       ]
     },
@@ -7768,8 +7768,8 @@
       "purl": "pkg:npm/character-entities-html4@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/character-entities-html4"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/character-entities-html4/v/2.1.0"
         }
       ]
     },
@@ -7786,8 +7786,8 @@
       "purl": "pkg:npm/character-entities-legacy@3.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/character-entities-legacy"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/character-entities-legacy/v/3.0.0"
         }
       ]
     },
@@ -7804,8 +7804,8 @@
       "purl": "pkg:npm/character-entities@2.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/character-entities"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/character-entities/v/2.0.2"
         }
       ]
     },
@@ -7822,8 +7822,8 @@
       "purl": "pkg:npm/character-reference-invalid@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/character-reference-invalid"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/character-reference-invalid/v/2.0.1"
         }
       ]
     },
@@ -7840,8 +7840,8 @@
       "purl": "pkg:npm/comma-separated-tokens@2.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/comma-separated-tokens"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/comma-separated-tokens/v/2.0.3"
         }
       ]
     },
@@ -7858,8 +7858,8 @@
       "purl": "pkg:npm/csstype@3.2.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/frenic/csstype"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/csstype/v/3.2.3"
         }
       ]
     },
@@ -7876,8 +7876,8 @@
       "purl": "pkg:npm/debug@4.4.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/debug-js/debug"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/debug/v/4.4.3"
         }
       ]
     },
@@ -7894,8 +7894,8 @@
       "purl": "pkg:npm/decode-named-character-reference@1.3.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/decode-named-character-reference"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/decode-named-character-reference/v/1.3.0"
         }
       ]
     },
@@ -7912,8 +7912,8 @@
       "purl": "pkg:npm/dequal@2.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/lukeed/dequal"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/dequal/v/2.0.3"
         }
       ]
     },
@@ -7930,8 +7930,8 @@
       "purl": "pkg:npm/devlop@1.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/devlop"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/devlop/v/1.1.0"
         }
       ]
     },
@@ -7948,8 +7948,8 @@
       "purl": "pkg:npm/escape-string-regexp@5.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/sindresorhus/escape-string-regexp"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/escape-string-regexp/v/5.0.0"
         }
       ]
     },
@@ -7966,8 +7966,8 @@
       "purl": "pkg:npm/estree-util-is-identifier-name@3.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/estree-util-is-identifier-name"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/estree-util-is-identifier-name/v/3.0.0"
         }
       ]
     },
@@ -7984,8 +7984,8 @@
       "purl": "pkg:npm/extend@3.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/justmoon/node-extend"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/extend/v/3.0.2"
         }
       ]
     },
@@ -8002,8 +8002,8 @@
       "purl": "pkg:npm/hast-util-to-jsx-runtime@2.3.6",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/hast-util-to-jsx-runtime"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/hast-util-to-jsx-runtime/v/2.3.6"
         }
       ]
     },
@@ -8020,8 +8020,8 @@
       "purl": "pkg:npm/hast-util-whitespace@3.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/hast-util-whitespace"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/hast-util-whitespace/v/3.0.0"
         }
       ]
     },
@@ -8038,8 +8038,8 @@
       "purl": "pkg:npm/html-url-attributes@3.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/rehypejs/rehype-minify.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/html-url-attributes/v/3.0.1"
         }
       ]
     },
@@ -8056,8 +8056,8 @@
       "purl": "pkg:npm/inline-style-parser@0.2.7",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkablemark/inline-style-parser"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/inline-style-parser/v/0.2.7"
         }
       ]
     },
@@ -8074,8 +8074,8 @@
       "purl": "pkg:npm/is-alphabetical@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/is-alphabetical"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/is-alphabetical/v/2.0.1"
         }
       ]
     },
@@ -8092,8 +8092,8 @@
       "purl": "pkg:npm/is-alphanumerical@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/is-alphanumerical"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/is-alphanumerical/v/2.0.1"
         }
       ]
     },
@@ -8110,8 +8110,8 @@
       "purl": "pkg:npm/is-decimal@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/is-decimal"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/is-decimal/v/2.0.1"
         }
       ]
     },
@@ -8128,8 +8128,8 @@
       "purl": "pkg:npm/is-hexadecimal@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/is-hexadecimal"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/is-hexadecimal/v/2.0.1"
         }
       ]
     },
@@ -8146,8 +8146,8 @@
       "purl": "pkg:npm/is-plain-obj@4.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/sindresorhus/is-plain-obj"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/is-plain-obj/v/4.1.0"
         }
       ]
     },
@@ -8164,8 +8164,8 @@
       "purl": "pkg:npm/longest-streak@3.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/longest-streak"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/longest-streak/v/3.1.0"
         }
       ]
     },
@@ -8182,8 +8182,8 @@
       "purl": "pkg:npm/lucide-react@0.468.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/lucide-icons/lucide"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/lucide-react/v/0.468.0"
         }
       ]
     },
@@ -8200,8 +8200,8 @@
       "purl": "pkg:npm/markdown-table@3.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/markdown-table"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/markdown-table/v/3.0.4"
         }
       ]
     },
@@ -8218,8 +8218,8 @@
       "purl": "pkg:npm/mdast-util-find-and-replace@3.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-find-and-replace"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-find-and-replace/v/3.0.2"
         }
       ]
     },
@@ -8236,8 +8236,8 @@
       "purl": "pkg:npm/mdast-util-from-markdown@2.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-from-markdown"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-from-markdown/v/2.0.3"
         }
       ]
     },
@@ -8254,8 +8254,8 @@
       "purl": "pkg:npm/mdast-util-gfm-autolink-literal@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-gfm-autolink-literal"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-gfm-autolink-literal/v/2.0.1"
         }
       ]
     },
@@ -8272,8 +8272,8 @@
       "purl": "pkg:npm/mdast-util-gfm-footnote@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-gfm-footnote"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-gfm-footnote/v/2.1.0"
         }
       ]
     },
@@ -8290,8 +8290,8 @@
       "purl": "pkg:npm/mdast-util-gfm-strikethrough@2.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-gfm-strikethrough"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-gfm-strikethrough/v/2.0.0"
         }
       ]
     },
@@ -8308,8 +8308,8 @@
       "purl": "pkg:npm/mdast-util-gfm-table@2.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-gfm-table"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-gfm-table/v/2.0.0"
         }
       ]
     },
@@ -8326,8 +8326,8 @@
       "purl": "pkg:npm/mdast-util-gfm-task-list-item@2.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-gfm-task-list-item"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-gfm-task-list-item/v/2.0.0"
         }
       ]
     },
@@ -8344,8 +8344,8 @@
       "purl": "pkg:npm/mdast-util-gfm@3.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-gfm"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-gfm/v/3.1.0"
         }
       ]
     },
@@ -8362,8 +8362,8 @@
       "purl": "pkg:npm/mdast-util-mdx-expression@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-mdx-expression"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-mdx-expression/v/2.0.1"
         }
       ]
     },
@@ -8380,8 +8380,8 @@
       "purl": "pkg:npm/mdast-util-mdx-jsx@3.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-mdx-jsx"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-mdx-jsx/v/3.2.0"
         }
       ]
     },
@@ -8398,8 +8398,8 @@
       "purl": "pkg:npm/mdast-util-mdxjs-esm@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-mdxjs-esm"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-mdxjs-esm/v/2.0.1"
         }
       ]
     },
@@ -8416,8 +8416,8 @@
       "purl": "pkg:npm/mdast-util-phrasing@4.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-phrasing"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-phrasing/v/4.1.0"
         }
       ]
     },
@@ -8434,8 +8434,8 @@
       "purl": "pkg:npm/mdast-util-to-hast@13.2.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-to-hast"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-to-hast/v/13.2.1"
         }
       ]
     },
@@ -8452,8 +8452,8 @@
       "purl": "pkg:npm/mdast-util-to-markdown@2.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-to-markdown"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-to-markdown/v/2.1.2"
         }
       ]
     },
@@ -8470,8 +8470,8 @@
       "purl": "pkg:npm/mdast-util-to-string@4.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/mdast-util-to-string"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/mdast-util-to-string/v/4.0.0"
         }
       ]
     },
@@ -8488,8 +8488,8 @@
       "purl": "pkg:npm/micromark-core-commonmark@2.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-core-commonmark/v/2.0.3"
         }
       ]
     },
@@ -8506,8 +8506,8 @@
       "purl": "pkg:npm/micromark-extension-gfm-autolink-literal@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm-autolink-literal"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm-autolink-literal/v/2.1.0"
         }
       ]
     },
@@ -8524,8 +8524,8 @@
       "purl": "pkg:npm/micromark-extension-gfm-footnote@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm-footnote"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm-footnote/v/2.1.0"
         }
       ]
     },
@@ -8542,8 +8542,8 @@
       "purl": "pkg:npm/micromark-extension-gfm-strikethrough@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm-strikethrough"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm-strikethrough/v/2.1.0"
         }
       ]
     },
@@ -8560,8 +8560,8 @@
       "purl": "pkg:npm/micromark-extension-gfm-table@2.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm-table"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm-table/v/2.1.1"
         }
       ]
     },
@@ -8578,8 +8578,8 @@
       "purl": "pkg:npm/micromark-extension-gfm-tagfilter@2.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm-tagfilter"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm-tagfilter/v/2.0.0"
         }
       ]
     },
@@ -8596,8 +8596,8 @@
       "purl": "pkg:npm/micromark-extension-gfm-task-list-item@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm-task-list-item"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm-task-list-item/v/2.1.0"
         }
       ]
     },
@@ -8614,8 +8614,8 @@
       "purl": "pkg:npm/micromark-extension-gfm@3.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark-extension-gfm"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-extension-gfm/v/3.0.0"
         }
       ]
     },
@@ -8632,8 +8632,8 @@
       "purl": "pkg:npm/micromark-factory-destination@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-factory-destination/v/2.0.1"
         }
       ]
     },
@@ -8650,8 +8650,8 @@
       "purl": "pkg:npm/micromark-factory-label@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-factory-label/v/2.0.1"
         }
       ]
     },
@@ -8668,8 +8668,8 @@
       "purl": "pkg:npm/micromark-factory-space@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-factory-space/v/2.0.1"
         }
       ]
     },
@@ -8686,8 +8686,8 @@
       "purl": "pkg:npm/micromark-factory-title@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-factory-title/v/2.0.1"
         }
       ]
     },
@@ -8704,8 +8704,8 @@
       "purl": "pkg:npm/micromark-factory-whitespace@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-factory-whitespace/v/2.0.1"
         }
       ]
     },
@@ -8722,8 +8722,8 @@
       "purl": "pkg:npm/micromark-util-character@2.1.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-character/v/2.1.1"
         }
       ]
     },
@@ -8740,8 +8740,8 @@
       "purl": "pkg:npm/micromark-util-chunked@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-chunked/v/2.0.1"
         }
       ]
     },
@@ -8758,8 +8758,8 @@
       "purl": "pkg:npm/micromark-util-classify-character@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-classify-character/v/2.0.1"
         }
       ]
     },
@@ -8776,8 +8776,8 @@
       "purl": "pkg:npm/micromark-util-combine-extensions@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-combine-extensions/v/2.0.1"
         }
       ]
     },
@@ -8794,8 +8794,8 @@
       "purl": "pkg:npm/micromark-util-decode-numeric-character-reference@2.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-decode-numeric-character-reference/v/2.0.2"
         }
       ]
     },
@@ -8812,8 +8812,8 @@
       "purl": "pkg:npm/micromark-util-decode-string@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-decode-string/v/2.0.1"
         }
       ]
     },
@@ -8830,8 +8830,8 @@
       "purl": "pkg:npm/micromark-util-encode@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-encode/v/2.0.1"
         }
       ]
     },
@@ -8848,8 +8848,8 @@
       "purl": "pkg:npm/micromark-util-html-tag-name@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-html-tag-name/v/2.0.1"
         }
       ]
     },
@@ -8866,8 +8866,8 @@
       "purl": "pkg:npm/micromark-util-normalize-identifier@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-normalize-identifier/v/2.0.1"
         }
       ]
     },
@@ -8884,8 +8884,8 @@
       "purl": "pkg:npm/micromark-util-resolve-all@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-resolve-all/v/2.0.1"
         }
       ]
     },
@@ -8902,8 +8902,8 @@
       "purl": "pkg:npm/micromark-util-sanitize-uri@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-sanitize-uri/v/2.0.1"
         }
       ]
     },
@@ -8920,8 +8920,8 @@
       "purl": "pkg:npm/micromark-util-subtokenize@2.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-subtokenize/v/2.1.0"
         }
       ]
     },
@@ -8938,8 +8938,8 @@
       "purl": "pkg:npm/micromark-util-symbol@2.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-symbol/v/2.0.1"
         }
       ]
     },
@@ -8956,8 +8956,8 @@
       "purl": "pkg:npm/micromark-util-types@2.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark-util-types/v/2.0.2"
         }
       ]
     },
@@ -8974,8 +8974,8 @@
       "purl": "pkg:npm/micromark@4.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/micromark/micromark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/micromark/v/4.0.2"
         }
       ]
     },
@@ -8992,8 +8992,8 @@
       "purl": "pkg:npm/ms@2.1.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/vercel/ms"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/ms/v/2.1.3"
         }
       ]
     },
@@ -9010,8 +9010,8 @@
       "purl": "pkg:npm/parse-entities@4.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/parse-entities"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/parse-entities/v/4.0.2"
         }
       ]
     },
@@ -9028,8 +9028,8 @@
       "purl": "pkg:npm/property-information@7.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/property-information"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/property-information/v/7.2.0"
         }
       ]
     },
@@ -9046,8 +9046,8 @@
       "purl": "pkg:npm/react-dom@19.2.8",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/react/react"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/react-dom/v/19.2.8"
         }
       ]
     },
@@ -9064,8 +9064,8 @@
       "purl": "pkg:npm/react-json-view-lite@2.5.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/AnyRoad/react-json-view-lite"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/react-json-view-lite/v/2.5.0"
         }
       ]
     },
@@ -9082,8 +9082,8 @@
       "purl": "pkg:npm/react-markdown@10.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkjs/react-markdown"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/react-markdown/v/10.1.0"
         }
       ]
     },
@@ -9100,8 +9100,8 @@
       "purl": "pkg:npm/react@19.2.8",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/react/react"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/react/v/19.2.8"
         }
       ]
     },
@@ -9118,8 +9118,8 @@
       "purl": "pkg:npm/remark-gfm@4.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkjs/remark-gfm"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/remark-gfm/v/4.0.1"
         }
       ]
     },
@@ -9136,8 +9136,8 @@
       "purl": "pkg:npm/remark-parse@11.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkjs/remark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/remark-parse/v/11.0.0"
         }
       ]
     },
@@ -9154,8 +9154,8 @@
       "purl": "pkg:npm/remark-rehype@11.1.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkjs/remark-rehype"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/remark-rehype/v/11.1.2"
         }
       ]
     },
@@ -9172,8 +9172,8 @@
       "purl": "pkg:npm/remark-stringify@11.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkjs/remark.git#main"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/remark-stringify/v/11.0.0"
         }
       ]
     },
@@ -9190,8 +9190,8 @@
       "purl": "pkg:npm/scheduler@0.27.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/facebook/react"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/scheduler/v/0.27.0"
         }
       ]
     },
@@ -9208,8 +9208,8 @@
       "purl": "pkg:npm/space-separated-tokens@2.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/space-separated-tokens"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/space-separated-tokens/v/2.0.2"
         }
       ]
     },
@@ -9226,8 +9226,8 @@
       "purl": "pkg:npm/stringify-entities@4.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/stringify-entities"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/stringify-entities/v/4.0.4"
         }
       ]
     },
@@ -9244,8 +9244,8 @@
       "purl": "pkg:npm/style-to-js@1.1.21",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkablemark/style-to-js"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/style-to-js/v/1.1.21"
         }
       ]
     },
@@ -9262,8 +9262,8 @@
       "purl": "pkg:npm/style-to-object@1.0.14",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/remarkablemark/style-to-object"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/style-to-object/v/1.0.14"
         }
       ]
     },
@@ -9280,8 +9280,8 @@
       "purl": "pkg:npm/tokenx@1.6.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/johannschopplich/tokenx"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/tokenx/v/1.6.0"
         }
       ]
     },
@@ -9298,8 +9298,8 @@
       "purl": "pkg:npm/trim-lines@3.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/trim-lines"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/trim-lines/v/3.0.1"
         }
       ]
     },
@@ -9316,8 +9316,8 @@
       "purl": "pkg:npm/trough@2.2.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/trough"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/trough/v/2.2.0"
         }
       ]
     },
@@ -9334,8 +9334,8 @@
       "purl": "pkg:npm/unified@11.0.5",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/unifiedjs/unified"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unified/v/11.0.5"
         }
       ]
     },
@@ -9352,8 +9352,8 @@
       "purl": "pkg:npm/unist-util-is@6.0.1",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/unist-util-is"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unist-util-is/v/6.0.1"
         }
       ]
     },
@@ -9370,8 +9370,8 @@
       "purl": "pkg:npm/unist-util-position@5.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/unist-util-position"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unist-util-position/v/5.0.0"
         }
       ]
     },
@@ -9388,8 +9388,8 @@
       "purl": "pkg:npm/unist-util-stringify-position@4.0.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/unist-util-stringify-position"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unist-util-stringify-position/v/4.0.0"
         }
       ]
     },
@@ -9406,8 +9406,8 @@
       "purl": "pkg:npm/unist-util-visit-parents@6.0.2",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/unist-util-visit-parents"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unist-util-visit-parents/v/6.0.2"
         }
       ]
     },
@@ -9424,8 +9424,8 @@
       "purl": "pkg:npm/unist-util-visit@5.1.0",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/syntax-tree/unist-util-visit"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unist-util-visit/v/5.1.0"
         }
       ]
     },
@@ -9442,8 +9442,8 @@
       "purl": "pkg:npm/vfile-message@4.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/vfile/vfile-message"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/vfile-message/v/4.0.3"
         }
       ]
     },
@@ -9460,8 +9460,8 @@
       "purl": "pkg:npm/vfile@6.0.3",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/vfile/vfile"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/vfile/v/6.0.3"
         }
       ]
     },
@@ -9478,8 +9478,8 @@
       "purl": "pkg:npm/zwitch@2.0.4",
       "externalReferences": [
         {
-          "type": "vcs",
-          "url": "https://github.com/wooorm/zwitch"
+          "type": "website",
+          "url": "https://www.npmjs.com/package/zwitch/v/2.0.4"
         }
       ]
     }

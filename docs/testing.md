@@ -34,6 +34,9 @@ for the same ref, and can also be started manually. `.github/workflows/ci.yml`
 remains a manual full-verification fallback. None of these verification
 workflows calls `npm run build`, produces `Nota.exe`, or creates an installer.
 Only the tag-triggered release workflow builds distribution artifacts.
+The dependency-compliance job caches only the pinned `cargo-about` executable;
+a cache miss rebuilds that exact version, and the generator verifies its
+version before use.
 
 During focused development, the narrower commands remain available:
 
