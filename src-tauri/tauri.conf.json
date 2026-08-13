@@ -34,11 +34,18 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "licenseFile": "../LICENSE",
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt",
+      "../THIRD_PARTY_SOURCES.md": "THIRD_PARTY_SOURCES.md",
+      "../bom.cyclonedx.json": "bom.cyclonedx.json"
+    },
     "category": "Productivity",
     "shortDescription": "本地优先的 Windows 会议录音工具",
     "longDescription": "使用 Windows 原生音频回环录制会议应用与麦克风，音频仅保存在本地。",
-    "copyright": "Copyright © 2026 Nota Contributors",
-    "publisher": "Nota Contributors",
+    "copyright": "Copyright © 2026 kwp-lab",
+    "publisher": "kwp-lab",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

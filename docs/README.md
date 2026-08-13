@@ -8,6 +8,10 @@ This directory is the durable engineering context for Nota. It explains the
 runtime boundaries, invariants, recovery behavior, and architectural decisions
 that are intentionally too detailed for the project README.
 
+Contributors should start with the repository-level
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) for workflow and privacy rules, then
+use this index to find the specification that owns the behavior being changed.
+
 ## Reading Order
 
 1. [`architecture.md`](architecture.md) — component ownership, trust
@@ -31,6 +35,8 @@ that are intentionally too detailed for the project README.
 10. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
 11. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+12. [`open-source-compliance.md`](open-source-compliance.md) — dependency
+    license policy, generated notices, SBOM, and source-delivery rules.
 
 ## Sources of Truth
 

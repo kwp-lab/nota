@@ -9,6 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added a bilingual contribution guide covering privacy-safe fixtures,
+  architecture boundaries, focused pull requests, and proportionate checks.
+- Added generated third-party notices, a CycloneDX SBOM, an MPL dependency
+  source archive, and license files in both Windows distribution formats.
+
 - Added privacy-safe local diagnostic event logs for recording, audio recovery,
   imports, ASR, and LLM generation, with typed metadata, correlation IDs, UTC
   timestamps, bounded rotation, and no automatic upload.
@@ -21,12 +26,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Split contribution CI into path-scoped frontend, native, and dependency
+  compliance checks, while keeping executable and installer builds exclusive
+  to tagged releases.
+- Made generated dependency inventories and SBOM component ordering independent
+  of the host locale and installed-package repository metadata for reproducible
+  local and CI verification.
+- Standardized locked frontend dependency downloads and CI installs on the
+  official npm registry for reproducible public builds.
+- Added locked dependency license policy gates for Rust, production npm, and
+  the vendored libopus snapshot; release packaging now fails on stale or
+  missing compliance artifacts.
+
+- Licensed Nota under the MIT License with copyright held by `kwp-lab`.
 - Replaced speculative meeting-ended detection with a capture-health reminder
   shown only when selected-application audio capture cannot be rebuilt for 15
   continuous seconds; successful recovery dismisses it automatically.
 
 ### Fixed
 
+- Updated the Vite build chain's transitive PostCSS and nanoid dependencies to
+  patched releases, clearing the known npm security advisories.
 - Prevented screen sharing, window/PID changes, minimization, and silence from
   being interpreted as evidence that a meeting ended; prolonged silence is
   reported only as an observable audio condition.

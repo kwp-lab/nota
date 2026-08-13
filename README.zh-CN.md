@@ -103,7 +103,8 @@ Nota 直接使用 Windows Core Audio。指定应用模式通过 Windows 进程�
 
 ## 获取 Nota
 
-Nota 目前处于早期预览阶段。可以从 [GitHub Releases](../../releases/latest) 下载最新版本：
+Nota 目前处于早期预览阶段。可以从
+[GitHub Releases](https://github.com/kwp-lab/nota/releases/latest) 下载最新版本：
 
 - 无需管理员权限、按当前用户安装的 NSIS 安装包；
 - 无需安装的便携 ZIP，设置与恢复数据仍存放在 LocalAppData。
@@ -215,7 +216,8 @@ Nota 不内置参会者告知或同意确认流程。发行者和二次开发者
 - [ ] 支持 Windows on ARM64
 - [ ] 增加可选的转写文本编辑
 
-路线图会继续聚焦于可靠的本地录音。欢迎通过 [Issues](../../issues) 提交功能建议。
+路线图会继续聚焦于可靠的本地录音。欢迎通过
+[Issues](https://github.com/kwp-lab/nota/issues) 提交功能建议。
 
 ## 从源码构建
 
@@ -294,7 +296,9 @@ Nota 正在为公开开源做准备，以下方向尤其需要帮助：
 - 界面无障碍与本地化；
 - 文档与可复现构建。
 
-现阶段请通过 [Issues](../../issues) 提交可复现的问题和明确的功能建议。正式公开前会再补充独立的贡献指南。
+请通过 [Issues](https://github.com/kwp-lab/nota/issues) 提交可复现的问题和明确的
+功能建议。开发流程、隐私约束、架构边界及 PR 前检查请参见
+[`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
 ## 常见问题
 
@@ -336,11 +340,11 @@ Opus 能以较小体积保存清晰语音。默认 64 kbps 单声道通常约为
 
 ## 致谢
 
-Nota 基于 [Tauri](https://tauri.app/)、[Rust](https://www.rust-lang.org/)、[React](https://react.dev/)、Windows Core Audio、[Sonora](https://github.com/dignifiedquire/sonora) 与 [Opus](https://opus-codec.org/) 构建。依赖声明参见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+Nota 基于 [Tauri](https://tauri.app/)、[Rust](https://www.rust-lang.org/)、[React](https://react.dev/)、Windows Core Audio、[Sonora](https://github.com/dignifiedquire/sonora) 与 [Opus](https://opus-codec.org/) 构建。开源合规资料包括[依赖清单](THIRD_PARTY_LICENSES.md)、[完整许可声明](THIRD_PARTY_NOTICES.txt)、[源码可用性说明](THIRD_PARTY_SOURCES.md)和 [CycloneDX SBOM](bom.cyclonedx.json)。
 
 ## 许可证
 
-仓库公开前会选择并加入开源许可证。在此之前，不授予复制、修改或重新分发源代码的许可。
+Nota 采用 [MIT 许可证](LICENSE)。Copyright (c) 2026 kwp-lab。
 
 ---
 

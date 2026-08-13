@@ -104,7 +104,8 @@ There is no FFmpeg runtime or virtual sound card. Transcription is a separate, o
 
 ## Get Nota
 
-Nota is currently an early preview. Download the latest build from [GitHub Releases](../../releases/latest):
+Nota is currently an early preview. Download the latest build from
+[GitHub Releases](https://github.com/kwp-lab/nota/releases/latest):
 
 - a per-user NSIS installer that does not require administrator access;
 - a portable ZIP that keeps settings and recovery data in LocalAppData.
@@ -220,7 +221,8 @@ The default output directory is `Documents\Nota\Recordings`. Settings, the recor
 - [ ] Add Windows on ARM64 support
 - [ ] Add optional transcript editing
 
-The roadmap intentionally stays focused on reliable local recording. Feature proposals are welcome in [Issues](../../issues).
+The roadmap intentionally stays focused on reliable local recording. Feature
+proposals are welcome in [Issues](https://github.com/kwp-lab/nota/issues).
 
 ## Build from source
 
@@ -308,7 +310,10 @@ Nota is preparing for a public open-source release. Contributions will be especi
 - UI accessibility and localization;
 - documentation and reproducible builds.
 
-For now, please use [Issues](../../issues) for reproducible bug reports and focused feature proposals. A dedicated contribution guide will be added before the public launch.
+Please use [Issues](https://github.com/kwp-lab/nota/issues) for reproducible
+bug reports and focused feature proposals. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow, privacy
+rules, architecture boundaries, and checks required before a pull request.
 
 ## FAQ
 
@@ -350,11 +355,11 @@ It is stored in plaintext in Nota's local SQLite database. Normal reads expose o
 
 ## Acknowledgements
 
-Nota is built with [Tauri](https://tauri.app/), [Rust](https://www.rust-lang.org/), [React](https://react.dev/), Windows Core Audio, [Sonora](https://github.com/dignifiedquire/sonora), and [Opus](https://opus-codec.org/). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency notices.
+Nota is built with [Tauri](https://tauri.app/), [Rust](https://www.rust-lang.org/), [React](https://react.dev/), Windows Core Audio, [Sonora](https://github.com/dignifiedquire/sonora), and [Opus](https://opus-codec.org/). See the [dependency inventory](THIRD_PARTY_LICENSES.md), [complete notices](THIRD_PARTY_NOTICES.txt), [source availability](THIRD_PARTY_SOURCES.md), and [CycloneDX SBOM](bom.cyclonedx.json).
 
 ## License
 
-An open-source license will be selected and added before the repository is made public. Until then, no license is granted for copying, modifying, or redistributing the source.
+Nota is licensed under the [MIT License](LICENSE). Copyright (c) 2026 kwp-lab.
 
 ---
 

@@ -1,0 +1,13 @@
+[
+  {
+    "name": "libopus",
+    "version": "snapshot 7b05f44f4baadf34d8d1073f4ff69f1806d5cdb4",
+    "license": "BSD-3-Clause",
+    "parentCrate": "audiopus_sys",
+    "parentVersion": "0.2.2",
+    "licensePath": "opus/COPYING",
+    "licenseSha256": "8338ce8d922bb4416ce3dd1e5680173332435e3f0755007ac7801ccd674fe682",
+    "source": "https://github.com/xiph/opus/tree/7b05f44f4baadf34d8d1073f4ff69f1806d5cdb4",
+    "reason": "audiopus_sys statically compiles its vendored libopus source; Cargo metadata only describes the wrapper crate"
+  }
+]

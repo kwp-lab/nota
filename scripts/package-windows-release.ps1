@@ -48,6 +48,7 @@ $portableBaseName = "Nota-$version-windows-x64-portable"
 $portableZip = Join-Path $outputFullPath "$portableBaseName.zip"
 $releaseInstaller = Join-Path $outputFullPath "Nota-$version-windows-x64-setup.exe"
 $checksumPath = Join-Path $outputFullPath "Nota-$version-SHA256SUMS.txt"
+$mplSourcesZip = Join-Path $outputFullPath "Nota-$version-mpl-sources.zip"
 $stagingDirectory = Join-Path `
     ([System.IO.Path]::GetTempPath()) `
     "Nota-package-$([System.Guid]::NewGuid().ToString('N'))"
@@ -56,9 +57,22 @@ try {
     New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
 
     Copy-Item -LiteralPath $ExecutablePath -Destination $stagingDirectory -Force
-    Copy-Item -LiteralPath (Join-Path $workspace "README.md") -Destination $stagingDirectory -Force
-    Copy-Item -LiteralPath (Join-Path $workspace "README.zh-CN.md") -Destination $stagingDirectory -Force
-    Copy-Item -LiteralPath (Join-Path $workspace "THIRD_PARTY_LICENSES.md") -Destination $stagingDirectory -Force
+    $packageFiles = @(
+        "README.md",
+        "README.zh-CN.md",
+        "LICENSE",
+        "THIRD_PARTY_LICENSES.md",
+        "THIRD_PARTY_NOTICES.txt",
+        "THIRD_PARTY_SOURCES.md",
+        "bom.cyclonedx.json"
+    )
+    foreach ($packageFile in $packageFiles) {
+        $source = Join-Path $workspace $packageFile
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Required release compliance file is missing: $packageFile"
+        }
+        Copy-Item -LiteralPath $source -Destination $stagingDirectory -Force
+    }
 
     if (Test-Path -LiteralPath $portableZip) {
         Remove-Item -LiteralPath $portableZip -Force
@@ -80,8 +94,27 @@ finally {
 }
 
 Copy-Item -LiteralPath $InstallerPath -Destination $releaseInstaller -Force
+& (Join-Path $PSScriptRoot "package-mpl-sources.ps1") -OutputPath $mplSourcesZip
 
-$releaseFiles = @($releaseInstaller, $portableZip)
+$releaseFiles = @(
+    $releaseInstaller,
+    $portableZip,
+    $mplSourcesZip,
+    (Join-Path $workspace "bom.cyclonedx.json"),
+    (Join-Path $workspace "THIRD_PARTY_NOTICES.txt"),
+    (Join-Path $workspace "THIRD_PARTY_SOURCES.md")
+)
+foreach ($complianceFile in $releaseFiles[3..5]) {
+    Copy-Item -LiteralPath $complianceFile -Destination $outputFullPath -Force
+}
+$releaseFiles = @(
+    $releaseInstaller,
+    $portableZip,
+    $mplSourcesZip,
+    (Join-Path $outputFullPath "bom.cyclonedx.json"),
+    (Join-Path $outputFullPath "THIRD_PARTY_NOTICES.txt"),
+    (Join-Path $outputFullPath "THIRD_PARTY_SOURCES.md")
+)
 $checksumLines = foreach ($file in $releaseFiles) {
     $hash = Get-FileHash -LiteralPath $file -Algorithm SHA256
     "{0}  {1}" -f $hash.Hash.ToLowerInvariant(), (Split-Path -Leaf $file)
@@ -95,4 +128,5 @@ $checksumLines = foreach ($file in $releaseFiles) {
 Write-Host "Release artifacts are available in $outputFullPath"
 Write-Host "  $(Split-Path -Leaf $releaseInstaller)"
 Write-Host "  $(Split-Path -Leaf $portableZip)"
+Write-Host "  $(Split-Path -Leaf $mplSourcesZip)"
 Write-Host "  $(Split-Path -Leaf $checksumPath)"
