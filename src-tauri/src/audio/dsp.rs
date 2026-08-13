@@ -1,3 +1,4 @@
+use crate::logging::{self, Field, FieldKey};
 use crate::models::AecMode;
 use rubato::{
     Resampler, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -72,8 +73,15 @@ impl StreamResampler {
             1,
         ) {
             Ok(value) => value,
-            Err(error) => {
-                log::error!("unable to create {source_rate} Hz audio resampler: {error}");
+            Err(_) => {
+                logging::error(
+                    "audio_mixer",
+                    "resampler_create_failed",
+                    &[
+                        Field::number(FieldKey::SampleRateHz, u64::from(source_rate)),
+                        Field::text(FieldKey::ErrorCode, "resampler_create_failed"),
+                    ],
+                );
                 return None;
             }
         };
@@ -300,9 +308,10 @@ impl AdaptiveStream {
             return;
         }
         if gap > MAX_ALIGNMENT_GAP_100NS {
-            log::warn!(
-                "capture stream start differs by {:.0} ms; skipping excessive alignment padding",
-                gap as f64 / 10_000.0
+            logging::warn(
+                "audio_mixer",
+                "alignment_gap_skipped",
+                &[Field::number(FieldKey::DurationMs, gap / 10_000)],
             );
             return;
         }
@@ -323,11 +332,16 @@ impl AdaptiveStream {
         // For a fixed output size, lowering the output/input ratio consumes
         // slightly more source samples and drains an over-full jitter buffer.
         let relative_ratio = (2.0 - self.ratio_adjustment).clamp(0.999, 1.001);
-        if let Err(error) = resampler
+        if resampler
             .inner
             .set_resample_ratio_relative(relative_ratio, true)
+            .is_err()
         {
-            log::warn!("unable to adjust audio resampling ratio: {error}");
+            logging::warn(
+                "audio_mixer",
+                "resample_ratio_adjust_failed",
+                &[Field::text(FieldKey::ErrorCode, "ratio_adjust_failed")],
+            );
         }
         let needed = resampler.inner.input_frames_next();
         let reserve = self.source_rate as usize * BUFFER_RESERVE_MS / 1_000;
@@ -341,12 +355,15 @@ impl AdaptiveStream {
             if !self.underflowing {
                 self.underflows += 1;
                 if self.underflows.is_power_of_two() {
-                    log::warn!(
-                        "audio jitter buffer underrun episode={} rate={}Hz buffered={} needed={}",
-                        self.underflows,
-                        self.source_rate,
-                        self.input.len(),
-                        needed
+                    logging::warn(
+                        "audio_mixer",
+                        "jitter_buffer_underrun",
+                        &[
+                            Field::number(FieldKey::Underflows, self.underflows),
+                            Field::number(FieldKey::SampleRateHz, u64::from(self.source_rate)),
+                            Field::number(FieldKey::Current, self.input.len() as u64),
+                            Field::number(FieldKey::Total, needed as u64),
+                        ],
                     );
                 }
             }
@@ -379,12 +396,16 @@ impl AdaptiveStream {
                     frame.resize(FRAME_SAMPLES, 0.0);
                     frame
                 }
-                Err(error) => {
+                Err(_) => {
                     self.underflows += 1;
                     self.started = false;
                     self.fade_in = true;
                     resampler.reset();
-                    log::warn!("audio resampling failed; rebuilding jitter buffer: {error}");
+                    logging::warn(
+                        "audio_mixer",
+                        "resampling_failed",
+                        &[Field::text(FieldKey::ErrorCode, "resampling_failed")],
+                    );
                     return self.conceal_underflow();
                 }
             };
@@ -421,11 +442,15 @@ impl AdaptiveStream {
             if !self.underflowing {
                 self.underflows += 1;
                 if self.underflows.is_power_of_two() {
-                    log::warn!(
-                        "native-rate jitter buffer underrun episode={} buffered={} needed={}",
-                        self.underflows,
-                        self.input.len(),
-                        consume
+                    logging::warn(
+                        "audio_mixer",
+                        "jitter_buffer_underrun",
+                        &[
+                            Field::number(FieldKey::Underflows, self.underflows),
+                            Field::number(FieldKey::SampleRateHz, u64::from(SAMPLE_RATE)),
+                            Field::number(FieldKey::Current, self.input.len() as u64),
+                            Field::number(FieldKey::Total, consume as u64),
+                        ],
                     );
                 }
             }

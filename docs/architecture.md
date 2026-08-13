@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-11
+- Last updated: 2026-08-13
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -9,7 +9,8 @@
   `src-tauri/src/ai.rs`
 - Related decisions:
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
-  [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md)
+  [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md),
+  [`0008-local-privacy-safe-diagnostic-logs.md`](decisions/0008-local-privacy-safe-diagnostic-logs.md)
 
 ## Purpose
 
@@ -128,52 +129,58 @@ are not resumed implicitly because a retry must append a new Markdown version.
 Cancellation is checked before request dispatch and again before the new file
 is committed.
 
-## Meeting-target Exit Reminder
+## Selected-application Capture Reminders
 
-Selected-application capture monitors the precise target selected at recording
-start, independently from its unrelated host parent. When the target came from
-a visible top-level window, Rust retains its native window handle internally;
-the handle is never exposed through frontend IPC. Once per second, the audio
-thread uses direct window-liveness calls to verify that the handle still exists,
-is visible, and belongs to the selected executable. This is the normal fast
-path and does not enumerate the process tree or audio sessions.
+Nota does not attempt to infer whether a third-party meeting has ended. Window
+visibility, process lifetime, titles, layout changes, and screen sharing are
+not reliable meeting-liveness signals. A reminder describes an observable
+audio condition and must not claim that the meeting ended.
 
-If the original window handle becomes invalid, Nota searches for a visible
-replacement with both the same executable path and the same display identity.
-This accommodates a meeting window being recreated without accepting an
-unrelated long-lived host window. A process that remains resident only for
-warm-up, such as an Enterprise WeChat `wwmapp.exe`, therefore cannot keep a
-closed meeting target falsely alive. Targets discovered only from an audio
-session have no reliable window identity and conservatively retain process-
-liveness monitoring instead of treating silence as meeting completion.
+The audio layer reports two conditions that Nota can verify:
 
-After the chosen target has been absent continuously for ten seconds, the audio
-layer emits one typed target-exit event. Audio recovery may still reattach the
-same executable without widening to system audio. The controller stores a
-session-scoped pending decision, shows a small Tauri always-on-top prompt, and
-changes the tray tooltip, color, and menu. It must not stop recording without
-an explicit user decision.
+- **Capture interruption:** selected-application WASAPI process-loopback
+  capture cannot be rebuilt continuously for 15 seconds. A single
+  capture-session failure begins the grace period; a successful restart clears
+  it.
+- **Prolonged silence:** while an application capture is running and not
+  paused, no sample peak exceeds `0.001` (approximately `-60 dBFS`) for three
+  continuous minutes. The timer restarts after pause, capture reconstruction,
+  or audible audio. This is a reminder only; silence is not evidence that the
+  meeting ended.
+
+When either threshold expires, the controller stores a session-scoped pending
+decision, shows a Tauri always-on-top prompt, and changes the tray state. Nota
+must not stop recording without an explicit user decision. Capture recovery
+automatically dismisses an interruption prompt; audible audio automatically
+dismisses a silence prompt. Choosing **Continue** clears only the current UI
+decision. The same uninterrupted condition does not generate another prompt:
+capture must recover before another interruption reminder, and audible audio
+must return before another silence reminder.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Recording
-    Recording --> GracePeriod: "selected meeting window or target disappears"
-    GracePeriod --> Recording: "same precise target returns within 10 seconds"
-    GracePeriod --> AwaitingDecision: "still absent after 10 seconds"
-    AwaitingDecision --> Finalizing: "user chooses Stop and save"
-    AwaitingDecision --> RecordingWithoutTarget: "user chooses Continue recording"
-    AwaitingDecision --> Recording: "target recovers before a decision"
-    RecordingWithoutTarget --> RecordingWithoutTarget: "target remains absent; no repeated prompt"
-    RecordingWithoutTarget --> Recording: "target returns"
-    Recording --> GracePeriod: "target disappears again after recovery"
-    Finalizing --> Completed
+flowchart TD
+    A["Application capture running"] --> B{"Capture session healthy?"}
+    B -- "No" --> C["Retry capture and clear silence timer"]
+    C -->|"recovers"| A
+    C -->|"fails for 15 seconds"| D["Show capture interruption reminder"]
+    B -- "Yes" --> E{"Recording paused?"}
+    E -- "Yes" --> F["Do not count silence"]
+    E -- "No" --> G{"Peak above 0.001?"}
+    G -- "Yes" --> H["Clear and re-arm silence reminder"]
+    H --> A
+    G -- "No for less than 3 minutes" --> A
+    G -- "No for 3 minutes" --> I["Show prolonged-silence reminder"]
+    D --> J{"User decision"}
+    I --> J
+    J -- "Continue" --> A
+    J -- "Stop and save" --> K["Finalize recording"]
 ```
 
-The **Continue recording** action only clears the pending decision. It must not
-change the selected scope, microphone state, mixer state, or recording state.
-The audio-layer reminder flag resets only after the target is observed again,
-so one continuous absence produces at most one prompt. Prompt actions carry
-the recording session ID; stale actions from an older recording are ignored.
+The continue action only clears the pending decision. It must not change the
+selected scope, microphone state, mixer state, or recording state. It does not
+trigger capture reconstruction because the audio layer already owns automatic
+retries. Prompt actions carry the recording session ID; stale actions from an
+older recording are ignored.
 
 The prompt is intentionally a Tauri window rather than a Windows notification
 API dependency. This keeps NSIS and portable builds behaviorally identical and

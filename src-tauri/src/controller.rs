@@ -15,6 +15,7 @@ use crate::audio::{
     recover_ogg_file, start_capture,
 };
 use crate::importer::AudioImportManager;
+use crate::logging::{self, Field, FieldKey};
 use crate::models::*;
 use crate::paths::AppPaths;
 use crate::state_machine::{RecordingEvent, transition};
@@ -46,10 +47,10 @@ use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::PCWSTR;
 
 const MAX_PACKETS_PER_TICK: usize = 64;
-const MEETING_END_PROMPT_WINDOW: &str = "meeting-end-prompt";
-const MEETING_END_PROMPT_WIDTH: f64 = 420.0;
-const MEETING_END_PROMPT_MIN_HEIGHT: f64 = 170.0;
-const MEETING_END_PROMPT_MAX_HEIGHT: f64 = 320.0;
+const CAPTURE_PROMPT_WINDOW: &str = "capture-prompt";
+const CAPTURE_PROMPT_WIDTH: f64 = 420.0;
+const CAPTURE_PROMPT_MIN_HEIGHT: f64 = 170.0;
+const CAPTURE_PROMPT_MAX_HEIGHT: f64 = 320.0;
 
 struct AppState {
     storage: Arc<Storage>,
@@ -59,7 +60,7 @@ struct AppState {
     importer: Arc<AudioImportManager>,
     voiceprints: Arc<VoiceprintManager>,
     media_start_gate: Mutex<()>,
-    tray_state: Mutex<Option<(RecordingState, bool)>>,
+    tray_state: Mutex<Option<(RecordingState, Option<CapturePromptKind>)>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +72,7 @@ struct TrayControls {
 }
 
 struct RecordingRuntime {
+    session_id: String,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     system_capture: Option<CaptureHandle>,
@@ -92,7 +94,7 @@ struct RecordingController {
     snapshot: Arc<Mutex<RecordingSnapshot>>,
     runtime: Mutex<Option<RecordingRuntime>>,
     finalizer: Mutex<Option<JoinHandle<()>>>,
-    meeting_end_prompt: Mutex<Option<MeetingEndPrompt>>,
+    capture_prompt: Mutex<Option<CapturePrompt>>,
     storage: Arc<Storage>,
 }
 
@@ -102,7 +104,7 @@ impl RecordingController {
             snapshot: Arc::new(Mutex::new(RecordingSnapshot::default())),
             runtime: Mutex::new(None),
             finalizer: Mutex::new(None),
-            meeting_end_prompt: Mutex::new(None),
+            capture_prompt: Mutex::new(None),
             storage,
         }
     }
@@ -173,7 +175,11 @@ impl RecordingController {
         }
 
         let session_id = Uuid::new_v4().to_string();
-        log::info!("recording prepare session={session_id}");
+        logging::info(
+            "recording",
+            "prepare_requested",
+            &[Field::text(FieldKey::SessionId, session_id.clone())],
+        );
         let started_at = Utc::now();
         {
             let mut snapshot = self.snapshot.lock();
@@ -209,7 +215,11 @@ impl RecordingController {
             };
         }
         emit_snapshot(&app, &self.snapshot);
-        log::info!("recording started session={session_id}");
+        logging::info(
+            "recording",
+            "capture_initializing",
+            &[Field::text(FieldKey::SessionId, session_id.clone())],
+        );
 
         let partial_path = self
             .storage
@@ -236,7 +246,13 @@ impl RecordingController {
         // endpoint instead of the now-silent A2DP endpoint.
         let mut system_capture = if process_capture {
             Some(
-                match start_capture(system_source.clone(), system_tx.clone(), 0, false) {
+                match start_capture(
+                    system_source.clone(),
+                    system_tx.clone(),
+                    0,
+                    false,
+                    Some(session_id.clone()),
+                ) {
                     Ok(handle) => handle,
                     Err(error) => {
                         drop(writer);
@@ -256,6 +272,7 @@ impl RecordingController {
                     microphone_tx.clone(),
                     initial_microphone_source_epoch,
                     false,
+                    Some(session_id.clone()),
                 ) {
                     Ok(handle) => (Some(handle), None),
                     Err(error) => (None, Some(format!("{error:#}"))),
@@ -273,7 +290,13 @@ impl RecordingController {
 
         if system_capture.is_none() {
             system_capture = Some(
-                match start_capture(system_source, system_tx.clone(), 0, false) {
+                match start_capture(
+                    system_source,
+                    system_tx.clone(),
+                    0,
+                    false,
+                    Some(session_id.clone()),
+                ) {
                     Ok(handle) => handle,
                     Err(error) => {
                         if let Some(capture) = microphone_capture.take() {
@@ -371,6 +394,7 @@ impl RecordingController {
         let process_event_monitor =
             process_events.map(|events| self.spawn_process_event_monitor(app.clone(), events));
         *self.runtime.lock() = Some(RecordingRuntime {
+            session_id,
             stop,
             paused,
             system_capture: Some(system_capture),
@@ -399,47 +423,113 @@ impl RecordingController {
         std::thread::spawn(move || {
             while let Ok(event) = events.recv() {
                 match event {
-                    CaptureEvent::ProcessTargetExited { display_name } => {
-                        recorder.show_meeting_end_prompt(&app, display_name);
+                    CaptureEvent::CaptureInterrupted { display_name } => {
+                        if let Some(session_id) = recorder.snapshot().session_id {
+                            logging::warn(
+                                "capture_health",
+                                "interruption_prompt_requested",
+                                &[
+                                    Field::text(FieldKey::SessionId, session_id),
+                                    Field::text(FieldKey::Reason, "continuous_rebuild_failure"),
+                                ],
+                            );
+                        }
+                        recorder.show_capture_prompt(
+                            &app,
+                            display_name,
+                            CapturePromptKind::CaptureInterrupted,
+                        );
                     }
-                    CaptureEvent::ProcessTargetRecovered { .. } => {
-                        recorder.dismiss_meeting_end_prompt(&app);
+                    CaptureEvent::CaptureRecovered => {
+                        if recorder.dismiss_capture_prompt_for_kind(
+                            &app,
+                            CapturePromptKind::CaptureInterrupted,
+                        ) && let Some(session_id) = recorder.snapshot().session_id
+                        {
+                            logging::info(
+                                "capture_health",
+                                "interruption_prompt_dismissed_after_recovery",
+                                &[Field::text(FieldKey::SessionId, session_id)],
+                            );
+                        }
+                    }
+                    CaptureEvent::ProlongedSilence { display_name } => {
+                        if let Some(session_id) = recorder.snapshot().session_id {
+                            logging::info(
+                                "capture_health",
+                                "silence_prompt_requested",
+                                &[
+                                    Field::text(FieldKey::SessionId, session_id),
+                                    Field::text(FieldKey::Reason, "prolonged_silence"),
+                                ],
+                            );
+                        }
+                        recorder.show_capture_prompt(
+                            &app,
+                            display_name,
+                            CapturePromptKind::ProlongedSilence,
+                        );
+                    }
+                    CaptureEvent::AudioResumed => {
+                        if recorder.dismiss_capture_prompt_for_kind(
+                            &app,
+                            CapturePromptKind::ProlongedSilence,
+                        ) && let Some(session_id) = recorder.snapshot().session_id
+                        {
+                            logging::info(
+                                "capture_health",
+                                "silence_prompt_dismissed_after_audio_resumed",
+                                &[Field::text(FieldKey::SessionId, session_id)],
+                            );
+                        }
                     }
                 }
             }
         })
     }
 
-    fn show_meeting_end_prompt(&self, app: &AppHandle, target_name: String) {
+    fn show_capture_prompt(&self, app: &AppHandle, target_name: String, kind: CapturePromptKind) {
         let Some(session_id) = self.snapshot.lock().session_id.clone() else {
             return;
         };
-        let mut pending = self.meeting_end_prompt.lock();
-        if pending
-            .as_ref()
-            .is_some_and(|prompt| prompt.session_id == session_id)
-        {
+        let mut pending = self.capture_prompt.lock();
+        if !should_replace_capture_prompt(pending.as_ref(), &session_id, kind) {
             return;
         }
-        *pending = Some(MeetingEndPrompt {
+        let prompt = CapturePrompt {
             session_id,
             target_name,
-        });
+            kind,
+        };
+        *pending = Some(prompt.clone());
         drop(pending);
-        show_meeting_end_prompt_window(app);
+        let _ = app.emit("capture://prompt-updated", prompt);
+        show_capture_prompt_window(app);
         schedule_tray_update(app, self.snapshot().state);
     }
 
-    fn dismiss_meeting_end_prompt(&self, app: &AppHandle) {
-        if self.meeting_end_prompt.lock().take().is_none() {
+    fn dismiss_capture_prompt(&self, app: &AppHandle) {
+        if self.capture_prompt.lock().take().is_none() {
             return;
         }
-        close_meeting_end_prompt_window(app);
+        close_capture_prompt_window(app);
         schedule_tray_update(app, self.snapshot().state);
     }
 
-    fn pending_meeting_end_prompt(&self) -> Option<MeetingEndPrompt> {
-        self.meeting_end_prompt.lock().clone()
+    fn dismiss_capture_prompt_for_kind(&self, app: &AppHandle, kind: CapturePromptKind) -> bool {
+        let mut pending = self.capture_prompt.lock();
+        if !pending.as_ref().is_some_and(|prompt| prompt.kind == kind) {
+            return false;
+        }
+        pending.take();
+        drop(pending);
+        close_capture_prompt_window(app);
+        schedule_tray_update(app, self.snapshot().state);
+        true
+    }
+
+    fn pending_capture_prompt(&self) -> Option<CapturePrompt> {
+        self.capture_prompt.lock().clone()
     }
 
     fn pause(&self, app: &AppHandle) -> Result<RecordingSnapshot> {
@@ -467,7 +557,11 @@ impl RecordingController {
         if let Some(capture) = runtime.microphone_capture.as_ref() {
             capture.pause();
         }
-        log::info!("recording paused");
+        logging::info(
+            "recording",
+            "paused",
+            &recording_session_fields(&self.snapshot),
+        );
         emit_snapshot(app, &self.snapshot);
         Ok(self.snapshot())
     }
@@ -495,7 +589,11 @@ impl RecordingController {
         if let Some(capture) = runtime.microphone_capture.as_ref() {
             capture.resume();
         }
-        log::info!("recording resumed");
+        logging::info(
+            "recording",
+            "resumed",
+            &recording_session_fields(&self.snapshot),
+        );
         emit_snapshot(app, &self.snapshot);
         Ok(self.snapshot())
     }
@@ -513,20 +611,52 @@ impl RecordingController {
             let mut snapshot = self.snapshot.lock();
             snapshot.state = transition(snapshot.state, RecordingEvent::Stop)?;
         }
-        self.meeting_end_prompt.lock().take();
-        close_meeting_end_prompt_window(app);
+        self.capture_prompt.lock().take();
+        close_capture_prompt_window(app);
         emit_snapshot(app, &self.snapshot);
         runtime.stop.store(true, Ordering::Release);
-        log::info!("recording finalizing");
+        logging::info(
+            "recording",
+            "finalizing",
+            &recording_session_fields(&self.snapshot),
+        );
         if let Some(capture) = runtime.system_capture.take() {
-            log::info!("stopping system capture");
+            logging::info(
+                "audio_capture",
+                "stopping",
+                &[
+                    Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                    Field::text(FieldKey::Scope, "system"),
+                ],
+            );
             capture.stop();
-            log::info!("system capture stopped");
+            logging::info(
+                "audio_capture",
+                "stopped",
+                &[
+                    Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                    Field::text(FieldKey::Scope, "system"),
+                ],
+            );
         }
         if let Some(capture) = runtime.microphone_capture.take() {
-            log::info!("stopping microphone capture");
+            logging::info(
+                "audio_capture",
+                "stopping",
+                &[
+                    Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                    Field::text(FieldKey::Scope, "microphone"),
+                ],
+            );
             capture.stop();
-            log::info!("microphone capture stopped");
+            logging::info(
+                "audio_capture",
+                "stopped",
+                &[
+                    Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                    Field::text(FieldKey::Scope, "microphone"),
+                ],
+            );
         }
         if let Some(monitor) = runtime.process_event_monitor.take() {
             let _ = monitor.join();
@@ -537,7 +667,11 @@ impl RecordingController {
             let finalizer = std::thread::Builder::new()
                 .name("nota-finalizer".into())
                 .spawn(move || {
-                    log::info!("waiting for recording worker");
+                    logging::info(
+                        "recording",
+                        "waiting_for_worker",
+                        &[Field::text(FieldKey::SessionId, runtime.session_id.clone())],
+                    );
                     if worker.join().is_err() {
                         {
                             let mut value = finalizer_snapshot.lock();
@@ -552,9 +686,20 @@ impl RecordingController {
                             });
                         }
                         emit_snapshot(&finalizer_app, &finalizer_snapshot);
-                        log::error!("recording worker panicked during finalization");
+                        logging::error(
+                            "recording",
+                            "worker_failed",
+                            &[
+                                Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                                Field::text(FieldKey::ErrorCode, "worker_panicked"),
+                            ],
+                        );
                     } else {
-                        log::info!("recording worker stopped");
+                        logging::info(
+                            "recording",
+                            "worker_stopped",
+                            &[Field::text(FieldKey::SessionId, runtime.session_id.clone())],
+                        );
                     }
                 })
                 .context("无法启动录音收尾线程")?;
@@ -601,6 +746,7 @@ impl RecordingController {
             runtime.system_sender.clone(),
             0,
             runtime.paused.load(Ordering::Acquire),
+            Some(runtime.session_id.clone()),
         )?;
         let replacement_events = matches!(selection, CaptureSelection::Process { .. })
             .then(|| replacement.event_receiver());
@@ -615,8 +761,8 @@ impl RecordingController {
         runtime.process_event_monitor =
             replacement_events.map(|events| self.spawn_process_event_monitor(app.clone(), events));
         runtime.capture_selection = selection.clone();
-        self.meeting_end_prompt.lock().take();
-        close_meeting_end_prompt_window(app);
+        self.capture_prompt.lock().take();
+        close_capture_prompt_window(app);
         let mut snapshot = self.snapshot.lock();
         snapshot.system = SourceStatus {
             healthy: true,
@@ -651,6 +797,7 @@ impl RecordingController {
                     runtime.microphone_sender.clone(),
                     next_epoch,
                     runtime.paused.load(Ordering::Acquire),
+                    Some(runtime.session_id.clone()),
                 )?;
                 *runtime.microphone_health.lock() = replacement.health_flag();
                 runtime.microphone_enabled.store(true, Ordering::Release);
@@ -660,9 +807,14 @@ impl RecordingController {
                 if let Some(previous) = runtime.microphone_capture.replace(replacement) {
                     previous.stop();
                 }
-                log::info!(
-                    "microphone source committed epoch={next_epoch} paused={}",
-                    runtime.paused.load(Ordering::Acquire)
+                logging::info(
+                    "microphone",
+                    "source_committed",
+                    &[
+                        Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                        Field::number(FieldKey::SourceEpoch, next_epoch),
+                        Field::boolean(FieldKey::Paused, runtime.paused.load(Ordering::Acquire)),
+                    ],
                 );
                 let mut snapshot = self.snapshot.lock();
                 snapshot.microphone.healthy = true;
@@ -689,7 +841,14 @@ impl RecordingController {
                 if let Some(previous) = runtime.microphone_capture.take() {
                     previous.stop();
                 }
-                log::info!("microphone disabled epoch={next_epoch}");
+                logging::info(
+                    "microphone",
+                    "disabled",
+                    &[
+                        Field::text(FieldKey::SessionId, runtime.session_id.clone()),
+                        Field::number(FieldKey::SourceEpoch, next_epoch),
+                    ],
+                );
                 let mut snapshot = self.snapshot.lock();
                 snapshot.microphone.healthy = false;
                 snapshot.microphone.detail = Some("已关闭".into());
@@ -703,6 +862,17 @@ impl RecordingController {
     }
 }
 
+fn should_replace_capture_prompt(
+    current: Option<&CapturePrompt>,
+    session_id: &str,
+    incoming_kind: CapturePromptKind,
+) -> bool {
+    let Some(current) = current.filter(|prompt| prompt.session_id == session_id) else {
+        return true;
+    };
+    current.kind != incoming_kind && current.kind != CapturePromptKind::CaptureInterrupted
+}
+
 fn restart_system_loopback_after_device_mode_change(runtime: &mut RecordingRuntime) -> Result<()> {
     if !matches!(runtime.capture_selection, CaptureSelection::System { .. }) {
         return Ok(());
@@ -714,6 +884,7 @@ fn restart_system_loopback_after_device_mode_change(runtime: &mut RecordingRunti
         runtime.system_sender.clone(),
         0,
         runtime.paused.load(Ordering::Acquire),
+        Some(runtime.session_id.clone()),
     )?;
     *runtime.system_health.lock() = replacement.health_flag();
     if let Some(previous) = runtime.system_capture.replace(replacement) {
@@ -787,7 +958,14 @@ fn recording_worker(
                 microphone_is_enabled && system_connected,
             );
             microphone_epoch = current_microphone_epoch;
-            log::info!("mixer accepted microphone source epoch={microphone_epoch}");
+            logging::info(
+                "microphone",
+                "mixer_source_accepted",
+                &[
+                    Field::text(FieldKey::SessionId, session_id.clone()),
+                    Field::number(FieldKey::SourceEpoch, microphone_epoch),
+                ],
+            );
             let aec_enabled = microphone_is_enabled
                 && should_enable_aec(request.aec_mode, auto_should_enable_aec);
             aec_converging_ms = 0;
@@ -886,30 +1064,69 @@ fn recording_worker(
     }
 
     let diagnostics = mixer.diagnostics();
-    log::info!(
-        "recording worker leaving mix loop; audio diagnostics system_underflows={} microphone_underflows={} system_discontinuities={} microphone_discontinuities={} system_concealed_gap_samples={} microphone_concealed_gap_samples={} system_packets={} microphone_packets={} system_non_silent_packets={} microphone_non_silent_packets={} system_input_rms_db={:.1} microphone_input_rms_db={:.1} system_input_peak_db={:.1} microphone_input_peak_db={:.1}",
-        diagnostics.system_underflows,
-        diagnostics.microphone_underflows,
-        diagnostics.system_discontinuities,
-        diagnostics.microphone_discontinuities,
-        diagnostics.system_concealed_gap_samples,
-        diagnostics.microphone_concealed_gap_samples,
-        diagnostics.system_packets,
-        diagnostics.microphone_packets,
-        diagnostics.system_non_silent_packets,
-        diagnostics.microphone_non_silent_packets,
-        amplitude_db(diagnostics.system_input_rms),
-        amplitude_db(diagnostics.microphone_input_rms),
-        amplitude_db(diagnostics.system_input_peak as f64),
-        amplitude_db(diagnostics.microphone_input_peak as f64)
+    logging::info(
+        "audio_diagnostics",
+        "capture_summary",
+        &[
+            Field::text(FieldKey::SessionId, session_id.clone()),
+            Field::text(FieldKey::Scope, "system"),
+            Field::number(FieldKey::Underflows, diagnostics.system_underflows),
+            Field::number(
+                FieldKey::Discontinuities,
+                diagnostics.system_discontinuities,
+            ),
+            Field::number(
+                FieldKey::ConcealedSamples,
+                diagnostics.system_concealed_gap_samples,
+            ),
+            Field::number(FieldKey::Packets, diagnostics.system_packets),
+            Field::number(
+                FieldKey::NonSilentPackets,
+                diagnostics.system_non_silent_packets,
+            ),
+        ],
+    );
+    logging::info(
+        "audio_diagnostics",
+        "capture_summary",
+        &[
+            Field::text(FieldKey::SessionId, session_id.clone()),
+            Field::text(FieldKey::Scope, "microphone"),
+            Field::number(FieldKey::Underflows, diagnostics.microphone_underflows),
+            Field::number(
+                FieldKey::Discontinuities,
+                diagnostics.microphone_discontinuities,
+            ),
+            Field::number(
+                FieldKey::ConcealedSamples,
+                diagnostics.microphone_concealed_gap_samples,
+            ),
+            Field::number(FieldKey::Packets, diagnostics.microphone_packets),
+            Field::number(
+                FieldKey::NonSilentPackets,
+                diagnostics.microphone_non_silent_packets,
+            ),
+        ],
     );
     snapshot.lock().state = RecordingState::Finalizing;
     emit_snapshot(&app, &snapshot);
-    log::info!("recording worker finishing Ogg stream");
+    logging::info(
+        "recording",
+        "ogg_finalizing",
+        &[Field::text(FieldKey::SessionId, session_id.clone())],
+    );
     let finalization = writer.finish().and_then(|_| {
-        log::info!("Ogg stream finished; moving recording to output");
+        logging::info(
+            "recording",
+            "ogg_finalized",
+            &[Field::text(FieldKey::SessionId, session_id.clone())],
+        );
         move_verified(&partial_path, &output_path)?;
-        log::info!("recording moved to output");
+        logging::info(
+            "recording",
+            "output_committed",
+            &[Field::text(FieldKey::SessionId, session_id.clone())],
+        );
         Ok(())
     });
     match finalization {
@@ -952,7 +1169,15 @@ fn recording_worker(
                     occurred_at: Utc::now().to_rfc3339(),
                 });
             }
-            log::info!("recording completed bytes={}", item.size_bytes);
+            logging::info(
+                "recording",
+                "completed",
+                &[
+                    Field::text(FieldKey::SessionId, item.id.clone()),
+                    Field::number(FieldKey::Bytes, item.size_bytes),
+                    Field::number(FieldKey::DurationMs, item.duration_ms),
+                ],
+            );
         }
         Err(error) => {
             let mut value = snapshot.lock();
@@ -967,7 +1192,14 @@ fn recording_worker(
                 ),
                 occurred_at: Utc::now().to_rfc3339(),
             });
-            log::error!("recording finalization failed: {error:#}");
+            logging::error(
+                "recording",
+                "finalization_failed",
+                &[
+                    Field::text(FieldKey::SessionId, session_id.clone()),
+                    Field::text(FieldKey::ErrorCode, "finalize_failed"),
+                ],
+            );
         }
     }
     emit_snapshot(&app, &snapshot);
@@ -1000,10 +1232,6 @@ fn next_source_epoch(current: u64) -> u64 {
     current.checked_add(1).unwrap_or(1)
 }
 
-fn amplitude_db(value: f64) -> f64 {
-    20.0 * value.max(1.0e-12).log10()
-}
-
 fn unique_recording_path(directory: &Path) -> PathBuf {
     let stem = Local::now().format("%Y-%m-%d_%H-%M_会议录音").to_string();
     let first = directory.join(format!("{stem}.ogg"));
@@ -1034,7 +1262,6 @@ fn capture_source_from_selection(selection: &CaptureSelection) -> Result<Capture
                 process_id: target.process_id,
                 display_name: target.display_name,
                 executable_path: target.executable_path,
-                window_handle: target.window_handle,
             })
         }
         CaptureSelection::System { device } => Ok(CaptureSource::System(device.clone())),
@@ -1075,6 +1302,15 @@ fn emit_snapshot(app: &AppHandle, snapshot: &Arc<Mutex<RecordingSnapshot>>) {
     schedule_tray_update(app, value.state);
 }
 
+fn recording_session_fields(snapshot: &Arc<Mutex<RecordingSnapshot>>) -> Vec<Field<'static>> {
+    snapshot
+        .lock()
+        .session_id
+        .clone()
+        .map(|session_id| vec![Field::text(FieldKey::SessionId, session_id)])
+        .unwrap_or_default()
+}
+
 fn command_result<T>(result: Result<T>) -> std::result::Result<T, String> {
     result.map_err(|error| format!("{error:#}"))
 }
@@ -1083,7 +1319,11 @@ fn stop_in_background(app: &AppHandle, recorder: Arc<RecordingController>) {
     let stop_app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(error) = recorder.stop(&stop_app) {
-            log::error!("background stop request failed: {error:#}");
+            logging::error(
+                "recording",
+                "background_stop_failed",
+                &[Field::text(FieldKey::ErrorCode, "stop_failed")],
+            );
             recorder.set_error(&stop_app, "controller", "STOP_FAILED", &error);
         }
     });
@@ -1116,7 +1356,9 @@ fn save_settings(
             let _ = register_shortcuts(&app, &previous);
             bail!("快捷键注册失败，可能与其他应用冲突：{error}");
         }
-        state.storage.save_settings(&settings)
+        state.storage.save_settings(&settings)?;
+        logging::info("settings", "saved", &[]);
+        Ok(())
     })())
 }
 
@@ -1126,25 +1368,47 @@ fn get_recording_snapshot(state: State<AppState>) -> RecordingSnapshot {
 }
 
 #[tauri::command]
-fn get_meeting_end_prompt(state: State<AppState>) -> Option<MeetingEndPrompt> {
-    state.recorder.pending_meeting_end_prompt()
+fn get_capture_prompt(state: State<AppState>) -> Option<CapturePrompt> {
+    state.recorder.pending_capture_prompt()
 }
 
 #[tauri::command]
-async fn respond_meeting_end_prompt(
+async fn respond_capture_prompt(
     app: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
     stop_and_save: bool,
 ) -> std::result::Result<RecordingSnapshot, String> {
     let recorder = Arc::clone(&state.recorder);
-    let is_current = recorder
-        .pending_meeting_end_prompt()
-        .is_some_and(|prompt| prompt.session_id == session_id);
-    if !is_current {
+    let Some(prompt) = recorder
+        .pending_capture_prompt()
+        .filter(|prompt| prompt.session_id == session_id)
+    else {
         return Ok(recorder.snapshot());
-    }
-    recorder.dismiss_meeting_end_prompt(&app);
+    };
+    logging::info(
+        "user_action",
+        "capture_prompt_responded",
+        &[
+            Field::text(FieldKey::SessionId, session_id.clone()),
+            Field::text(
+                FieldKey::Reason,
+                match prompt.kind {
+                    CapturePromptKind::CaptureInterrupted => "capture_interrupted",
+                    CapturePromptKind::ProlongedSilence => "prolonged_silence",
+                },
+            ),
+            Field::text(
+                FieldKey::Action,
+                if stop_and_save {
+                    "stop_and_save"
+                } else {
+                    "continue_recording"
+                },
+            ),
+        ],
+    );
+    recorder.dismiss_capture_prompt(&app);
     if !stop_and_save {
         return Ok(recorder.snapshot());
     }
@@ -1155,27 +1419,34 @@ async fn respond_meeting_end_prompt(
 }
 
 #[tauri::command]
-fn resize_meeting_end_prompt(app: AppHandle, height: f64) -> std::result::Result<(), String> {
-    let height = normalize_meeting_end_prompt_height(height).map_err(|error| error.to_string())?;
+fn resize_capture_prompt(app: AppHandle, height: f64) -> std::result::Result<(), String> {
+    let height = normalize_capture_prompt_height(height).map_err(|error| error.to_string())?;
     let main_thread_app = app.clone();
     app.run_on_main_thread(move || {
-        let Some(window) = main_thread_app.get_webview_window(MEETING_END_PROMPT_WINDOW) else {
+        let Some(window) = main_thread_app.get_webview_window(CAPTURE_PROMPT_WINDOW) else {
             return;
         };
-        if let Err(error) = window.set_size(LogicalSize::new(MEETING_END_PROMPT_WIDTH, height)) {
-            log::warn!("unable to resize meeting-end prompt window: {error}");
+        if window
+            .set_size(LogicalSize::new(CAPTURE_PROMPT_WIDTH, height))
+            .is_err()
+        {
+            logging::warn(
+                "capture_prompt",
+                "resize_failed",
+                &[Field::text(FieldKey::ErrorCode, "window_resize_failed")],
+            );
             return;
         }
-        position_meeting_end_prompt_window_on_main_thread(&main_thread_app);
+        position_capture_prompt_window_on_main_thread(&main_thread_app);
     })
     .map_err(|error| format!("无法调整会议状态提醒窗口：{error}"))
 }
 
-fn normalize_meeting_end_prompt_height(height: f64) -> Result<f64> {
+fn normalize_capture_prompt_height(height: f64) -> Result<f64> {
     if !height.is_finite() {
         bail!("会议状态提醒窗口高度无效");
     }
-    Ok(height.clamp(MEETING_END_PROMPT_MIN_HEIGHT, MEETING_END_PROMPT_MAX_HEIGHT))
+    Ok(height.clamp(CAPTURE_PROMPT_MIN_HEIGHT, CAPTURE_PROMPT_MAX_HEIGHT))
 }
 
 #[tauri::command]
@@ -1442,6 +1713,18 @@ fn delete_recording(
             trash::delete(&item.path)?;
         }
         state.storage.remove_recording(&id)?;
+        logging::info(
+            "recording_library",
+            "recording_deleted",
+            &[
+                Field::text(FieldKey::RecordingId, id.as_str()),
+                Field::boolean(FieldKey::Permanent, permanent),
+                Field::boolean(
+                    FieldKey::IncludeAiDocuments,
+                    delete_ai_documents.unwrap_or(false),
+                ),
+            ],
+        );
         Ok(())
     })())
 }
@@ -1463,6 +1746,29 @@ fn open_microphone_settings() -> std::result::Result<(), String> {
         };
         if result.0 as isize <= 32 {
             bail!("无法打开 Windows 麦克风隐私设置");
+        }
+        Ok(())
+    })())
+}
+
+#[tauri::command]
+fn open_log_directory(state: State<AppState>) -> std::result::Result<(), String> {
+    command_result((|| {
+        logging::info("diagnostics", "log_directory_open_requested", &[]);
+        let operation = wide("open");
+        let target = wide(state.storage.paths().logs.to_string_lossy().as_ref());
+        let result = unsafe {
+            ShellExecuteW(
+                Some(HWND::default()),
+                PCWSTR(operation.as_ptr()),
+                PCWSTR(target.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize <= 32 {
+            bail!("无法在资源管理器中打开日志目录");
         }
         Ok(())
     })())
@@ -1543,13 +1849,31 @@ fn save_asr_provider(
         request.name = request.name.trim().to_owned();
         request.model_id = request.model_id.trim().to_owned();
         request.base_url = normalize_base_url(&request.base_url)?;
-        state.storage.save_asr_provider(request)
+        let provider = state.storage.save_asr_provider(request)?;
+        logging::info(
+            "settings",
+            "asr_provider_saved",
+            &[
+                Field::text(FieldKey::ProviderId, provider.id.as_str()),
+                Field::text(FieldKey::ProviderKind, provider.kind.as_str()),
+                Field::text(FieldKey::ModelId, provider.model_id.as_str()),
+            ],
+        );
+        Ok(provider)
     })())
 }
 
 #[tauri::command]
 fn delete_asr_provider(state: State<AppState>, id: String) -> std::result::Result<(), String> {
-    command_result(state.storage.delete_asr_provider(&id))
+    command_result((|| {
+        state.storage.delete_asr_provider(&id)?;
+        logging::info(
+            "settings",
+            "asr_provider_deleted",
+            &[Field::text(FieldKey::ProviderId, id)],
+        );
+        Ok(())
+    })())
 }
 
 #[tauri::command]
@@ -1615,13 +1939,31 @@ fn save_llm_provider(
 ) -> std::result::Result<LlmProvider, String> {
     command_result((|| {
         request.base_url = normalize_provider_base_url(request.kind, &request.base_url)?;
-        state.storage.save_llm_provider(request)
+        let provider = state.storage.save_llm_provider(request)?;
+        logging::info(
+            "settings",
+            "llm_provider_saved",
+            &[
+                Field::text(FieldKey::ProviderId, provider.id.as_str()),
+                Field::text(FieldKey::ProviderKind, provider.kind.as_str()),
+                Field::text(FieldKey::ModelId, provider.model_id.as_str()),
+            ],
+        );
+        Ok(provider)
     })())
 }
 
 #[tauri::command]
 fn delete_llm_provider(state: State<AppState>, id: String) -> std::result::Result<(), String> {
-    command_result(state.storage.delete_llm_provider(&id))
+    command_result((|| {
+        state.storage.delete_llm_provider(&id)?;
+        logging::info(
+            "settings",
+            "llm_provider_deleted",
+            &[Field::text(FieldKey::ProviderId, id)],
+        );
+        Ok(())
+    })())
 }
 
 #[tauri::command]
@@ -1942,6 +2284,11 @@ fn copy_transcript(
             bail!("当前没有可复制的转写文字");
         }
         arboard::Clipboard::new()?.set_text(text)?;
+        logging::info(
+            "transcript",
+            "copied",
+            &[Field::text(FieldKey::RecordingId, recording_id.as_str())],
+        );
         Ok(())
     })())
 }
@@ -1970,6 +2317,11 @@ fn export_transcript(
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(destination, text.as_bytes())?;
+        logging::info(
+            "transcript",
+            "exported",
+            &[Field::text(FieldKey::RecordingId, recording_id.as_str())],
+        );
         Ok(())
     })())
 }
@@ -2173,7 +2525,7 @@ fn register_shortcuts(app: &AppHandle, settings: &AppSettings) -> Result<()> {
 }
 
 fn create_tray(app: &tauri::App) -> Result<()> {
-    let menu = build_tray_menu(app.handle(), RecordingState::Idle, false)?;
+    let menu = build_tray_menu(app.handle(), RecordingState::Idle, None)?;
     TrayIconBuilder::with_id("main-tray")
         .icon(status_icon(RecordingState::Idle, false))
         .tooltip("Nota · 空闲")
@@ -2195,7 +2547,7 @@ fn create_tray(app: &tauri::App) -> Result<()> {
             let state = app.state::<AppState>();
             match event.id().as_ref() {
                 "show" => show_main_window(app),
-                "meeting_end_prompt" => show_meeting_end_prompt_window(app),
+                "capture_prompt" => show_capture_prompt_window(app),
                 "start_process" => {
                     show_main_window(app);
                     let _ = app.emit("recording://request-start", "process");
@@ -2239,38 +2591,53 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-fn show_meeting_end_prompt_window(app: &AppHandle) {
+fn show_capture_prompt_window(app: &AppHandle) {
     let main_thread_app = app.clone();
-    if let Err(error) = app.run_on_main_thread(move || {
-        if let Some(window) = main_thread_app.get_webview_window(MEETING_END_PROMPT_WINDOW) {
-            let _ = window.show();
-            return;
-        }
-        if let Err(error) = WebviewWindowBuilder::new(
-            &main_thread_app,
-            MEETING_END_PROMPT_WINDOW,
-            WebviewUrl::App("index.html?view=meeting-end-prompt".into()),
-        )
-        .title("Nota · 会议状态提醒")
-        .inner_size(MEETING_END_PROMPT_WIDTH, MEETING_END_PROMPT_MIN_HEIGHT)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .build()
-        {
-            log::warn!("unable to create meeting-end prompt window: {error:#}");
-            return;
-        }
-        position_meeting_end_prompt_window_on_main_thread(&main_thread_app);
-    }) {
-        log::warn!("unable to schedule meeting-end prompt window: {error}");
+    if app
+        .run_on_main_thread(move || {
+            if let Some(window) = main_thread_app.get_webview_window(CAPTURE_PROMPT_WINDOW) {
+                let _ = window.show();
+                return;
+            }
+            if WebviewWindowBuilder::new(
+                &main_thread_app,
+                CAPTURE_PROMPT_WINDOW,
+                WebviewUrl::App("index.html?view=capture-prompt".into()),
+            )
+            .title("Nota · 音频捕获提醒")
+            .inner_size(CAPTURE_PROMPT_WIDTH, CAPTURE_PROMPT_MIN_HEIGHT)
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .build()
+            .is_err()
+            {
+                logging::warn(
+                    "capture_prompt",
+                    "create_failed",
+                    &[Field::text(FieldKey::ErrorCode, "window_create_failed")],
+                );
+                return;
+            }
+            position_capture_prompt_window_on_main_thread(&main_thread_app);
+        })
+        .is_err()
+    {
+        logging::warn(
+            "capture_prompt",
+            "schedule_failed",
+            &[Field::text(
+                FieldKey::ErrorCode,
+                "main_thread_schedule_failed",
+            )],
+        );
     }
 }
 
-fn position_meeting_end_prompt_window_on_main_thread(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(MEETING_END_PROMPT_WINDOW) else {
+fn position_capture_prompt_window_on_main_thread(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(CAPTURE_PROMPT_WINDOW) else {
         return;
     };
     let monitor = app
@@ -2288,14 +2655,24 @@ fn position_meeting_end_prompt_window_on_main_thread(app: &AppHandle) {
     }
 }
 
-fn close_meeting_end_prompt_window(app: &AppHandle) {
+fn close_capture_prompt_window(app: &AppHandle) {
     let main_thread_app = app.clone();
-    if let Err(error) = app.run_on_main_thread(move || {
-        if let Some(window) = main_thread_app.get_webview_window(MEETING_END_PROMPT_WINDOW) {
-            let _ = window.close();
-        }
-    }) {
-        log::warn!("unable to close meeting-end prompt window: {error}");
+    if app
+        .run_on_main_thread(move || {
+            if let Some(window) = main_thread_app.get_webview_window(CAPTURE_PROMPT_WINDOW) {
+                let _ = window.close();
+            }
+        })
+        .is_err()
+    {
+        logging::warn(
+            "capture_prompt",
+            "close_failed",
+            &[Field::text(
+                FieldKey::ErrorCode,
+                "main_thread_schedule_failed",
+            )],
+        );
     }
 }
 
@@ -2306,7 +2683,7 @@ fn is_window_reveal_click(button: MouseButton, button_state: MouseButtonState) -
 fn build_tray_menu(
     app: &AppHandle,
     state: RecordingState,
-    meeting_end_pending: bool,
+    capture_prompt_kind: Option<CapturePromptKind>,
 ) -> Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let controls = tray_controls(state);
@@ -2335,14 +2712,12 @@ fn build_tray_menu(
         controls.stop_enabled,
         None::<&str>,
     )?;
-    if meeting_end_pending {
-        let prompt = MenuItem::with_id(
-            app,
-            "meeting_end_prompt",
-            "会议貌似已结束，请确认…",
-            true,
-            None::<&str>,
-        )?;
+    if let Some(kind) = capture_prompt_kind {
+        let prompt_label = match kind {
+            CapturePromptKind::CaptureInterrupted => "应用音频捕获已中断，请确认…",
+            CapturePromptKind::ProlongedSilence => "应用已持续 3 分钟没有声音，请确认…",
+        };
+        let prompt = MenuItem::with_id(app, "capture_prompt", prompt_label, true, None::<&str>)?;
         return Ok(Menu::with_items(
             app,
             &[&show, &prompt, &toggle, &stop, &separator, &quit],
@@ -2355,52 +2730,70 @@ fn build_tray_menu(
 }
 
 fn schedule_tray_update(app: &AppHandle, state: RecordingState) {
-    let meeting_end_pending = app
+    let capture_prompt_kind = app
         .state::<AppState>()
         .recorder
-        .pending_meeting_end_prompt()
-        .is_some();
+        .pending_capture_prompt()
+        .map(|prompt| prompt.kind);
     {
         let app_state = app.state::<AppState>();
         let mut previous = app_state.tray_state.lock();
-        if *previous == Some((state, meeting_end_pending)) {
+        if *previous == Some((state, capture_prompt_kind)) {
             return;
         }
-        *previous = Some((state, meeting_end_pending));
+        *previous = Some((state, capture_prompt_kind));
     }
     let main_thread_app = app.clone();
-    if let Err(error) = app.run_on_main_thread(move || {
-        update_tray_on_main_thread(&main_thread_app, state, meeting_end_pending);
-    }) {
+    if app
+        .run_on_main_thread(move || {
+            update_tray_on_main_thread(&main_thread_app, state, capture_prompt_kind);
+        })
+        .is_err()
+    {
         app.state::<AppState>().tray_state.lock().take();
-        log::warn!("unable to schedule tray update: {error}");
+        logging::warn(
+            "tray",
+            "update_schedule_failed",
+            &[Field::text(
+                FieldKey::ErrorCode,
+                "main_thread_schedule_failed",
+            )],
+        );
     }
 }
 
-fn update_tray_on_main_thread(app: &AppHandle, state: RecordingState, meeting_end_pending: bool) {
+fn update_tray_on_main_thread(
+    app: &AppHandle,
+    state: RecordingState,
+    capture_prompt_kind: Option<CapturePromptKind>,
+) {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return;
     };
-    let label = if meeting_end_pending {
-        "Nota · 请确认会议是否结束"
-    } else {
-        match state {
+    let label = match capture_prompt_kind {
+        Some(CapturePromptKind::CaptureInterrupted) => "Nota · 应用音频捕获已中断",
+        Some(CapturePromptKind::ProlongedSilence) => "Nota · 应用长时间没有声音",
+        None => match state {
             RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
                 "Nota · 正在录音"
             }
             RecordingState::Paused => "Nota · 已暂停",
             RecordingState::Interrupted | RecordingState::Error => "Nota · 音源中断",
             _ => "Nota · 空闲",
-        }
+        },
     };
-    let _ = tray.set_icon(Some(status_icon(state, meeting_end_pending)));
+    let _ = tray.set_icon(Some(status_icon(state, capture_prompt_kind.is_some())));
     let _ = tray.set_tooltip(Some(label));
-    match build_tray_menu(app, state, meeting_end_pending) {
+    match build_tray_menu(app, state, capture_prompt_kind) {
         Ok(menu) => {
             let _ = tray.set_menu(Some(menu));
         }
-        Err(error) => {
-            log::warn!("unable to rebuild tray menu: {error:#}");
+        Err(_) => {
+            logging::warn(
+                "tray",
+                "menu_rebuild_failed",
+                &[Field::text(FieldKey::ErrorCode, "menu_rebuild_failed")],
+            );
         }
     }
 }
@@ -2446,8 +2839,8 @@ fn tray_controls(state: RecordingState) -> TrayControls {
     }
 }
 
-fn status_icon(state: RecordingState, meeting_end_pending: bool) -> Image<'static> {
-    let color = if meeting_end_pending {
+fn status_icon(state: RecordingState, capture_prompt_pending: bool) -> Image<'static> {
+    let color = if capture_prompt_pending {
         [218, 145, 45, 255]
     } else {
         match state {
@@ -2476,7 +2869,14 @@ fn status_icon(state: RecordingState, meeting_end_pending: bool) -> Image<'stati
 pub fn run_app() {
     let paths = AppPaths::discover().expect("无法初始化 Nota 数据目录");
     crate::logging::init(&paths.logs).expect("无法初始化 Nota 技术日志");
-    log::info!("Nota starting; local data initialized");
+    logging::info(
+        "application",
+        "started",
+        &[
+            Field::text(FieldKey::AppVersion, env!("CARGO_PKG_VERSION")),
+            Field::number(FieldKey::ProcessId, u64::from(std::process::id())),
+        ],
+    );
     let storage = Arc::new(Storage::open(paths).expect("无法初始化 Nota 数据库"));
     clean_stale_temporary_chunks(&storage.paths().recovery)
         .expect("无法清理上次遗留的转写临时文件");
@@ -2528,7 +2928,7 @@ pub fn run_app() {
             importer,
             voiceprints,
             media_start_gate: Mutex::new(()),
-            tray_state: Mutex::new(Some((RecordingState::Idle, false))),
+            tray_state: Mutex::new(Some((RecordingState::Idle, None))),
         })
         .setup(|app| {
             create_tray(app).map_err(|error| anyhow!(error))?;
@@ -2559,9 +2959,9 @@ pub fn run_app() {
             get_settings,
             save_settings,
             get_recording_snapshot,
-            get_meeting_end_prompt,
-            respond_meeting_end_prompt,
-            resize_meeting_end_prompt,
+            get_capture_prompt,
+            respond_capture_prompt,
+            resize_capture_prompt,
             start_recording,
             pause_recording,
             resume_recording,
@@ -2580,6 +2980,7 @@ pub fn run_app() {
             delete_recording,
             delete_recoverable_recording,
             open_microphone_settings,
+            open_log_directory,
             list_asr_providers,
             save_asr_provider,
             delete_asr_provider,
@@ -2634,17 +3035,36 @@ pub fn run_app() {
     application.run(|app, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
             let state = app.state::<AppState>();
-            if let Err(error) = state.recorder.stop_and_wait(app) {
-                log::error!("best-effort shutdown finalization failed: {error:#}");
+            if state.recorder.stop_and_wait(app).is_err() {
+                logging::error(
+                    "application",
+                    "shutdown_finalization_failed",
+                    &[Field::text(
+                        FieldKey::ErrorCode,
+                        "recording_finalize_failed",
+                    )],
+                );
             }
-            if let Err(error) = state.asr.interrupt_all() {
-                log::error!("best-effort ASR interruption failed: {error:#}");
+            if state.asr.interrupt_all().is_err() {
+                logging::error(
+                    "application",
+                    "asr_interrupt_failed",
+                    &[Field::text(FieldKey::ErrorCode, "asr_interrupt_failed")],
+                );
             }
-            if let Err(error) = state.ai.interrupt_all() {
-                log::error!("best-effort AI interruption failed: {error:#}");
+            if state.ai.interrupt_all().is_err() {
+                logging::error(
+                    "application",
+                    "ai_interrupt_failed",
+                    &[Field::text(FieldKey::ErrorCode, "ai_interrupt_failed")],
+                );
             }
-            if let Err(error) = state.importer.interrupt_all() {
-                log::error!("best-effort audio import interruption failed: {error:#}");
+            if state.importer.interrupt_all().is_err() {
+                logging::error(
+                    "application",
+                    "import_interrupt_failed",
+                    &[Field::text(FieldKey::ErrorCode, "import_interrupt_failed")],
+                );
             }
         }
     });
@@ -2744,17 +3164,51 @@ mod tray_tests {
     use super::*;
 
     #[test]
-    fn meeting_end_prompt_height_is_bounded_and_rejects_invalid_values() {
+    fn capture_prompt_height_is_bounded_and_rejects_invalid_values() {
         assert_eq!(
-            normalize_meeting_end_prompt_height(120.0).unwrap(),
-            MEETING_END_PROMPT_MIN_HEIGHT
+            normalize_capture_prompt_height(120.0).unwrap(),
+            CAPTURE_PROMPT_MIN_HEIGHT
         );
-        assert_eq!(normalize_meeting_end_prompt_height(220.0).unwrap(), 220.0);
+        assert_eq!(normalize_capture_prompt_height(220.0).unwrap(), 220.0);
         assert_eq!(
-            normalize_meeting_end_prompt_height(500.0).unwrap(),
-            MEETING_END_PROMPT_MAX_HEIGHT
+            normalize_capture_prompt_height(500.0).unwrap(),
+            CAPTURE_PROMPT_MAX_HEIGHT
         );
-        assert!(normalize_meeting_end_prompt_height(f64::NAN).is_err());
+        assert!(normalize_capture_prompt_height(f64::NAN).is_err());
+    }
+
+    #[test]
+    fn capture_interruption_can_replace_silence_but_not_the_reverse() {
+        let silence = CapturePrompt {
+            session_id: "session-1".into(),
+            target_name: "Meeting".into(),
+            kind: CapturePromptKind::ProlongedSilence,
+        };
+        let interruption = CapturePrompt {
+            kind: CapturePromptKind::CaptureInterrupted,
+            ..silence.clone()
+        };
+
+        assert!(should_replace_capture_prompt(
+            Some(&silence),
+            "session-1",
+            CapturePromptKind::CaptureInterrupted
+        ));
+        assert!(!should_replace_capture_prompt(
+            Some(&interruption),
+            "session-1",
+            CapturePromptKind::ProlongedSilence
+        ));
+        assert!(!should_replace_capture_prompt(
+            Some(&silence),
+            "session-1",
+            CapturePromptKind::ProlongedSilence
+        ));
+        assert!(should_replace_capture_prompt(
+            Some(&interruption),
+            "session-2",
+            CapturePromptKind::ProlongedSilence
+        ));
     }
 
     #[test]

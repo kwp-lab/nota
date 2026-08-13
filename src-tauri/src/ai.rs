@@ -1,3 +1,4 @@
+use crate::logging::{self, Field, FieldKey};
 use crate::models::{
     AiDocument, AiDocumentContent, AiDocumentVersion, AiFileState, AiGenerationEvent,
     AiGenerationMode, AiGenerationRequest, AiGenerationRequestPreview, AiGenerationStatus,
@@ -19,7 +20,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use windows::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
 use windows::core::PCWSTR;
@@ -49,6 +50,7 @@ struct AiJob {
     target_path: PathBuf,
     provider: LlmProviderCredentials,
     request_body: Value,
+    estimated_input_tokens: u32,
 }
 
 struct ProviderOutput {
@@ -56,6 +58,7 @@ struct ProviderOutput {
     input_tokens: Option<u32>,
     output_tokens: Option<u32>,
     response_body: Value,
+    http_status: u16,
 }
 
 struct PreparedGeneration {
@@ -201,6 +204,23 @@ impl AiManager {
                 .lock()
                 .insert(version.id.clone(), cancellation);
             queued_version_id = Some(version.id.clone());
+            logging::info(
+                "llm",
+                "job_queued",
+                &[
+                    Field::text(FieldKey::RecordingId, request.recording_id.as_str()),
+                    Field::text(FieldKey::DocumentId, document.id.as_str()),
+                    Field::text(FieldKey::VersionId, version.id.as_str()),
+                    Field::text(FieldKey::ProviderId, provider.provider.id.as_str()),
+                    Field::text(FieldKey::ProviderKind, provider.provider.kind.as_str()),
+                    Field::text(FieldKey::ModelId, provider.provider.model_id.as_str()),
+                    Field::text(FieldKey::Mode, request.mode.as_str()),
+                    Field::number(
+                        FieldKey::EstimatedInputTokens,
+                        estimated_input_tokens as u64,
+                    ),
+                ],
+            );
             self.sender
                 .send(AiJob {
                     app,
@@ -210,6 +230,7 @@ impl AiManager {
                     target_path,
                     provider,
                     request_body,
+                    estimated_input_tokens,
                 })
                 .map_err(|error| anyhow!("无法加入 AI 文档生成队列：{error}"))?;
             Ok(version)
@@ -238,6 +259,11 @@ impl AiManager {
             .cloned()
             .context("该 AI 文档任务当前没有运行")?;
         cancellation.store(true, Ordering::Release);
+        logging::info(
+            "llm",
+            "cancel_requested",
+            &[Field::text(FieldKey::VersionId, version_id)],
+        );
         self.storage.find_ai_document_version(version_id)
     }
 
@@ -268,6 +294,16 @@ fn worker_loop(
     active_documents: Arc<Mutex<HashSet<String>>>,
 ) {
     while let Ok(job) = receiver.recv() {
+        let started_at = Instant::now();
+        logging::info(
+            "llm",
+            "job_started",
+            &[
+                Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                Field::text(FieldKey::DocumentId, job.document_id.as_str()),
+                Field::text(FieldKey::VersionId, job.version_id.as_str()),
+            ],
+        );
         let cancellation = cancellations
             .lock()
             .get(&job.version_id)
@@ -291,6 +327,31 @@ fn worker_loop(
             {
                 emit_status(&job.app, &job.recording_id, &job.document_id, version);
             }
+            logging::error(
+                "llm",
+                if cancelled {
+                    "job_cancelled"
+                } else {
+                    "job_failed"
+                },
+                &[
+                    Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                    Field::text(FieldKey::DocumentId, job.document_id.as_str()),
+                    Field::text(FieldKey::VersionId, job.version_id.as_str()),
+                    Field::number(
+                        FieldKey::DurationMs,
+                        started_at.elapsed().as_millis() as u64,
+                    ),
+                    Field::text(
+                        FieldKey::ErrorCode,
+                        if cancelled {
+                            "user_cancelled"
+                        } else {
+                            "generation_failed"
+                        },
+                    ),
+                ],
+            );
         }
         cancellations.lock().remove(&job.version_id);
         active_documents.lock().remove(&job.document_id);
@@ -302,12 +363,61 @@ fn process_job(job: &AiJob, storage: &Storage, cancellation: &AtomicBool) -> Res
     let generating =
         storage.set_ai_version_status(&job.version_id, AiGenerationStatus::Generating, None)?;
     emit_status(&job.app, &job.recording_id, &job.document_id, generating);
+    let request_started_at = Instant::now();
+    logging::info(
+        "llm",
+        "request_sent",
+        &[
+            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+            Field::text(FieldKey::DocumentId, job.document_id.as_str()),
+            Field::text(FieldKey::VersionId, job.version_id.as_str()),
+            Field::text(FieldKey::ProviderId, job.provider.provider.id.as_str()),
+            Field::text(FieldKey::ProviderKind, job.provider.provider.kind.as_str()),
+            Field::text(FieldKey::ModelId, job.provider.provider.model_id.as_str()),
+            Field::number(
+                FieldKey::EstimatedInputTokens,
+                job.estimated_input_tokens as u64,
+            ),
+        ],
+    );
     let output = request_completion(&job.provider, &job.request_body)?;
+    logging::info(
+        "llm",
+        "response_received",
+        &[
+            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+            Field::text(FieldKey::DocumentId, job.document_id.as_str()),
+            Field::text(FieldKey::VersionId, job.version_id.as_str()),
+            Field::number(FieldKey::HttpStatus, output.http_status as u64),
+            Field::number(
+                FieldKey::DurationMs,
+                request_started_at.elapsed().as_millis() as u64,
+            ),
+            Field::number(
+                FieldKey::InputTokens,
+                output.input_tokens.unwrap_or(0) as u64,
+            ),
+            Field::number(
+                FieldKey::OutputTokens,
+                output.output_tokens.unwrap_or(0) as u64,
+            ),
+        ],
+    );
     ensure_not_cancelled(cancellation)?;
     let body = normalize_model_markdown(&output.text)?;
     let version = storage.find_ai_document_version(&job.version_id)?;
     let markdown = assemble_markdown(&job.recording_id, &version, &body);
     write_new_file_atomically(&job.target_path, markdown.as_bytes(), cancellation)?;
+    logging::info(
+        "llm",
+        "file_committed",
+        &[
+            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+            Field::text(FieldKey::DocumentId, job.document_id.as_str()),
+            Field::text(FieldKey::VersionId, job.version_id.as_str()),
+            Field::number(FieldKey::Bytes, markdown.len() as u64),
+        ],
+    );
     let hash = format!("{:x}", Sha256::digest(markdown.as_bytes()));
     let response_body_json = serde_json::to_string(&output.response_body)?;
     let completed = storage.complete_ai_document_version(
@@ -318,6 +428,23 @@ fn process_job(job: &AiJob, storage: &Storage, cancellation: &AtomicBool) -> Res
         &response_body_json,
     )?;
     emit_status(&job.app, &job.recording_id, &job.document_id, completed);
+    logging::info(
+        "llm",
+        "job_completed",
+        &[
+            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+            Field::text(FieldKey::DocumentId, job.document_id.as_str()),
+            Field::text(FieldKey::VersionId, job.version_id.as_str()),
+            Field::number(
+                FieldKey::InputTokens,
+                output.input_tokens.unwrap_or(0) as u64,
+            ),
+            Field::number(
+                FieldKey::OutputTokens,
+                output.output_tokens.unwrap_or(0) as u64,
+            ),
+        ],
+    );
     Ok(())
 }
 
@@ -339,7 +466,22 @@ pub fn test_connection(credentials: &LlmProviderCredentials) -> Result<LlmConnec
         "Return a short plain-text acknowledgement.",
         "Reply with exactly: OK",
     );
-    request_completion(credentials, &request_body)?;
+    let started_at = Instant::now();
+    let output = request_completion(credentials, &request_body)?;
+    logging::info(
+        "llm",
+        "connection_test_succeeded",
+        &[
+            Field::text(FieldKey::ProviderId, credentials.provider.id.as_str()),
+            Field::text(FieldKey::ProviderKind, credentials.provider.kind.as_str()),
+            Field::text(FieldKey::ModelId, credentials.provider.model_id.as_str()),
+            Field::number(FieldKey::HttpStatus, output.http_status as u64),
+            Field::number(
+                FieldKey::DurationMs,
+                started_at.elapsed().as_millis() as u64,
+            ),
+        ],
+    );
     Ok(LlmConnectionTest {
         reachable: true,
         message: "连接成功，模型返回了有效文本".into(),
@@ -499,7 +641,8 @@ pub fn list_models(credentials: &LlmProviderCredentials) -> Result<Vec<LlmModel>
     let client = http_client()?;
     let request = with_authorization(client.get(format!("{root}/models")), credentials);
     let response = request.send().context("无法连接 AI 模型服务")?;
-    if !response.status().is_success() {
+    let status = response.status();
+    if !status.is_success() {
         return Err(provider_http_error(response));
     }
     let value: Value = response.json().context("模型列表不是有效 JSON")?;
@@ -519,6 +662,16 @@ pub fn list_models(credentials: &LlmProviderCredentials) -> Result<Vec<LlmModel>
         })
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
+    logging::info(
+        "llm",
+        "models_listed",
+        &[
+            Field::text(FieldKey::ProviderId, credentials.provider.id.as_str()),
+            Field::text(FieldKey::ProviderKind, credentials.provider.kind.as_str()),
+            Field::number(FieldKey::HttpStatus, status.as_u16() as u64),
+            Field::number(FieldKey::Count, models.len() as u64),
+        ],
+    );
     Ok(models)
 }
 
@@ -559,6 +712,7 @@ fn request_completion(
                 .context("无法连接 OpenAI-compatible Chat Completions API")?
         }
     };
+    let http_status = response.status().as_u16();
     if !response.status().is_success() {
         return Err(provider_http_error(response));
     }
@@ -567,6 +721,10 @@ fn request_completion(
         LlmProviderKind::OpenAi => parse_responses_output(&value),
         LlmProviderKind::OpenAiCompatible => parse_chat_output(&value),
     }
+    .map(|mut output| {
+        output.http_status = http_status;
+        output
+    })
 }
 
 fn responses_request_body(
@@ -657,6 +815,14 @@ fn compatible_chat_url(base_url: &str) -> String {
 
 fn provider_http_error(response: reqwest::blocking::Response) -> anyhow::Error {
     let status = response.status();
+    logging::warn(
+        "llm",
+        "http_request_failed",
+        &[
+            Field::number(FieldKey::HttpStatus, status.as_u16() as u64),
+            Field::text(FieldKey::ErrorCode, "provider_http_error"),
+        ],
+    );
     let body = response.text().unwrap_or_default();
     let message = serde_json::from_str::<Value>(&body)
         .ok()
@@ -721,6 +887,7 @@ fn parse_responses_output(value: &Value) -> Result<ProviderOutput> {
             .and_then(Value::as_u64)
             .map(|value| value.min(u32::MAX as u64) as u32),
         response_body: value.clone(),
+        http_status: 0,
     })
 }
 
@@ -754,6 +921,7 @@ fn parse_chat_output(value: &Value) -> Result<ProviderOutput> {
             .and_then(Value::as_u64)
             .map(|value| value.min(u32::MAX as u64) as u32),
         response_body: value.clone(),
+        http_status: 0,
     })
 }
 

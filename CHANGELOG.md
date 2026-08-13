@@ -7,6 +7,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added privacy-safe local diagnostic event logs for recording, audio recovery,
+  imports, ASR, and LLM generation, with typed metadata, correlation IDs, UTC
+  timestamps, bounded rotation, and no automatic upload.
+- Added a **Diagnostics and logs** Settings entry that opens Nota's local log
+  directory without changing saved settings.
+- Added a selected-application reminder after three continuous minutes without
+  audible output. The reminder describes prolonged silence rather than
+  claiming the meeting ended, pauses its timer with recording, and re-arms only
+  after application audio returns.
+
+### Changed
+
+- Replaced speculative meeting-ended detection with a capture-health reminder
+  shown only when selected-application audio capture cannot be rebuilt for 15
+  continuous seconds; successful recovery dismisses it automatically.
+
+### Fixed
+
+- Prevented screen sharing, window/PID changes, minimization, and silence from
+  being interpreted as evidence that a meeting ended; prolonged silence is
+  reported only as an observable audio condition.
+
 ## [0.6.0] - 2026-08-12
 
 ### Added

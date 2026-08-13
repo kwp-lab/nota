@@ -1,3 +1,4 @@
+use crate::logging::{self, Field, FieldKey};
 use crate::models::{
     AsrConnectionLevel, AsrConnectionTest, AsrModel, AsrProviderCredentials, AsrProviderKind,
     StoredTranscriptionChunk, TranscriptSegment, TranscriptionEvent, TranscriptionProgressPhase,
@@ -21,7 +22,7 @@ use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 const ASR_SAMPLE_RATE: u32 = 16_000;
@@ -150,9 +151,13 @@ impl AsrManager {
                     .context("当前 FunASR Server 不支持整场会议转写，请升级 Nota ASR Server")?;
             }
             if cleanup_previous_batch_job_if_present(&self.storage, recording_id).is_err() {
-                log::warn!(
-                    "unable to clean previous remote ASR job recording={}",
-                    recording_id
+                logging::warn(
+                    "asr",
+                    "previous_remote_job_cleanup_failed",
+                    &[
+                        Field::text(FieldKey::RecordingId, recording_id),
+                        Field::text(FieldKey::ErrorCode, "remote_cleanup_failed"),
+                    ],
                 );
             }
             remove_temporary_chunks(&self.storage.paths().recovery, recording_id)?;
@@ -161,6 +166,17 @@ impl AsrManager {
                 &credentials.provider,
                 speaker_count,
             )?;
+            logging::info(
+                "asr",
+                "job_queued",
+                &[
+                    Field::text(FieldKey::RecordingId, recording_id),
+                    Field::text(FieldKey::ProviderId, provider_id),
+                    Field::text(FieldKey::ProviderKind, credentials.provider.kind.as_str()),
+                    Field::text(FieldKey::ModelId, credentials.provider.model_id.as_str()),
+                    Field::number(FieldKey::Generation, generation as u64),
+                ],
+            );
             self.enqueue(app, recording_id, generation)?;
             self.storage.transcription_summary(recording_id)
         })();
@@ -174,6 +190,14 @@ impl AsrManager {
         self.reserve(recording_id)?;
         let result = (|| {
             let generation = self.storage.resume_transcription(recording_id)?;
+            logging::info(
+                "asr",
+                "job_resumed",
+                &[
+                    Field::text(FieldKey::RecordingId, recording_id),
+                    Field::number(FieldKey::Generation, generation as u64),
+                ],
+            );
             self.enqueue(app, recording_id, generation)?;
             self.storage.transcription_summary(recording_id)
         })();
@@ -213,6 +237,15 @@ impl AsrManager {
             .context("该录音当前没有可取消的转写任务")?;
         cancellation.requested.store(true, Ordering::Release);
         cancellation.remote_requested.store(true, Ordering::Release);
+        let generation = self.current_generation(recording_id)?;
+        logging::info(
+            "asr",
+            "cancel_requested",
+            &[
+                Field::text(FieldKey::RecordingId, recording_id),
+                Field::number(FieldKey::Generation, generation as u64),
+            ],
+        );
         if let Ok(Some((credentials, remote_job_id))) =
             remote_batch_target(&self.storage, recording_id)
         {
@@ -221,23 +254,43 @@ impl AsrManager {
                 .name("nota-asr-remote-cancel".into())
                 .spawn(move || {
                     if cancel_batch_job(&credentials, &remote_job_id).is_err() {
-                        log::warn!(
-                            "unable to cancel remote ASR job recording={}",
-                            cancel_recording_id
+                        logging::warn(
+                            "asr",
+                            "remote_cancel_failed",
+                            &[
+                                Field::text(FieldKey::RecordingId, cancel_recording_id),
+                                Field::text(FieldKey::ErrorCode, "remote_cancel_failed"),
+                            ],
                         );
                     }
                 })
             {
-                log::warn!("unable to start remote ASR cancellation: {error}");
+                let _ = error;
+                logging::warn(
+                    "asr",
+                    "remote_cancel_worker_failed",
+                    &[
+                        Field::text(FieldKey::RecordingId, recording_id),
+                        Field::text(FieldKey::ErrorCode, "cancel_worker_start_failed"),
+                    ],
+                );
             }
         }
         self.storage.set_transcription_error(
             recording_id,
-            self.current_generation(recording_id)?,
+            generation,
             TranscriptionStatus::Cancelled,
             "用户已中断转写；可以稍后继续",
         )?;
         let summary = self.storage.transcription_summary(recording_id)?;
+        logging::info(
+            "asr",
+            "cancelled",
+            &[
+                Field::text(FieldKey::RecordingId, recording_id),
+                Field::number(FieldKey::Generation, generation as u64),
+            ],
+        );
         emit_status(app, recording_id, summary.clone());
         Ok(summary)
     }
@@ -269,6 +322,15 @@ fn worker_loop(
     is_recording: Arc<dyn Fn() -> bool + Send + Sync>,
 ) {
     while let Ok(job) = receiver.recv() {
+        let started_at = Instant::now();
+        logging::info(
+            "asr",
+            "job_started",
+            &[
+                Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                Field::number(FieldKey::Generation, job.generation as u64),
+            ],
+        );
         let cancellation = cancellations
             .lock()
             .get(&job.recording_id)
@@ -295,18 +357,56 @@ fn worker_loop(
             if let Err(storage_error) =
                 storage.set_transcription_error(&job.recording_id, job.generation, status, &message)
             {
-                log::error!(
-                    "failed to persist ASR error recording={} error={storage_error:#}",
-                    job.recording_id
+                let _ = storage_error;
+                logging::error(
+                    "asr",
+                    "failure_persist_failed",
+                    &[
+                        Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                        Field::number(FieldKey::Generation, job.generation as u64),
+                        Field::text(FieldKey::ErrorCode, "storage_write_failed"),
+                    ],
                 );
             }
             if let Ok(summary) = storage.transcription_summary(&job.recording_id) {
                 emit_status(&job.app, &job.recording_id, summary);
             }
-            log::error!(
-                "ASR job failed recording={} generation={}",
-                job.recording_id,
-                job.generation
+            logging::error(
+                "asr",
+                if cancelled {
+                    "job_cancelled"
+                } else {
+                    "job_failed"
+                },
+                &[
+                    Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                    Field::number(FieldKey::Generation, job.generation as u64),
+                    Field::number(
+                        FieldKey::DurationMs,
+                        started_at.elapsed().as_millis() as u64,
+                    ),
+                    Field::text(
+                        FieldKey::ErrorCode,
+                        if cancelled {
+                            "user_cancelled"
+                        } else {
+                            "processing_failed"
+                        },
+                    ),
+                ],
+            );
+        } else {
+            logging::info(
+                "asr",
+                "job_completed",
+                &[
+                    Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                    Field::number(FieldKey::Generation, job.generation as u64),
+                    Field::number(
+                        FieldKey::DurationMs,
+                        started_at.elapsed().as_millis() as u64,
+                    ),
+                ],
             );
         }
         cancellations.lock().remove(&job.recording_id);
@@ -332,6 +432,18 @@ fn process_job(
     credentials.provider.name = provider_name;
     credentials.provider.model_id = model_id;
     let execution = storage.transcription_execution(&job.recording_id)?;
+    logging::info(
+        "asr",
+        "protocol_selected",
+        &[
+            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+            Field::number(FieldKey::Generation, job.generation as u64),
+            Field::text(FieldKey::ProviderId, provider_id.as_str()),
+            Field::text(FieldKey::ProviderKind, credentials.provider.kind.as_str()),
+            Field::text(FieldKey::ModelId, credentials.provider.model_id.as_str()),
+            Field::text(FieldKey::Protocol, execution.protocol.as_str()),
+        ],
+    );
     if execution.protocol == TranscriptionProtocol::NotaBatchV1 {
         return process_batch_job(
             job,
@@ -356,6 +468,12 @@ fn process_job(
         completed_count,
         declared_total_chunks,
     )?;
+    log_asr_phase(
+        job,
+        "preparing",
+        completed_count as u64,
+        declared_total_chunks as u64,
+    );
     emit_current_status(&job.app, storage, &job.recording_id);
 
     let temp_directory = storage.paths().recovery.join("TranscriptionTemp");
@@ -407,6 +525,14 @@ fn process_job(
             completed_count,
             current_total,
         )?;
+        if chunk_index == 0 {
+            log_asr_phase(
+                job,
+                "transcribing",
+                completed_count as u64,
+                current_total as u64,
+            );
+        }
         emit_current_status(&job.app, storage, &job.recording_id);
 
         if !completed.contains(&chunk_index) {
@@ -431,8 +557,16 @@ fn process_job(
                 )?;
                 Ok(())
             });
-            if let Err(error) = std::fs::remove_file(&wav_path) {
-                log::warn!("unable to remove ASR temporary chunk: {error}");
+            if std::fs::remove_file(&wav_path).is_err() {
+                logging::warn(
+                    "asr",
+                    "temporary_chunk_cleanup_failed",
+                    &[
+                        Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                        Field::number(FieldKey::Generation, job.generation as u64),
+                        Field::text(FieldKey::ErrorCode, "temporary_file_cleanup_failed"),
+                    ],
+                );
             }
             upload_result?;
             completed_count = completed_count.saturating_add(1);
@@ -468,6 +602,12 @@ fn process_job(
         );
     }
     let (text, segments, language) = merge_chunks(chunks);
+    log_asr_phase(
+        job,
+        "finalizing",
+        actual_total_chunks as u64,
+        actual_total_chunks as u64,
+    );
     storage.complete_transcription(
         &job.recording_id,
         job.generation,
@@ -553,11 +693,15 @@ fn process_batch_job(
     let capabilities = fetch_batch_capabilities(credentials)?;
     let actual_size = std::fs::metadata(recording_path)?.len();
     if actual_size != recorded_size {
-        log::warn!(
-            "recording size changed before ASR upload recording={} indexed={} actual={}",
-            job.recording_id,
-            recorded_size,
-            actual_size
+        logging::warn(
+            "asr",
+            "recording_size_changed",
+            &[
+                Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                Field::number(FieldKey::Generation, job.generation as u64),
+                Field::number(FieldKey::Bytes, actual_size),
+                Field::text(FieldKey::ErrorCode, "recording_metadata_mismatch"),
+            ],
         );
     }
     if actual_size > capabilities.max_upload_bytes {
@@ -613,7 +757,18 @@ fn process_batch_job(
 
     ensure_batch_not_cancelled(cancellation, credentials, Some(&remote.id))?;
     if had_remote_job && matches!(remote.state.as_str(), "cancelled" | "failed") {
+        let mut retry_attempt = 0u64;
         loop {
+            retry_attempt = retry_attempt.saturating_add(1);
+            logging::info(
+                "asr",
+                "resume_retry",
+                &[
+                    Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                    Field::number(FieldKey::Generation, job.generation as u64),
+                    Field::number(FieldKey::RetryAttempt, retry_attempt),
+                ],
+            );
             match resume_batch_job(credentials, &remote.id) {
                 Ok(resumed) => {
                     remote = resumed;
@@ -627,8 +782,19 @@ fn process_batch_job(
         }
     }
 
+    let mut last_logged_phase = None;
     loop {
         ensure_batch_not_cancelled(cancellation, credentials, Some(&remote.id))?;
+        let current_phase = batch_log_phase(&remote);
+        if last_logged_phase != Some(current_phase) {
+            log_asr_phase(
+                job,
+                current_phase,
+                remote.progress_current,
+                remote.progress_total,
+            );
+            last_logged_phase = Some(current_phase);
+        }
         persist_batch_status(job, storage, &remote)?;
         match remote.state.as_str() {
             "uploading" => {
@@ -677,12 +843,15 @@ fn process_batch_job(
                             None,
                         )?;
                     }
-                    Err(_) => {
-                        log::warn!(
-                            "unable to acknowledge remote ASR result recording={}",
-                            job.recording_id
-                        );
-                    }
+                    Err(_) => logging::warn(
+                        "asr",
+                        "remote_result_cleanup_failed",
+                        &[
+                            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+                            Field::number(FieldKey::Generation, job.generation as u64),
+                            Field::text(FieldKey::ErrorCode, "remote_cleanup_failed"),
+                        ],
+                    ),
                 }
                 return Ok(());
             }
@@ -713,6 +882,7 @@ fn fetch_batch_capabilities(credentials: &AsrProviderCredentials) -> Result<Batc
     }
     let response = request.send().context("无法连接 Nota 批处理能力接口")?;
     let status = response.status();
+    log_asr_http(credentials, "nota_batch_v1", status);
     let body = response.text().context("无法读取 Nota 批处理能力响应")?;
     if status == StatusCode::NOT_FOUND {
         bail!("FunASR Server 版本过旧，不支持整场会议说话人一致性协议");
@@ -1119,6 +1289,7 @@ fn fetch_batch_result(
     }
     let response = request.send().context("无法读取整场会议转写结果")?;
     let status = response.status();
+    log_asr_http(credentials, "nota_batch_v1", status);
     let body = response.text().context("无法读取整场会议转写响应")?;
     if !status.is_success() {
         bail!(redact_secret(
@@ -1138,10 +1309,12 @@ fn delete_batch_job(credentials: &AsrProviderCredentials, remote_job_id: &str) -
         request = request.bearer_auth(&credentials.api_key);
     }
     let response = request.send().context("无法清理 ASR Server 任务")?;
+    log_asr_http(credentials, "nota_batch_v1", response.status());
     if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
         return Ok(());
     }
     let status = response.status();
+    log_asr_http(credentials, "nota_batch_v1", status);
     let body = response.text().context("无法读取 ASR Server 清理响应")?;
     if !status.is_success() {
         bail!(redact_secret(
@@ -1317,6 +1490,7 @@ pub fn list_models(credentials: &AsrProviderCredentials) -> Result<Vec<AsrModel>
     }
     let response = request.send().context("无法连接模型接口")?;
     let status = response.status();
+    log_asr_http(credentials, "models", status);
     let body = response.text().context("无法读取模型接口响应")?;
     if !status.is_success() {
         bail!(redact_secret(
@@ -1341,6 +1515,7 @@ pub fn test_connection(credentials: &AsrProviderCredentials) -> Result<AsrConnec
         }
         let response = request.send().context("无法连接 FunASR 健康检查接口")?;
         let status = response.status();
+        log_asr_http(credentials, "health", status);
         let body = response.text().unwrap_or_default();
         if !status.is_success() {
             bail!(redact_secret(
@@ -1462,6 +1637,7 @@ fn send_transcription_with_timeout(
     }
     let response = request.send().context("无法连接转写服务")?;
     let status = response.status();
+    log_asr_http(credentials, "legacy_chunks", status);
     let body = response.text().context("无法读取转写服务响应")?;
     Ok((status, body))
 }
@@ -1472,6 +1648,20 @@ fn http_client() -> Result<Client> {
         .timeout(Duration::from_secs(30))
         .user_agent(format!("Nota/{}", env!("CARGO_PKG_VERSION")))
         .build()?)
+}
+
+fn log_asr_http(credentials: &AsrProviderCredentials, protocol: &'static str, status: StatusCode) {
+    logging::info(
+        "asr",
+        "http_response_received",
+        &[
+            Field::text(FieldKey::ProviderId, credentials.provider.id.as_str()),
+            Field::text(FieldKey::ProviderKind, credentials.provider.kind.as_str()),
+            Field::text(FieldKey::ModelId, credentials.provider.model_id.as_str()),
+            Field::text(FieldKey::Protocol, protocol),
+            Field::number(FieldKey::HttpStatus, status.as_u16() as u64),
+        ],
+    );
 }
 
 fn parse_models(body: &str) -> Result<Vec<AsrModel>> {
@@ -1637,6 +1827,36 @@ fn ensure_not_cancelled(cancellation: &AtomicBool) -> Result<()> {
         bail!("转写任务已取消");
     }
     Ok(())
+}
+
+fn batch_log_phase(status: &BatchJobStatus) -> &'static str {
+    match status.state.as_str() {
+        "uploading" => "uploading",
+        "queued" => "queued",
+        "processing" => match status.phase.as_str() {
+            "diarizing" => "diarizing",
+            "finalizing" => "finalizing",
+            _ => "transcribing",
+        },
+        "succeeded" => "finalizing",
+        "cancelled" => "cancelled",
+        "failed" => "failed",
+        _ => "unknown",
+    }
+}
+
+fn log_asr_phase(job: &TranscriptionJob, phase: &'static str, current: u64, total: u64) {
+    logging::info(
+        "asr",
+        "phase_changed",
+        &[
+            Field::text(FieldKey::RecordingId, job.recording_id.as_str()),
+            Field::number(FieldKey::Generation, job.generation as u64),
+            Field::text(FieldKey::Phase, phase),
+            Field::number(FieldKey::Current, current),
+            Field::number(FieldKey::Total, total),
+        ],
+    );
 }
 
 fn emit_current_status(app: &AppHandle, storage: &Storage, recording_id: &str) {

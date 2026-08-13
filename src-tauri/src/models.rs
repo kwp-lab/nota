@@ -247,11 +247,19 @@ pub struct LevelEvent {
     pub microphone: f32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CapturePromptKind {
+    CaptureInterrupted,
+    ProlongedSilence,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct MeetingEndPrompt {
+pub struct CapturePrompt {
     pub session_id: String,
     pub target_name: String,
+    pub kind: CapturePromptKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -938,7 +946,8 @@ pub struct AiGenerationEvent {
 #[cfg(test)]
 mod tests {
     use super::{
-        AecMode, CaptureSelection, DeviceSelection, RecordingSnapshot, StartRecordingRequest,
+        AecMode, CapturePrompt, CapturePromptKind, CaptureSelection, DeviceSelection,
+        RecordingSnapshot, StartRecordingRequest,
     };
     use serde_json::json;
 
@@ -1023,5 +1032,19 @@ mod tests {
             value["microphoneSelection"]["endpointId"],
             "capture-endpoint"
         );
+    }
+
+    #[test]
+    fn capture_prompt_kind_uses_frontend_camel_case_values() {
+        let prompt = CapturePrompt {
+            session_id: "session-1".into(),
+            target_name: "Meeting".into(),
+            kind: CapturePromptKind::ProlongedSilence,
+        };
+
+        let value = serde_json::to_value(prompt).unwrap();
+
+        assert_eq!(value["sessionId"], "session-1");
+        assert_eq!(value["kind"], "prolongedSilence");
     }
 }

@@ -26,7 +26,7 @@ import type {
   LlmModel,
   LlmProvider,
   LlmProviderProbeRequest,
-  MeetingEndPrompt,
+  CapturePrompt,
   ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
@@ -49,15 +49,14 @@ export const api = {
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
   getSnapshot: () => invoke<RecordingSnapshot>("get_recording_snapshot"),
-  getMeetingEndPrompt: () =>
-    invoke<MeetingEndPrompt | null>("get_meeting_end_prompt"),
-  respondMeetingEndPrompt: (sessionId: string, stopAndSave: boolean) =>
-    invoke<RecordingSnapshot>("respond_meeting_end_prompt", {
+  getCapturePrompt: () => invoke<CapturePrompt | null>("get_capture_prompt"),
+  respondCapturePrompt: (sessionId: string, stopAndSave: boolean) =>
+    invoke<RecordingSnapshot>("respond_capture_prompt", {
       sessionId,
       stopAndSave,
     }),
-  resizeMeetingEndPrompt: (height: number) =>
-    invoke<void>("resize_meeting_end_prompt", { height }),
+  resizeCapturePrompt: (height: number) =>
+    invoke<void>("resize_capture_prompt", { height }),
   startRecording: (request: StartRecordingRequest) =>
     invoke<RecordingSnapshot>("start_recording", { request }),
   pauseRecording: () => invoke<RecordingSnapshot>("pause_recording"),
@@ -90,6 +89,7 @@ export const api = {
     deleteAiDocuments = false,
   ) => invoke<void>("delete_recording", { id, permanent, deleteAiDocuments }),
   openMicrophoneSettings: () => invoke<void>("open_microphone_settings"),
+  openLogDirectory: () => invoke<void>("open_log_directory"),
   quitApplication: (stopAndSave: boolean) =>
     invoke<void>("quit_application", { stopAndSave }),
   listAsrProviders: () => invoke<AsrProvider[]>("list_asr_providers"),
@@ -215,6 +215,10 @@ export const api = {
     ),
   onLevels: (handler: (levels: LevelEvent) => void) =>
     listen<LevelEvent>("recording://levels", (event) =>
+      handler(event.payload),
+    ),
+  onCapturePromptUpdated: (handler: (prompt: CapturePrompt) => void) =>
+    listen<CapturePrompt>("capture://prompt-updated", (event) =>
       handler(event.payload),
     ),
   onRequestStart: (

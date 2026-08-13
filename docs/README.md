@@ -1,7 +1,7 @@
 # Nota Engineering Documentation
 
 - Status: Accepted
-- Last updated: 2026-08-11
+- Last updated: 2026-08-12
 - Owners: Nota maintainers
 
 This directory is the durable engineering context for Nota. It explains the
@@ -20,15 +20,17 @@ that are intentionally too detailed for the project README.
    templates, versions, providers, and relinking.
 5. [`design-system.md`](design-system.md) — product visual language, design
    tokens, typography, color, spacing, and component styling rules.
-6. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
+6. [`diagnostic-logging.md`](diagnostic-logging.md) — local event format,
+   privacy boundary, correlation, and rotation.
+7. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
    migrations, retention, and deletion ordering.
-7. [`testing.md`](testing.md) — automated checks and hardware acceptance
+8. [`testing.md`](testing.md) — automated checks and hardware acceptance
    scenarios.
-8. [`decisions/README.md`](decisions/README.md) — architectural decision
+9. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-9. [`speaker-identification.md`](speaker-identification.md) — local
+10. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
-10. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+11. [`releasing.md`](releasing.md) — version, tag, package, and release process.
 
 ## Sources of Truth
 
@@ -58,6 +60,7 @@ uses that contract and what it promises locally.
 | SQLite fields, migration, retention, or deletion ordering | `data-lifecycle.md` |
 | Audio import formats, normalization, task state, or recovery | `audio-import.md` |
 | New test requirement or supported environment | `testing.md` |
+| Diagnostic event, field, privacy, or rotation behavior | `diagnostic-logging.md` |
 | Visual token, shared component styling, or durable interaction treatment | `design-system.md` |
 | Long-lived architectural choice or reversed decision | New ADR |
 | Versioning or packaging workflow | `releasing.md` |

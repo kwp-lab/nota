@@ -126,9 +126,12 @@ export interface LevelEvent {
   microphone: number;
 }
 
-export interface MeetingEndPrompt {
+export type CapturePromptKind = "captureInterrupted" | "prolongedSilence";
+
+export interface CapturePrompt {
   sessionId: string;
   targetName: string;
+  kind: CapturePromptKind;
 }
 
 export interface AppSettings {

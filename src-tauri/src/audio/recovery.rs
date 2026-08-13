@@ -1,3 +1,4 @@
+use crate::logging::{self, Field, FieldKey};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use std::fs::{File, OpenOptions};
@@ -81,11 +82,11 @@ pub fn move_verified(source: &Path, destination: &Path) -> Result<()> {
     }
     match rename_with_retry(source, destination) {
         Ok(()) => return Ok(()),
-        Err(error) => {
-            log::debug!(
-                "direct recording move failed; using verified copy source={} destination={} error={error}",
-                source.display(),
-                destination.display()
+        Err(_) => {
+            logging::info(
+                "recording_storage",
+                "cross_volume_copy_fallback",
+                &[Field::text(FieldKey::Reason, "direct_move_failed")],
             );
         }
     }
@@ -120,12 +121,13 @@ pub fn move_verified(source: &Path, destination: &Path) -> Result<()> {
         )
     })?;
 
-    if let Err(error) = remove_with_retry(source) {
+    if remove_with_retry(source).is_err() {
         // The destination is already committed and verified. A stale recovery
         // copy is preferable to reporting a completed recording as failed.
-        log::warn!(
-            "recording committed but recovery source could not be removed source={} error={error}",
-            source.display()
+        logging::warn(
+            "recording_storage",
+            "recovery_source_cleanup_failed",
+            &[Field::text(FieldKey::ErrorCode, "source_cleanup_failed")],
         );
     }
     Ok(())

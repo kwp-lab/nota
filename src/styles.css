@@ -331,13 +331,13 @@ body { min-width: 980px; min-height: 640px; overflow: hidden; }
   .app-tooltip-content { animation: none; }
 }
 
-body.meeting-end-prompt-body {
+body.capture-prompt-body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--color-surface-primary);
 }
-.meeting-end-prompt {
+.capture-prompt {
   width: 100vw;
   height: 100vh;
   overflow-y: auto;
@@ -346,13 +346,13 @@ body.meeting-end-prompt-body {
   background: var(--color-surface-primary);
   box-shadow: var(--shadow-inset-warning);
 }
-.meeting-end-layout {
+.capture-prompt-layout {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--space-4);
 }
-.meeting-end-icon {
+.capture-prompt-icon {
   width: 40px;
   height: 40px;
   display: grid;
@@ -361,13 +361,13 @@ body.meeting-end-prompt-body {
   color: var(--color-text-warning);
   background: var(--color-surface-warning);
 }
-.meeting-end-content { min-width: 0; }
-.meeting-end-content h1 {
+.capture-prompt-content { min-width: 0; }
+.capture-prompt-content h1 {
   margin: var(--space-0-5) 0 var(--space-2);
   font-size: var(--font-size-body-large); line-height: var(--line-height-body-large);
   letter-spacing: -.02em;
 }
-.meeting-end-content p {
+.capture-prompt-content p {
   min-height: 42px;
   margin: 0;
   color: var(--color-text-secondary);
@@ -375,20 +375,20 @@ body.meeting-end-prompt-body {
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
-.meeting-end-error {
+.capture-prompt-error {
   margin-top: var(--space-1-5);
   color: var(--color-text-danger);
   font-size: var(--font-size-caption); line-height: var(--line-height-caption);
   overflow-wrap: anywhere;
 }
-.meeting-end-actions {
+.capture-prompt-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-4);
 }
-.meeting-end-actions .button { padding: var(--space-2) var(--space-3); font-size: var(--font-size-body); line-height: var(--line-height-body); }
+.capture-prompt-actions .button { padding: var(--space-2) var(--space-3); font-size: var(--font-size-body); line-height: var(--line-height-body); }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 88px minmax(0, 1fr); }
 .app-sidebar {
   position: relative; z-index: 10; display: flex; flex-direction: column; align-items: stretch;

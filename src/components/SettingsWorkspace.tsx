@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
+  FileText,
   Folder,
   Info,
   Keyboard,
@@ -45,6 +46,7 @@ interface SettingsWorkspaceProps {
   onChooseOutput: () => void;
   onChooseAiDocuments: () => void;
   onOpenMicrophoneSettings: () => void;
+  onOpenLogDirectory: () => void;
   onSaveProvider: (request: SaveAsrProviderRequest) => Promise<AsrProvider>;
   onDeleteProvider: (id: string) => Promise<void>;
   onTestProvider: (request: AsrProviderProbeRequest) => Promise<AsrConnectionTest>;
@@ -641,6 +643,19 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
             </label>
           </div>
         )}
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-heading">
+          <FileText size={17} />
+          <div>
+            <strong>诊断与日志</strong>
+            <span>技术日志仅保存在本机并自动轮转，不包含录音、转写正文或 AI 请求与响应内容。</span>
+          </div>
+          <button type="button" className="text-button" onClick={props.onOpenLogDirectory}>
+            打开日志目录
+          </button>
+        </div>
       </div>
 
       <div className="settings-group about-group">
