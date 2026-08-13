@@ -1,7 +1,7 @@
 # Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-11
+- Last updated: 2026-08-12
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`, `src-tauri/src/importer.rs`,
@@ -31,6 +31,7 @@
 | AI request and successful Provider response JSON snapshots | Local SQLite, loaded on demand | Until the owning recording is deleted |
 | Generated AI document body | Versioned Markdown file in the user-selected AI document directory | Until the user moves or deletes it |
 | AI generation temporary file | Same directory as its target Markdown | One atomic write attempt; removed on failure |
+| Technical diagnostic logs | Local application Logs directory | One 10 MiB active file plus two rotating archives |
 
 The original Ogg is the durable media source. Transcription must never mutate or
 replace it.
@@ -294,8 +295,17 @@ its configured retention period, currently 24 hours by default.
 
 - Never log API keys, authorization headers, audio, transcript text, or
   transcript segments.
+- Never log meeting, document, or window titles; user file paths; Base URLs;
+  request or response bodies; Provider error bodies; or generated content.
+- Diagnostic logs contain only allowlisted identifiers, state, counts,
+  durations, usage, HTTP status, executable basenames, and static error codes.
+  They remain local and are never uploaded automatically.
 - Do not include meeting data in crash reports, diagnostics, documentation
   examples, or test snapshots.
 - Keep filesystem, SQLite, clipboard, export, and ASR HTTP operations in Rust.
 - Treat the local database as private application data, not as an encrypted
   credential vault.
+
+The legacy SQLite `events` table remains unused. Any future diagnostic export
+or upload feature must define additional redaction, retention, and explicit
+user-confirmation behavior before implementation.

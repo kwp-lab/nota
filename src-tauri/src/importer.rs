@@ -1,4 +1,5 @@
 use crate::audio::{OpusOggWriter, SAMPLE_RATE};
+use crate::logging::{self, Field, FieldKey};
 use crate::models::{
     AudioImportBatchSnapshot, AudioImportBatchStatus, AudioImportItemSnapshot,
     AudioImportItemStatus, RecordingItem,
@@ -113,13 +114,22 @@ impl AudioImportManager {
         };
         *self.snapshot.lock() = Some(initial.clone());
         emit_snapshot(&app, &initial);
+        logging::info(
+            "audio_import",
+            "batch_started",
+            &[
+                Field::text(FieldKey::BatchId, initial.id.as_str()),
+                Field::number(FieldKey::Count, initial.total as u64),
+            ],
+        );
 
         let manager = Arc::clone(self);
+        let worker_batch_id = initial.id.clone();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
         let worker = std::thread::Builder::new()
             .name("nota-audio-import".into())
-            .spawn(move || manager.run_batch(app, paths, worker_cancel))?;
+            .spawn(move || manager.run_batch(app, paths, worker_batch_id, worker_cancel))?;
         *self.runtime.lock() = Some(ImportRuntime { cancel, worker });
         Ok(initial)
     }
@@ -147,6 +157,13 @@ impl AudioImportManager {
         let Some(runtime) = runtime.as_ref() else {
             return self.snapshot().context("当前没有正在进行的音频导入任务");
         };
+        if let Some(snapshot) = self.snapshot() {
+            logging::info(
+                "audio_import",
+                "cancel_requested",
+                &[Field::text(FieldKey::BatchId, snapshot.id.as_str())],
+            );
+        }
         runtime.cancel.store(true, Ordering::Release);
         self.snapshot().context("当前没有正在进行的音频导入任务")
     }
@@ -181,7 +198,14 @@ impl AudioImportManager {
         Ok(())
     }
 
-    fn run_batch(&self, app: AppHandle, paths: Vec<String>, cancel: Arc<AtomicBool>) {
+    fn run_batch(
+        &self,
+        app: AppHandle,
+        paths: Vec<String>,
+        batch_id: String,
+        cancel: Arc<AtomicBool>,
+    ) {
+        let started_at = Instant::now();
         for (index, path) in paths.into_iter().enumerate() {
             if cancel.load(Ordering::Acquire) {
                 break;
@@ -217,6 +241,7 @@ impl AudioImportManager {
 
             match outcome {
                 Ok(ImportOneOutcome::Completed(recording)) => {
+                    let recording_id = recording.id.clone();
                     self.update_snapshot(&app, |snapshot| {
                         snapshot.completed = snapshot.completed.saturating_add(1);
                         if let Some(item) = snapshot.items.get_mut(index) {
@@ -224,8 +249,17 @@ impl AudioImportManager {
                             item.recording_id = Some(recording.id);
                         }
                     });
+                    logging::info(
+                        "audio_import",
+                        "item_completed",
+                        &[
+                            Field::text(FieldKey::BatchId, batch_id.as_str()),
+                            Field::text(FieldKey::RecordingId, recording_id),
+                        ],
+                    );
                 }
                 Ok(ImportOneOutcome::Skipped(recording)) => {
+                    let recording_id = recording.id.clone();
                     self.update_snapshot(&app, |snapshot| {
                         snapshot.skipped = snapshot.skipped.saturating_add(1);
                         if let Some(item) = snapshot.items.get_mut(index) {
@@ -234,6 +268,15 @@ impl AudioImportManager {
                             item.error_message = Some("该文件已经导入过".into());
                         }
                     });
+                    logging::info(
+                        "audio_import",
+                        "item_skipped",
+                        &[
+                            Field::text(FieldKey::BatchId, batch_id.as_str()),
+                            Field::text(FieldKey::RecordingId, recording_id),
+                            Field::text(FieldKey::Reason, "duplicate_content"),
+                        ],
+                    );
                 }
                 Err(_error) if cancel.load(Ordering::Acquire) => {
                     self.update_snapshot(&app, |snapshot| {
@@ -253,6 +296,15 @@ impl AudioImportManager {
                                 Some(import_error_message(&error, Path::new(&path)));
                         }
                     });
+                    logging::warn(
+                        "audio_import",
+                        "item_failed",
+                        &[
+                            Field::text(FieldKey::BatchId, batch_id.as_str()),
+                            Field::number(FieldKey::Current, (index + 1) as u64),
+                            Field::text(FieldKey::ErrorCode, "import_failed"),
+                        ],
+                    );
                 }
             }
         }
@@ -269,6 +321,33 @@ impl AudioImportManager {
                 snapshot.status = AudioImportBatchStatus::Completed;
             }
         });
+        if let Some(snapshot) = self.snapshot() {
+            logging::info(
+                "audio_import",
+                if snapshot.status == AudioImportBatchStatus::Cancelled {
+                    "batch_cancelled"
+                } else {
+                    "batch_completed"
+                },
+                &[
+                    Field::text(FieldKey::BatchId, batch_id.as_str()),
+                    Field::text(
+                        FieldKey::Status,
+                        match snapshot.status {
+                            AudioImportBatchStatus::Running => "running",
+                            AudioImportBatchStatus::Completed => "completed",
+                            AudioImportBatchStatus::Cancelled => "cancelled",
+                        },
+                    ),
+                    Field::number(
+                        FieldKey::DurationMs,
+                        started_at.elapsed().as_millis() as u64,
+                    ),
+                    Field::number(FieldKey::Total, snapshot.total as u64),
+                    Field::number(FieldKey::Count, snapshot.completed as u64),
+                ],
+            );
+        }
     }
 
     fn update_snapshot(&self, app: &AppHandle, update: impl FnOnce(&mut AudioImportBatchSnapshot)) {

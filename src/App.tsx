@@ -1357,6 +1357,9 @@ export default function App() {
             onOpenMicrophoneSettings={() =>
               void api.openMicrophoneSettings().catch(showError)
             }
+            onOpenLogDirectory={() =>
+              void api.openLogDirectory().catch(showError)
+            }
             onSaveProvider={saveProvider}
             onDeleteProvider={deleteProvider}
             onSaveLlmProvider={saveLlmProvider}

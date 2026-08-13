@@ -58,6 +58,7 @@ const renderSettings = (
     onChooseOutput: vi.fn(),
     onChooseAiDocuments: vi.fn(),
     onOpenMicrophoneSettings: vi.fn(),
+    onOpenLogDirectory: vi.fn(),
     onSaveProvider: vi.fn(async () => provider),
     onDeleteProvider: vi.fn(async () => undefined),
     onTestProvider: vi.fn(async (): Promise<AsrConnectionTest> => ({
@@ -290,5 +291,18 @@ describe("SettingsWorkspace Responses API provider", () => {
     expect(actions.onChange).toHaveBeenCalledWith(
       expect.objectContaining({ activeLlmProviderId: "llm" }),
     );
+  });
+});
+
+describe("SettingsWorkspace diagnostics", () => {
+  it("opens the local log directory without changing settings", () => {
+    const actions = renderSettings();
+
+    expect(screen.getByText("诊断与日志")).toBeInTheDocument();
+    expect(screen.getByText(/不包含录音、转写正文或 AI 请求与响应内容/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开日志目录" }));
+
+    expect(actions.onOpenLogDirectory).toHaveBeenCalledOnce();
+    expect(actions.onChange).not.toHaveBeenCalled();
   });
 });

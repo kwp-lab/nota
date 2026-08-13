@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 - Status: Accepted
-- Last updated: 2026-08-11
+- Last updated: 2026-08-12
 - Owners: Nota maintainers
 
 ADRs record consequential technical choices that future maintainers should not
@@ -19,6 +19,7 @@ rejected alternatives, and consequences.
 | [0005](0005-markdown-first-ai-meeting-documents.md) | Accepted | Keep generated Markdown authoritative and append a file for every successful AI version |
 | [0006](0006-fluent-inspired-nota-design-tokens.md) | Accepted | Use Fluent-inspired semantic tokens while keeping Nota's own visual identity |
 | [0007](0007-normalize-imported-audio-to-managed-ogg.md) | Accepted | Normalize imported audio to a Nota-owned Ogg copy with built-in Rust codecs |
+| [0008](0008-local-privacy-safe-diagnostic-logs.md) | Accepted | Keep bounded diagnostic event logs local, text-based, and privacy-safe |
 
 ## Lifecycle
 

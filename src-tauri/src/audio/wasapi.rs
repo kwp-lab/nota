@@ -1,3 +1,4 @@
+use crate::logging::{self, Field, FieldKey};
 use crate::models::{AudioDevice, CaptureTarget, DeviceDirection, DeviceSelection};
 use anyhow::{Context, Result, anyhow, bail};
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -33,8 +34,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::Variant::VT_BLOB;
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
-    IsWindowVisible,
+    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
 };
 use windows::core::{BOOL, Interface, PCWSTR, PWSTR, implement};
 
@@ -42,7 +42,9 @@ use super::AudioPacket;
 
 const CAPTURE_WAIT_MS: u32 = 100;
 const ACTIVATION_WAIT_MS: u32 = 5_000;
-const PROCESS_TARGET_EXIT_GRACE: Duration = Duration::from_secs(10);
+const PROCESS_CAPTURE_FAILURE_GRACE: Duration = Duration::from_secs(15);
+const PROCESS_SILENCE_REMINDER_DELAY: Duration = Duration::from_secs(3 * 60);
+const PROCESS_AUDIBLE_PEAK_THRESHOLD: f32 = 0.001;
 
 #[derive(Debug, Clone)]
 pub enum CaptureSource {
@@ -50,7 +52,6 @@ pub enum CaptureSource {
         process_id: u32,
         executable_path: String,
         display_name: String,
-        window_handle: Option<isize>,
     },
     System(DeviceSelection),
     Microphone(DeviceSelection),
@@ -58,72 +59,66 @@ pub enum CaptureSource {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CaptureEvent {
-    ProcessTargetExited { display_name: String },
-    ProcessTargetRecovered { display_name: String },
+    CaptureInterrupted { display_name: String },
+    CaptureRecovered,
+    ProlongedSilence { display_name: String },
+    AudioResumed,
 }
 
 #[derive(Default)]
-struct ProcessTargetTracker {
-    missing_since: Option<Instant>,
-    reminder_emitted: bool,
-    current_window_handle: Option<isize>,
+struct ProcessCaptureHealth {
+    failure_since: Option<Instant>,
+    failure_alert_emitted: bool,
+    silence_since: Option<Instant>,
+    silence_alert_emitted: bool,
+    diagnostic_session_id: Option<String>,
 }
 
-impl ProcessTargetTracker {
-    fn for_source(source: &CaptureSource) -> Self {
-        let current_window_handle = match source {
-            CaptureSource::Process { window_handle, .. } => *window_handle,
-            _ => None,
-        };
+impl ProcessCaptureHealth {
+    fn new(diagnostic_session_id: Option<String>) -> Self {
         Self {
-            current_window_handle,
+            diagnostic_session_id,
             ..Self::default()
         }
     }
 
-    fn observe_present(&mut self) -> bool {
-        let recovered_after_reminder = self.reminder_emitted;
-        self.missing_since = None;
-        self.reminder_emitted = false;
-        recovered_after_reminder
-    }
-
-    fn observe_absent(&mut self, now: Instant) -> bool {
-        let missing_since = self.missing_since.get_or_insert(now);
-        if self.reminder_emitted || now.duration_since(*missing_since) < PROCESS_TARGET_EXIT_GRACE {
+    fn observe_failure(&mut self, now: Instant) -> bool {
+        self.silence_since = None;
+        if self.failure_alert_emitted {
             return false;
         }
-        self.reminder_emitted = true;
+        let failure_since = self.failure_since.get_or_insert(now);
+        if now.duration_since(*failure_since) < PROCESS_CAPTURE_FAILURE_GRACE {
+            return false;
+        }
+        self.failure_alert_emitted = true;
         true
     }
-}
 
-struct ProcessTargetMonitor<'a> {
-    tracker: &'a mut ProcessTargetTracker,
-    events: &'a Sender<CaptureEvent>,
-}
+    fn observe_healthy(&mut self) -> bool {
+        self.failure_since = None;
+        std::mem::replace(&mut self.failure_alert_emitted, false)
+    }
 
-impl ProcessTargetMonitor<'_> {
-    fn update(&mut self, source: &CaptureSource) {
-        let CaptureSource::Process { display_name, .. } = source else {
-            return;
-        };
-        let event = if process_source_is_absent(source, self.tracker) {
-            self.tracker
-                .observe_absent(Instant::now())
-                .then(|| CaptureEvent::ProcessTargetExited {
-                    display_name: display_name.clone(),
-                })
-        } else {
-            self.tracker
-                .observe_present()
-                .then(|| CaptureEvent::ProcessTargetRecovered {
-                    display_name: display_name.clone(),
-                })
-        };
-        if let Some(event) = event {
-            let _ = self.events.try_send(event);
+    fn observe_silence(&mut self, now: Instant) -> bool {
+        if self.silence_alert_emitted {
+            return false;
         }
+        let silence_since = self.silence_since.get_or_insert(now);
+        if now.duration_since(*silence_since) < PROCESS_SILENCE_REMINDER_DELAY {
+            return false;
+        }
+        self.silence_alert_emitted = true;
+        true
+    }
+
+    fn observe_audible(&mut self) -> bool {
+        self.silence_since = None;
+        std::mem::replace(&mut self.silence_alert_emitted, false)
+    }
+
+    fn suspend_silence_timer(&mut self) {
+        self.silence_since = None;
     }
 }
 
@@ -142,7 +137,8 @@ struct CapturePacketSink {
 
 struct CaptureSessionState<'a> {
     device_changed: &'a AtomicBool,
-    process_target_monitor: ProcessTargetMonitor<'a>,
+    process_capture_health: &'a mut ProcessCaptureHealth,
+    events: &'a Sender<CaptureEvent>,
     running: bool,
 }
 
@@ -185,6 +181,7 @@ pub fn start_capture(
     packets: Sender<AudioPacket>,
     source_epoch: u64,
     initially_paused: bool,
+    diagnostic_session_id: Option<String>,
 ) -> Result<CaptureHandle> {
     let stop = Arc::new(AtomicBool::new(false));
     let paused = Arc::new(AtomicBool::new(initially_paused));
@@ -198,18 +195,17 @@ pub fn start_capture(
     };
     let (event_tx, event_rx) = unbounded();
     let (ready_tx, ready_rx) = crossbeam_channel::bounded::<std::result::Result<(), String>>(1);
+    let controls = CaptureThreadControls {
+        stop: thread_stop,
+        paused: thread_paused,
+        healthy: thread_healthy,
+        events: event_tx,
+        diagnostic_session_id,
+    };
     let join = thread::Builder::new()
         .name("nota-wasapi".into())
         .spawn(move || {
-            let result = capture_thread(
-                source,
-                packet_sink,
-                thread_stop,
-                thread_paused,
-                thread_healthy,
-                event_tx,
-                &ready_tx,
-            );
+            let result = capture_thread(source, packet_sink, controls, &ready_tx);
             if let Err(error) = result {
                 let _ = ready_tx.try_send(Err(format!("{error:#}")));
             }
@@ -236,30 +232,60 @@ pub fn start_capture(
     }
 }
 
-fn capture_thread(
-    source: CaptureSource,
-    packet_sink: CapturePacketSink,
+struct CaptureThreadControls {
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     healthy: Arc<AtomicBool>,
     events: Sender<CaptureEvent>,
+    diagnostic_session_id: Option<String>,
+}
+
+fn capture_thread(
+    source: CaptureSource,
+    packet_sink: CapturePacketSink,
+    controls: CaptureThreadControls,
     ready: &Sender<std::result::Result<(), String>>,
 ) -> Result<()> {
+    let CaptureThreadControls {
+        stop,
+        paused,
+        healthy,
+        events,
+        diagnostic_session_id,
+    } = controls;
     let _com = initialize_com()?;
     let _mmcss = MmcssGuard::new();
     let device_changed = Arc::new(AtomicBool::new(false));
 
     let mut first_attempt = true;
-    let mut process_target_tracker = ProcessTargetTracker::for_source(&source);
+    let mut last_bound_process_id = None;
+    let mut process_capture_health = ProcessCaptureHealth::new(diagnostic_session_id);
     while !stop.load(Ordering::Acquire) {
         let setup_result = setup_source(&source);
         let setup = match setup_result {
             Ok(setup) => {
-                ProcessTargetMonitor {
-                    tracker: &mut process_target_tracker,
-                    events: &events,
+                if setup.process_id != last_bound_process_id
+                    && let CaptureSource::Process {
+                        executable_path, ..
+                    } = &source
+                    && let Some(process_id) = setup.process_id
+                {
+                    let mut fields = vec![
+                        Field::number(FieldKey::RootProcessId, u64::from(process_id)),
+                        Field::text(
+                            FieldKey::Executable,
+                            Path::new(executable_path)
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .unwrap_or("unknown"),
+                        ),
+                    ];
+                    if let Some(session_id) = process_capture_health.diagnostic_session_id.clone() {
+                        fields.push(Field::text(FieldKey::SessionId, session_id));
+                    }
+                    logging::info("audio_capture", "process_capture_bound", &fields);
                 }
-                .update(&source);
+                last_bound_process_id = setup.process_id;
                 setup
             }
             Err(error) if first_attempt => {
@@ -268,11 +294,7 @@ fn capture_thread(
             }
             Err(_) => {
                 healthy.store(false, Ordering::Release);
-                ProcessTargetMonitor {
-                    tracker: &mut process_target_tracker,
-                    events: &events,
-                }
-                .update(&source);
+                report_process_capture_failure(&source, &mut process_capture_health, &events);
                 thread::sleep(Duration::from_secs(1));
                 continue;
             }
@@ -286,6 +308,7 @@ fn capture_thread(
                 return Ok(());
             }
             healthy.store(false, Ordering::Release);
+            report_process_capture_failure(&source, &mut process_capture_health, &events);
             thread::sleep(Duration::from_secs(1));
             continue;
         }
@@ -303,7 +326,7 @@ fn capture_thread(
             first_attempt = false;
         }
         device_changed.store(false, Ordering::Release);
-        if let Err(error) = capture_session(
+        let session_result = capture_session(
             &setup,
             &source,
             &packet_sink,
@@ -311,17 +334,21 @@ fn capture_thread(
             &paused,
             CaptureSessionState {
                 device_changed: &device_changed,
-                process_target_monitor: ProcessTargetMonitor {
-                    tracker: &mut process_target_tracker,
-                    events: &events,
-                },
+                process_capture_health: &mut process_capture_health,
+                events: &events,
                 running,
             },
-        ) {
-            log::warn!(
-                "{} capture session is being rebuilt: {error:#}",
-                capture_source_label(&source)
-            );
+        );
+        if session_result.is_err() && !stop.load(Ordering::Acquire) {
+            let mut fields = vec![
+                Field::text(FieldKey::Scope, capture_source_label(&source)),
+                Field::text(FieldKey::ErrorCode, "capture_session_rebuild"),
+            ];
+            if let Some(session_id) = process_capture_health.diagnostic_session_id.clone() {
+                fields.push(Field::text(FieldKey::SessionId, session_id));
+            }
+            logging::warn("audio_capture", "session_rebuilding", &fields);
+            report_process_capture_failure(&source, &mut process_capture_health, &events);
         }
         healthy.store(false, Ordering::Release);
         unsafe {
@@ -336,62 +363,93 @@ fn capture_thread(
     Ok(())
 }
 
-fn process_source_is_absent(source: &CaptureSource, tracker: &mut ProcessTargetTracker) -> bool {
-    let CaptureSource::Process {
-        process_id,
-        executable_path,
-        display_name,
-        window_handle,
-    } = source
-    else {
-        return false;
+fn report_process_capture_failure(
+    source: &CaptureSource,
+    health: &mut ProcessCaptureHealth,
+    events: &Sender<CaptureEvent>,
+) {
+    let CaptureSource::Process { display_name, .. } = source else {
+        return;
     };
-
-    if window_handle.is_some() {
-        if tracker
-            .current_window_handle
-            .is_some_and(|handle| window_target_is_present(handle, executable_path))
-        {
-            return false;
-        }
-        let Ok(targets) = list_capture_targets() else {
-            return false;
-        };
-        let replacement = find_replacement_target(targets, executable_path, display_name, true);
-        tracker.current_window_handle = replacement.and_then(|target| target.window_handle);
-        return tracker.current_window_handle.is_none();
+    if !health.observe_failure(Instant::now()) {
+        return;
     }
-
-    if process_path(*process_id).is_ok_and(|path| path.eq_ignore_ascii_case(executable_path)) {
-        return false;
+    let mut fields = vec![
+        Field::text(FieldKey::Reason, "continuous_rebuild_failure"),
+        Field::number(
+            FieldKey::DurationMs,
+            PROCESS_CAPTURE_FAILURE_GRACE.as_millis() as u64,
+        ),
+    ];
+    if let Some(session_id) = health.diagnostic_session_id.clone() {
+        fields.push(Field::text(FieldKey::SessionId, session_id));
     }
-    list_capture_targets().is_ok_and(|targets| {
-        find_replacement_target(targets, executable_path, display_name, false).is_none()
-    })
+    logging::warn("capture_health", "interruption_detected", &fields);
+    let _ = events.try_send(CaptureEvent::CaptureInterrupted {
+        display_name: display_name.clone(),
+    });
 }
 
-fn window_target_is_present(window_handle: isize, executable_path: &str) -> bool {
-    let hwnd = HWND(window_handle as *mut std::ffi::c_void);
-    if unsafe { !IsWindow(Some(hwnd)).as_bool() || !IsWindowVisible(hwnd).as_bool() } {
-        return false;
+fn report_process_capture_healthy(
+    source: &CaptureSource,
+    health: &mut ProcessCaptureHealth,
+    events: &Sender<CaptureEvent>,
+) {
+    if !matches!(source, CaptureSource::Process { .. }) || !health.observe_healthy() {
+        return;
     }
-    let mut process_id = 0u32;
-    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut process_id)) };
-    process_id != 0
-        && process_path(process_id).is_ok_and(|path| path.eq_ignore_ascii_case(executable_path))
+    let mut fields = Vec::new();
+    if let Some(session_id) = health.diagnostic_session_id.clone() {
+        fields.push(Field::text(FieldKey::SessionId, session_id));
+    }
+    logging::info("capture_health", "recovered", &fields);
+    let _ = events.try_send(CaptureEvent::CaptureRecovered);
 }
 
-fn find_replacement_target(
-    targets: Vec<CaptureTarget>,
-    executable_path: &str,
-    display_name: &str,
-    require_window: bool,
-) -> Option<CaptureTarget> {
-    targets.into_iter().find(|target| {
-        (!require_window || target.window_handle.is_some())
-            && target.executable_path.eq_ignore_ascii_case(executable_path)
-            && target.display_name.eq_ignore_ascii_case(display_name)
-    })
+fn report_process_silence(
+    source: &CaptureSource,
+    health: &mut ProcessCaptureHealth,
+    events: &Sender<CaptureEvent>,
+) {
+    let CaptureSource::Process { display_name, .. } = source else {
+        return;
+    };
+    if !health.observe_silence(Instant::now()) {
+        return;
+    }
+    let mut fields = vec![Field::number(
+        FieldKey::DurationMs,
+        PROCESS_SILENCE_REMINDER_DELAY.as_millis() as u64,
+    )];
+    if let Some(session_id) = health.diagnostic_session_id.clone() {
+        fields.push(Field::text(FieldKey::SessionId, session_id));
+    }
+    logging::info("capture_health", "prolonged_silence_detected", &fields);
+    let _ = events.try_send(CaptureEvent::ProlongedSilence {
+        display_name: display_name.clone(),
+    });
+}
+
+fn report_process_audio_resumed(
+    source: &CaptureSource,
+    health: &mut ProcessCaptureHealth,
+    events: &Sender<CaptureEvent>,
+) {
+    if !matches!(source, CaptureSource::Process { .. }) || !health.observe_audible() {
+        return;
+    }
+    let mut fields = Vec::new();
+    if let Some(session_id) = health.diagnostic_session_id.clone() {
+        fields.push(Field::text(FieldKey::SessionId, session_id));
+    }
+    logging::info("capture_health", "audio_resumed", &fields);
+    let _ = events.try_send(CaptureEvent::AudioResumed);
+}
+
+fn contains_audible_audio(samples: &[f32]) -> bool {
+    samples
+        .iter()
+        .any(|sample| sample.abs() > PROCESS_AUDIBLE_PEAK_THRESHOLD)
 }
 
 fn capture_source_label(source: &CaptureSource) -> &'static str {
@@ -418,10 +476,6 @@ fn setup_source(source: &CaptureSource) -> Result<CaptureSetup> {
                     .context("目标应用尚未重新出现")?,
             };
             let root_pid = root_process_with_same_executable(pid, executable_path).unwrap_or(pid);
-            log::info!(
-                "process loopback target selected_pid={pid} root_pid={root_pid} executable={}",
-                executable_path
-            );
             setup_process_loopback(root_pid)
         }
         CaptureSource::System(selection) => setup_endpoint(selection.clone(), eRender, true),
@@ -439,18 +493,26 @@ fn capture_session(
 ) -> Result<()> {
     let CaptureSessionState {
         device_changed,
-        mut process_target_monitor,
+        process_capture_health,
+        events,
         mut running,
     } = state;
+    let session_started = Instant::now();
+    let mut recovery_reported = false;
     let mut last_default_check = std::time::Instant::now();
     let mut next_packet_timestamp_100ns = None;
     let mut discontinuities = 0u64;
     let mut timestamp_errors = 0u64;
     while !stop.load(Ordering::Acquire) {
+        if !recovery_reported && session_started.elapsed() >= Duration::from_secs(1) {
+            report_process_capture_healthy(source, process_capture_health, events);
+            recovery_reported = true;
+        }
         if device_changed.swap(false, Ordering::AcqRel) {
             bail!("Windows 报告音频设备配置已改变");
         }
         if paused.load(Ordering::Acquire) {
+            process_capture_health.suspend_silence_timer();
             if running {
                 unsafe {
                     setup.client.Stop()?;
@@ -459,7 +521,6 @@ fn capture_session(
                 running = false;
             }
             if last_default_check.elapsed() >= Duration::from_secs(1) {
-                process_target_monitor.update(source);
                 last_default_check = std::time::Instant::now();
             }
             thread::sleep(Duration::from_millis(20));
@@ -472,8 +533,8 @@ fn capture_session(
 
         let wait = unsafe { WaitForSingleObject(setup.event, CAPTURE_WAIT_MS) };
         if wait != WAIT_OBJECT_0 {
+            report_process_silence(source, process_capture_health, events);
             if last_default_check.elapsed() >= Duration::from_secs(1) {
-                process_target_monitor.update(source);
                 if default_device_changed(source, setup.endpoint_id.as_deref())? {
                     bail!("默认音频设备已改变");
                 }
@@ -507,9 +568,13 @@ fn capture_session(
             if discontinuity {
                 discontinuities += 1;
                 if discontinuities.is_power_of_two() {
-                    log::warn!(
-                        "{} reported capture discontinuity count={discontinuities}",
-                        capture_source_label(source)
+                    logging::warn(
+                        "audio_capture",
+                        "discontinuity",
+                        &[
+                            Field::text(FieldKey::Scope, capture_source_label(source)),
+                            Field::number(FieldKey::Discontinuities, discontinuities),
+                        ],
                     );
                 }
             }
@@ -517,9 +582,13 @@ fn capture_session(
             if timestamp_has_error {
                 timestamp_errors += 1;
                 if timestamp_errors.is_power_of_two() {
-                    log::warn!(
-                        "{} reported timestamp error count={timestamp_errors}",
-                        capture_source_label(source)
+                    logging::warn(
+                        "audio_capture",
+                        "timestamp_error",
+                        &[
+                            Field::text(FieldKey::Scope, capture_source_label(source)),
+                            Field::number(FieldKey::Count, timestamp_errors),
+                        ],
                     );
                 }
             }
@@ -537,6 +606,9 @@ fn capture_session(
                 unsafe { decode_mono(data, frames as usize, &setup.format) }
             };
             unsafe { setup.capture.ReleaseBuffer(frames)? };
+            if contains_audible_audio(&samples) {
+                report_process_audio_resumed(source, process_capture_health, events);
+            }
             if packet_sink
                 .packets
                 .send(AudioPacket {
@@ -561,8 +633,8 @@ fn capture_session(
                 return Ok(());
             }
         }
+        report_process_silence(source, process_capture_health, events);
         if last_default_check.elapsed() >= Duration::from_secs(1) {
-            process_target_monitor.update(source);
             if default_device_changed(source, setup.endpoint_id.as_deref())? {
                 bail!("默认音频设备已改变");
             }
@@ -716,8 +788,12 @@ impl MmcssGuard {
             Ok(handle) => Self {
                 handle: Some(handle),
             },
-            Err(error) => {
-                log::warn!("unable to enable MMCSS for audio capture thread: {error}");
+            Err(_) => {
+                logging::warn(
+                    "audio_capture",
+                    "mmcss_unavailable",
+                    &[Field::text(FieldKey::ErrorCode, "mmcss_enable_failed")],
+                );
                 Self { handle: None }
             }
         }
@@ -815,16 +891,23 @@ fn setup_endpoint(
                     eCategory: AudioCategory_Communications,
                     ..Default::default()
                 };
-                if let Err(error) =
-                    unsafe { communications_client.SetClientProperties(&properties) }
-                {
-                    log::warn!(
-                        "unable to categorize microphone as a communications stream: {error}"
+                if unsafe { communications_client.SetClientProperties(&properties) }.is_err() {
+                    logging::warn(
+                        "audio_capture",
+                        "communications_category_failed",
+                        &[Field::text(FieldKey::ErrorCode, "client_properties_failed")],
                     );
                 }
             }
-            Err(error) => {
-                log::warn!("microphone audio client does not support IAudioClient2: {error}");
+            Err(_) => {
+                logging::warn(
+                    "audio_capture",
+                    "client2_unavailable",
+                    &[Field::text(
+                        FieldKey::ErrorCode,
+                        "audio_client2_unavailable",
+                    )],
+                );
             }
         }
     }
@@ -833,18 +916,27 @@ fn setup_endpoint(
         bail!("音频设备没有返回共享模式格式");
     }
     let format = unsafe { parse_format(format_pointer)? };
-    log::info!(
-        "{} format rate={}Hz channels={} container_bits={} valid_bits={} block_align={}",
-        if loopback {
-            "system loopback"
-        } else {
-            "microphone"
-        },
-        format.sample_rate,
-        format.channels,
-        format.bits_per_sample,
-        format.valid_bits_per_sample,
-        format.block_align
+    logging::info(
+        "audio_capture",
+        "format_selected",
+        &[
+            Field::text(
+                FieldKey::Scope,
+                if loopback {
+                    "system_loopback"
+                } else {
+                    "microphone"
+                },
+            ),
+            Field::number(FieldKey::SampleRateHz, u64::from(format.sample_rate)),
+            Field::number(FieldKey::Channels, format.channels as u64),
+            Field::number(FieldKey::BitsPerSample, u64::from(format.bits_per_sample)),
+            Field::number(
+                FieldKey::ValidBitsPerSample,
+                u64::from(format.valid_bits_per_sample),
+            ),
+            Field::number(FieldKey::BlockAlign, format.block_align as u64),
+        ],
     );
     let stream_flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK
         | if loopback {
@@ -1338,6 +1430,14 @@ fn process_path(pid: u32) -> Result<String> {
 
 fn root_process_with_same_executable(pid: u32, executable_path: &str) -> Result<u32> {
     let parents = process_parent_map()?;
+    Ok(root_process_with_parent_map(pid, executable_path, &parents))
+}
+
+fn root_process_with_parent_map(
+    pid: u32,
+    executable_path: &str,
+    parents: &HashMap<u32, u32>,
+) -> u32 {
     let mut current = pid;
     let mut visited = HashSet::new();
     visited.insert(current);
@@ -1353,7 +1453,7 @@ fn root_process_with_same_executable(pid: u32, executable_path: &str) -> Result<
         }
         current = parent;
     }
-    Ok(current)
+    current
 }
 
 fn process_parent_map() -> Result<HashMap<u32, u32>> {
@@ -1413,74 +1513,91 @@ mod tests {
     use super::*;
 
     #[test]
-    fn process_exit_reminder_is_emitted_once_per_disappearance() {
+    fn capture_interruption_requires_a_continuous_failure_grace() {
         let started = Instant::now();
-        let mut tracker = ProcessTargetTracker::default();
+        let mut health = ProcessCaptureHealth::default();
 
-        assert!(!tracker.observe_absent(started));
-        assert!(!tracker.observe_absent(started + Duration::from_secs(9)));
-        assert!(tracker.observe_absent(started + Duration::from_secs(10)));
-        assert!(!tracker.observe_absent(started + Duration::from_secs(30)));
+        assert!(!health.observe_failure(started));
+        assert!(!health.observe_failure(started + Duration::from_secs(14)));
+        assert!(health.observe_failure(started + PROCESS_CAPTURE_FAILURE_GRACE));
+        assert!(!health.observe_failure(started + Duration::from_secs(60)));
     }
 
     #[test]
-    fn process_exit_reminder_resets_only_after_target_recovers() {
+    fn successful_capture_recovery_clears_the_failure_timer_and_alert() {
         let started = Instant::now();
-        let mut tracker = ProcessTargetTracker::default();
+        let mut health = ProcessCaptureHealth::default();
 
-        assert!(!tracker.observe_absent(started));
-        assert!(tracker.observe_absent(started + PROCESS_TARGET_EXIT_GRACE));
-        assert!(tracker.observe_present());
-        assert!(!tracker.observe_present());
-
-        let disappeared_again = started + Duration::from_secs(30);
-        assert!(!tracker.observe_absent(disappeared_again));
-        assert!(tracker.observe_absent(disappeared_again + PROCESS_TARGET_EXIT_GRACE));
+        assert!(!health.observe_failure(started));
+        assert!(health.observe_failure(started + PROCESS_CAPTURE_FAILURE_GRACE));
+        assert!(health.observe_healthy());
+        assert!(!health.observe_healthy());
+        assert!(!health.observe_failure(started + Duration::from_secs(60)));
+        assert!(!health.observe_failure(started + Duration::from_secs(74)));
+        assert!(health.observe_failure(started + Duration::from_secs(75)));
     }
 
     #[test]
-    fn window_rebind_requires_the_same_display_identity_and_a_visible_window() {
-        let targets = vec![
-            CaptureTarget {
-                id: "process:0".into(),
-                kind: "process".into(),
-                display_name: "会议".into(),
-                process_id: 0,
-                executable_path: r"C:\Program Files\WXWork\meeting.exe".into(),
-                window_handle: None,
-                browser: false,
-                priority: 0,
-            },
-            CaptureTarget {
-                id: "process:1".into(),
-                kind: "process".into(),
-                display_name: "企业微信".into(),
-                process_id: 1,
-                executable_path: r"C:\Program Files\WXWork\meeting.exe".into(),
-                window_handle: Some(11),
-                browser: false,
-                priority: 0,
-            },
-            CaptureTarget {
-                id: "process:2".into(),
-                kind: "process".into(),
-                display_name: "会议".into(),
-                process_id: 2,
-                executable_path: r"C:\Program Files\WXWork\meeting.exe".into(),
-                window_handle: Some(22),
-                browser: false,
-                priority: 0,
-            },
-        ];
+    fn transient_capture_recovery_prevents_an_alert() {
+        let started = Instant::now();
+        let mut health = ProcessCaptureHealth::default();
 
-        let replacement = find_replacement_target(
-            targets,
-            r"c:\program files\wxwork\MEETING.EXE",
-            "会议",
-            true,
-        )
-        .expect("the meeting window should be rebound");
-        assert_eq!(replacement.process_id, 2);
+        assert!(!health.observe_failure(started));
+        assert!(!health.observe_failure(started + Duration::from_secs(10)));
+        assert!(!health.observe_healthy());
+        assert!(!health.observe_failure(started + Duration::from_secs(20)));
+        assert!(!health.observe_failure(started + Duration::from_secs(34)));
+        assert!(health.observe_failure(started + Duration::from_secs(35)));
+    }
+
+    #[test]
+    fn prolonged_silence_requires_three_unpaused_minutes_and_does_not_repeat() {
+        let started = Instant::now();
+        let mut health = ProcessCaptureHealth::default();
+
+        assert!(!health.observe_silence(started));
+        assert!(!health.observe_silence(started + Duration::from_secs(179)));
+        assert!(health.observe_silence(started + PROCESS_SILENCE_REMINDER_DELAY));
+        assert!(!health.observe_silence(started + Duration::from_secs(600)));
+    }
+
+    #[test]
+    fn audible_audio_rearms_the_silence_reminder() {
+        let started = Instant::now();
+        let mut health = ProcessCaptureHealth::default();
+
+        assert!(!health.observe_silence(started));
+        assert!(health.observe_silence(started + PROCESS_SILENCE_REMINDER_DELAY));
+        assert!(health.observe_audible());
+        assert!(!health.observe_audible());
+        assert!(!health.observe_silence(started + Duration::from_secs(240)));
+        assert!(health.observe_silence(started + Duration::from_secs(420)));
+    }
+
+    #[test]
+    fn pause_and_capture_failure_restart_the_silence_timer() {
+        let started = Instant::now();
+        let mut health = ProcessCaptureHealth::default();
+
+        assert!(!health.observe_silence(started));
+        health.suspend_silence_timer();
+        assert!(!health.observe_silence(started + Duration::from_secs(170)));
+        assert!(!health.observe_silence(started + Duration::from_secs(349)));
+        assert!(health.observe_silence(started + Duration::from_secs(350)));
+
+        assert!(health.observe_audible());
+        assert!(!health.observe_silence(started + Duration::from_secs(400)));
+        assert!(!health.observe_failure(started + Duration::from_secs(500)));
+        assert!(!health.observe_healthy());
+        assert!(!health.observe_silence(started + Duration::from_secs(500)));
+        assert!(!health.observe_silence(started + Duration::from_secs(679)));
+        assert!(health.observe_silence(started + Duration::from_secs(680)));
+    }
+
+    #[test]
+    fn audible_threshold_ignores_digital_silence_but_accepts_real_signal() {
+        assert!(!contains_audible_audio(&[0.0, 0.0005, -0.001]));
+        assert!(contains_audible_audio(&[0.0, -0.0011]));
     }
 
     #[test]
@@ -1585,11 +1702,11 @@ mod tests {
                 process_id: target.process_id,
                 display_name: target.display_name,
                 executable_path: target.executable_path,
-                window_handle: target.window_handle,
             },
             sender,
             0,
             false,
+            None,
         )
         .unwrap();
 
@@ -1614,11 +1731,11 @@ mod tests {
                 process_id: std::process::id(),
                 display_name: "Nota".into(),
                 executable_path,
-                window_handle: None,
             },
             sender,
             0,
             false,
+            None,
         )
         .unwrap();
         let tone = test_tone_wav();
@@ -1663,6 +1780,7 @@ mod tests {
             sender,
             1,
             true,
+            None,
         )
         .unwrap();
 
@@ -1688,6 +1806,7 @@ mod tests {
             system_sender,
             0,
             false,
+            None,
         )
         .unwrap();
         let microphone_capture = start_capture(
@@ -1695,6 +1814,7 @@ mod tests {
             microphone_sender,
             1,
             false,
+            None,
         )
         .unwrap();
 

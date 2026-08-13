@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-11
+- Last updated: 2026-08-13
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`
@@ -121,10 +121,13 @@ Automated client coverage must include:
   rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
 - Ogg Opus decode coverage for the legacy path.
-- selected-target exit grace timing, window-bound versus audio-session-only
-  liveness, resident-process window disappearance, one reminder per continuous
-  absence, reset after recovery, session-scoped stale-action rejection, and
-  explicit continue/stop prompt actions without capture-scope mutation;
+- selected-application capture failure using a 15-second continuous grace,
+  transient-recovery reset, automatic prompt dismissal after successful
+  recovery, one alert per uninterrupted failure, session-scoped stale-action
+  rejection, and explicit continue/stop actions without capture-scope mutation;
+- selected-application silence using the `0.001` peak threshold and a continuous
+  three-minute delay, pause/rebuild timer reset, audible-audio re-arming,
+  one reminder per silent period, and reason-specific prompt rendering;
 - active-recording microphone selection, visible switching state, session-only
   disable behavior, failed-switch rollback, authoritative snapshot recovery,
   source-epoch filtering, microphone-only buffer reset, AEC reconvergence, and
@@ -140,6 +143,22 @@ Server-side automated coverage must include:
 - explicit `diarization_failed` behavior and valid silent output;
 - duration, upload-size, disk-space, and retention limits;
 - exact `verbose_json 1.0` result compatibility.
+
+## Diagnostic Logging Regression Matrix
+
+Automated coverage for local diagnostics must include:
+
+- UTC RFC3339 timestamps, one-line records, JSON escaping, and bounded text;
+- the typed field allowlist rejecting sensitive field names;
+- one active log plus two archives after rotation;
+- Settings rendering and the open-directory command path without changing
+  settings dirty state;
+- lifecycle metadata for recording, import, ASR, and LLM work, including
+  correlation IDs, coarse phases, HTTP status, elapsed time, estimates, and
+  actual token usage where available;
+- no audio, transcript or document content, titles, user paths, Base URLs,
+  credentials, authorization values, request/response bodies, or raw Provider
+  errors in emitted diagnostic records.
 
 ## AI Document Regression Matrix
 
@@ -237,18 +256,22 @@ scenarios on Windows 11:
     and verify only named, eligible speakers are enrolled. Finally assign the
     last speaker without a configured server and confirm clearing one mapping
     leaves every omitted mapping untouched.
-14. Record an Enterprise WeChat meeting by selecting its meeting window, leave
-    the meeting, and confirm the `wwmapp.exe` warm-up process may remain while
-    the selected window disappears. Confirm no prompt appears during the
-    ten-second recovery window, then confirm the prompt and warning tray state
-    appear. **Continue recording** must leave the current recording and
-    microphone behavior unchanged, and no second prompt may appear while the
-    target remains absent. Reopen and close the same target to confirm a new
-    reminder is allowed; finally choose **Stop and save** and verify normal Ogg
-    finalization, library refresh, and optional automatic transcription. Repeat
-    at 100%, 150%, and 200% display scaling and with enlarged system text;
-    confirm the prompt follows its content within the bounded height, remains
-    anchored above the taskbar, and keeps both decisions reachable.
+14. With Enterprise WeChat `5.0.9.6065` and Tencent Meeting, keep the meeting
+    connected while switching layouts, sharing the screen for more than 30
+    seconds, minimizing, restoring, and changing child processes. Confirm none
+    of those window/process transitions triggers a reminder. Keep the selected
+    application silent: no reminder may appear before three minutes, and
+    **Application has had no sound for a while** must appear at approximately
+    three minutes without claiming that the meeting ended. **Continue
+    recording** must suppress repeats until audible application audio returns;
+    pause time and capture-rebuild time must not count toward the three minutes.
+    Then force a repeatable process-loopback capture failure: a short failure
+    that recovers before 15 seconds must not prompt; a continuous failure must
+    show **Application audio capture interrupted** after about 15 seconds.
+    Recovery must dismiss that prompt. Both continue actions must retain the
+    current scope, microphone, pause state, session, and Ogg file. Finally
+    choose **Stop and save** and verify normal finalization. Repeat prompt layout
+    checks at 100%, 150%, and 200% display scaling with enlarged system text.
 15. During one recording, switch between two physical microphones, disable the
     microphone, enable it again, and repeat a switch while paused. Confirm the
     same Ogg file remains active, meeting audio is not interrupted by stale
