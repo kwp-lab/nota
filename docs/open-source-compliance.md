@@ -77,4 +77,6 @@ release.
 - Do not copy all registry sources into Git. Generate the versioned source
   archive from the lock file at release time.
 - Regenerate after every dependency or lock-file change and review the diff.
+- Generated package and SBOM ordering must use locale-independent comparison
+  so Windows developer machines and GitHub runners produce identical bytes.
 - An SBOM is an inventory, not a substitute for license texts or source offers.

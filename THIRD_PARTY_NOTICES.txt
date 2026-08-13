@@ -6833,20 +6833,6 @@ ADDITIONAL RUST UPSTREAM NOTICE FILES
 
 -------------------------------------------------------------------------------
 Used by:
-- rand_core@0.10.1 (COPYRIGHT)
-
-Copyrights in the Rand project are retained by their contributors. No
-copyright assignment is required to contribute to the Rand project.
-
-For full authorship information, see the version control history.
-
-Except as otherwise noted (below and/or in individual files), Rand is
-licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
-<http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-<LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
-
--------------------------------------------------------------------------------
-Used by:
 - rand@0.9.5 (COPYRIGHT)
 - rand@0.10.2 (COPYRIGHT)
 - rand_chacha@0.9.0 (COPYRIGHT)
@@ -6865,6 +6851,20 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 
 The Rand project includes code from the Rust project
 published under these same licenses.
+
+-------------------------------------------------------------------------------
+Used by:
+- rand_core@0.10.1 (COPYRIGHT)
+
+Copyrights in the Rand project are retained by their contributors. No
+copyright assignment is required to contribute to the Rand project.
+
+For full authorship information, see the version control history.
+
+Except as otherwise noted (below and/or in individual files), Rand is
+licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
+<http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+<LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 
 -------------------------------------------------------------------------------
 Used by:

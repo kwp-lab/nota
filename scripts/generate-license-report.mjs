@@ -30,6 +30,10 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function compareStable(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function assertToolVersions() {
   const cargoAbout = run("cargo", ["about", "--version"]);
   if (!cargoAbout.includes(`cargo-about ${CARGO_ABOUT_VERSION}`)) {
@@ -75,7 +79,7 @@ function loadNpmLicenses() {
   return Object.entries(result)
     .filter(([key]) => !key.startsWith("nota@"))
     .map(([key, value]) => ({ key, ...value }))
-    .sort((a, b) => a.key.localeCompare(b.key));
+    .sort((a, b) => compareStable(a.key, b.key));
 }
 
 function assertOfficialNpmRegistry() {
@@ -200,7 +204,7 @@ function generateRustNoticeFiles(cargoPackages) {
     }
   }
   const sections = [...groups.values()]
-    .sort((a, b) => a.packages[0].localeCompare(b.packages[0]))
+    .sort((a, b) => compareStable(a.packages[0], b.packages[0]))
     .map(
       (group) =>
         `${"-".repeat(79)}\nUsed by:\n${group.packages.map((name) => `- ${name}`).join("\n")}\n\n${group.text}`,
@@ -222,7 +226,7 @@ function generateNpmNotices(packages) {
   }
 
   const sections = [...groups.values()]
-    .sort((a, b) => a.packages[0].localeCompare(b.packages[0]))
+    .sort((a, b) => compareStable(a.packages[0], b.packages[0]))
     .map(
       (group) =>
         `${"-".repeat(79)}\nUsed by:\n${group.packages.map((name) => `- ${name}`).join("\n")}\n\n${group.text}`,
@@ -233,7 +237,7 @@ function generateNpmNotices(packages) {
 function inventoryMarkdown(cargoPackages, npmPackages, manual) {
   const rustRows = cargoPackages
     .filter((item) => item.source)
-    .sort((a, b) => `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`))
+    .sort((a, b) => compareStable(`${a.name}@${a.version}`, `${b.name}@${b.version}`))
     .map((item) => `| ${item.name} | ${item.version} | ${item.license ?? "UNDECLARED"} |`)
     .join("\n");
   const npmRows = npmPackages
@@ -275,7 +279,7 @@ ${manualRows}
 function sourceMarkdown(cargoPackages, npmPackages, manual) {
   const mplCargo = cargoPackages
     .filter((item) => item.source && item.license?.includes("MPL-2.0"))
-    .sort((a, b) => `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`));
+    .sort((a, b) => compareStable(`${a.name}@${a.version}`, `${b.name}@${b.version}`));
   const mplNpm = npmPackages.filter((item) => String(item.licenses).includes("MPL-2.0"));
   const cargoRows = mplCargo
     .map(
@@ -369,7 +373,7 @@ function sbomJson(cargoPackages, npmPackages, manual) {
         item.source,
       ),
     ),
-  ].sort((a, b) => a["bom-ref"].localeCompare(b["bom-ref"]));
+  ].sort((a, b) => compareStable(a["bom-ref"], b["bom-ref"]));
 
   const lockDigest = sha256(
     readFileSync(resolve(root, "src-tauri/Cargo.lock")) + readFileSync(resolve(root, "package-lock.json")),

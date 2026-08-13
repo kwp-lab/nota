@@ -26,19 +26,19 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | brotli-decompressor | 5.0.3 | BSD-3-Clause/MIT |
 | brotli | 8.0.4 | BSD-3-Clause AND MIT |
 | bs58 | 0.5.1 | MIT/Apache-2.0 |
-| bytemuck_derive | 1.11.0 | Zlib OR Apache-2.0 OR MIT |
 | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
+| bytemuck_derive | 1.11.0 | Zlib OR Apache-2.0 OR MIT |
 | byteorder-lite | 0.1.0 | Unlicense OR MIT |
 | byteorder | 1.5.0 | Unlicense OR MIT |
 | bytes | 1.12.1 | MIT |
 | camino | 1.2.4 | MIT OR Apache-2.0 |
+| cargo-platform | 0.1.9 | MIT OR Apache-2.0 |
 | cargo_metadata | 0.19.2 | MIT |
 | cargo_toml | 0.22.3 | Apache-2.0 OR MIT |
-| cargo-platform | 0.1.9 | MIT OR Apache-2.0 |
 | cc | 1.3.0 | MIT OR Apache-2.0 |
 | cfb | 0.7.3 | MIT |
-| cfg_aliases | 0.2.2 | MIT |
 | cfg-if | 1.0.4 | MIT OR Apache-2.0 |
+| cfg_aliases | 0.2.2 | MIT |
 | chacha20 | 0.10.1 | MIT OR Apache-2.0 |
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
 | clipboard-win | 5.4.1 | BSL-1.0 |
@@ -54,9 +54,9 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | cssparser | 0.36.0 | MPL-2.0 |
 | ctor-proc-macro | 0.0.7 | Apache-2.0 OR MIT |
 | ctor | 0.8.0 | Apache-2.0 OR MIT |
+| darling | 0.23.0 | MIT |
 | darling_core | 0.23.0 | MIT |
 | darling_macro | 0.23.0 | MIT |
-| darling | 0.23.0 | MIT |
 | deranged | 0.5.8 | MIT OR Apache-2.0 |
 | derive_more-impl | 2.1.1 | MIT |
 | derive_more | 2.1.1 | MIT |
@@ -119,14 +119,14 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | ico | 0.5.0 | MIT |
 | icu_collections | 2.2.0 | Unicode-3.0 |
 | icu_locale_core | 2.2.0 | Unicode-3.0 |
-| icu_normalizer_data | 2.2.0 | Unicode-3.0 |
 | icu_normalizer | 2.2.0 | Unicode-3.0 |
-| icu_properties_data | 2.2.0 | Unicode-3.0 |
+| icu_normalizer_data | 2.2.0 | Unicode-3.0 |
 | icu_properties | 2.2.0 | Unicode-3.0 |
+| icu_properties_data | 2.2.0 | Unicode-3.0 |
 | icu_provider | 2.2.0 | Unicode-3.0 |
 | ident_case | 1.0.1 | MIT/Apache-2.0 |
-| idna_adapter | 1.2.2 | Apache-2.0 OR MIT |
 | idna | 1.1.0 | MIT OR Apache-2.0 |
+| idna_adapter | 1.2.2 | Apache-2.0 OR MIT |
 | image | 0.25.10 | MIT OR Apache-2.0 |
 | indexmap | 1.9.3 | Apache-2.0 OR MIT |
 | indexmap | 2.14.0 | Apache-2.0 OR MIT |
@@ -145,8 +145,8 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | lru-slab | 0.1.2 | MIT OR Apache-2.0 OR Zlib |
 | markup5ever | 0.38.0 | MIT OR Apache-2.0 |
 | memchr | 2.8.3 | Unlicense OR MIT |
-| mime_guess | 2.0.5 | MIT |
 | mime | 0.3.17 | MIT OR Apache-2.0 |
+| mime_guess | 2.0.5 | MIT |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | mio | 1.2.2 | MIT |
 | moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 |
@@ -160,14 +160,14 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | once_cell | 1.21.4 | MIT OR Apache-2.0 |
 | option-ext | 0.2.0 | MPL-2.0 |
 | opus | 0.3.1 | MIT/Apache-2.0 |
-| parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
+| parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 |
+| phf | 0.13.1 | MIT |
 | phf_codegen | 0.13.1 | MIT |
 | phf_generator | 0.13.1 | MIT |
 | phf_macros | 0.13.1 | MIT |
 | phf_shared | 0.13.1 | MIT |
-| phf | 0.13.1 | MIT |
 | pin-project-lite | 0.2.17 | Apache-2.0 OR MIT |
 | pkg-config | 0.3.33 | MIT OR Apache-2.0 |
 | plist | 1.10.0 | MIT |
@@ -186,12 +186,12 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | quinn-udp | 0.5.15 | MIT OR Apache-2.0 |
 | quinn | 0.11.11 | MIT OR Apache-2.0 |
 | quote | 1.0.47 | MIT OR Apache-2.0 |
+| rand | 0.10.2 | MIT OR Apache-2.0 |
+| rand | 0.9.5 | MIT OR Apache-2.0 |
 | rand_chacha | 0.9.0 | MIT OR Apache-2.0 |
 | rand_core | 0.10.1 | MIT OR Apache-2.0 |
 | rand_core | 0.9.5 | MIT OR Apache-2.0 |
 | rand_pcg | 0.10.2 | MIT OR Apache-2.0 |
-| rand | 0.10.2 | MIT OR Apache-2.0 |
-| rand | 0.9.5 | MIT OR Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | ref-cast-impl | 1.0.26 | MIT OR Apache-2.0 |
 | ref-cast | 1.0.26 | MIT OR Apache-2.0 |
@@ -204,32 +204,32 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | ring | 0.17.14 | Apache-2.0 AND ISC |
 | rubato | 0.16.2 | MIT |
 | rusqlite | 0.40.1 | MIT |
-| rustc_version | 0.4.1 | MIT OR Apache-2.0 |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
+| rustc_version | 0.4.1 | MIT OR Apache-2.0 |
 | rustfft | 6.4.1 | MIT OR Apache-2.0 |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 |
 | rustls-webpki | 0.103.13 | ISC |
 | rustls | 0.23.42 | Apache-2.0 OR ISC OR MIT |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | same-file | 1.0.6 | Unlicense/MIT |
-| schemars_derive | 0.8.22 | MIT |
 | schemars | 0.8.22 | MIT |
 | schemars | 0.9.0 | MIT |
 | schemars | 1.2.1 | MIT |
+| schemars_derive | 0.8.22 | MIT |
 | scopeguard | 1.2.0 | MIT OR Apache-2.0 |
 | selectors | 0.36.1 | MPL-2.0 |
 | semver | 1.0.28 | MIT OR Apache-2.0 |
+| serde-untagged | 0.1.9 | MIT OR Apache-2.0 |
+| serde | 1.0.229 | MIT OR Apache-2.0 |
 | serde_core | 1.0.229 | MIT OR Apache-2.0 |
-| serde_derive_internals | 0.29.1 | MIT OR Apache-2.0 |
 | serde_derive | 1.0.229 | MIT OR Apache-2.0 |
+| serde_derive_internals | 0.29.1 | MIT OR Apache-2.0 |
 | serde_json | 1.0.151 | MIT OR Apache-2.0 |
 | serde_repr | 0.1.21 | MIT OR Apache-2.0 |
 | serde_spanned | 1.1.1 | MIT OR Apache-2.0 |
 | serde_urlencoded | 0.7.1 | MIT/Apache-2.0 |
-| serde_with_macros | 3.21.0 | MIT OR Apache-2.0 |
 | serde_with | 3.21.0 | MIT OR Apache-2.0 |
-| serde-untagged | 0.1.9 | MIT OR Apache-2.0 |
-| serde | 1.0.229 | MIT OR Apache-2.0 |
+| serde_with_macros | 3.21.0 | MIT OR Apache-2.0 |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 |
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 |
@@ -250,8 +250,8 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | sonora | 0.1.0 | BSD-3-Clause |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
 | strength_reduce | 0.2.4 | MIT OR Apache-2.0 |
-| string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 |
 | string_cache | 0.9.0 | MIT OR Apache-2.0 |
+| string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 |
 | strsim | 0.11.1 | MIT |
 | subtle | 2.6.1 | BSD-3-Clause |
 | symphonia-bundle-flac | 0.6.0 | MPL-2.0 |
@@ -294,16 +294,16 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | time-macros | 0.2.32 | MIT OR Apache-2.0 |
 | time | 0.3.54 | MIT OR Apache-2.0 |
 | tinystr | 0.8.3 | Unicode-3.0 |
-| tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
 | tinyvec | 1.12.0 | Zlib OR Apache-2.0 OR MIT |
+| tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 |
 | tokio | 1.53.1 | MIT |
+| toml | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_datetime | 0.7.5+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_datetime | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_parser | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_writer | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
-| toml | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 |
-| toml | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | tower-http | 0.6.11 | MIT |
 | tower-layer | 0.3.3 | MIT |
 | tower-service | 0.3.3 | MIT |
@@ -346,8 +346,6 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | winapi-util | 0.1.11 | Unlicense OR MIT |
 | winapi | 0.3.9 | MIT/Apache-2.0 |
 | window-vibrancy | 0.6.0 | Apache-2.0 OR MIT |
-| windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 |
-| windows_x86_64_msvc | 0.53.1 | MIT OR Apache-2.0 |
 | windows-collections | 0.2.0 | MIT OR Apache-2.0 |
 | windows-collections | 0.3.2 | MIT OR Apache-2.0 |
 | windows-core | 0.56.0 | MIT OR Apache-2.0 |
@@ -379,6 +377,8 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | windows | 0.56.0 | MIT OR Apache-2.0 |
 | windows | 0.61.3 | MIT OR Apache-2.0 |
 | windows | 0.62.2 | MIT OR Apache-2.0 |
+| windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 |
+| windows_x86_64_msvc | 0.53.1 | MIT OR Apache-2.0 |
 | winnow | 0.7.15 | MIT |
 | winnow | 1.0.4 | MIT |
 | winreg | 0.55.0 | MIT |
