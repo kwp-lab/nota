@@ -1,22 +1,8 @@
 name: Dependency compliance
 
 on:
+  workflow_call:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".npmrc"
-      - "package.json"
-      - "package-lock.json"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/Cargo.lock"
-      - "src-tauri/about.toml"
-      - "scripts/generate-license-report.mjs"
-      - "scripts/licenses/**"
-      - "THIRD_PARTY_LICENSES.md"
-      - "THIRD_PARTY_NOTICES.txt"
-      - "THIRD_PARTY_SOURCES.md"
-      - "bom.cyclonedx.json"
-      - ".github/workflows/compliance.yml"
   push:
     branches:
       - main
