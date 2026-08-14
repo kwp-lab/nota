@@ -5,7 +5,8 @@
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
-  `.github/workflows/native.yml`, `.github/workflows/compliance.yml`
+  `.github/workflows/native.yml`, `.github/workflows/compliance.yml`,
+  `.github/workflows/pr-gate.yml`
 
 ## Standard Verification
 
@@ -27,13 +28,17 @@ paying for an unnecessary full Windows build:
   frontend tests, and a web-only production build on Linux;
 - Rust and Tauri changes run formatting, locked tests, and Clippy on Windows;
 - dependency or legal-artifact changes run the locked license policy gate;
-- documentation-only changes do not start application CI.
+- documentation-only changes run only lightweight change detection and the
+  required PR gate; they do not start application checks.
 
-Each layer runs for pull requests and pushes to `main`, cancels an older run
-for the same ref, and can also be started manually. `.github/workflows/ci.yml`
-remains a manual full-verification fallback. None of these verification
-workflows calls `npm run build`, produces `Nota.exe`, or creates an installer.
-Only the tag-triggered release workflow builds distribution artifacts.
+For pull requests, `.github/workflows/pr-gate.yml` detects the affected layers,
+calls only those reusable workflows, and always reports one `PR Gate` result
+that branch rules can require. The layers also run independently for relevant
+pushes to `main`, cancel an older run for the same ref, and support manual
+runs. `.github/workflows/ci.yml` remains a manual full-verification fallback.
+None of these verification workflows calls `npm run build`, produces
+`Nota.exe`, or creates an installer. Only the tag-triggered release workflow
+builds distribution artifacts.
 The dependency-compliance job caches only the pinned `cargo-about` executable;
 a cache miss rebuilds that exact version, and the generator verifies its
 version before use.

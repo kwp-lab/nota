@@ -1,0 +1,144 @@
+name: PR gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect affected checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.paths.outputs.frontend }}
+      native: ${{ steps.paths.outputs.native }}
+      compliance: ${{ steps.paths.outputs.compliance }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected check groups
+        id: paths
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          has_changes() {
+            if git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- "$@"; then
+              printf 'false'
+            else
+              printf 'true'
+            fi
+          }
+
+          workflow_core="$(has_changes \
+            .github/workflows/ci.yml \
+            .github/workflows/pr-gate.yml)"
+          frontend="$(has_changes \
+            src \
+            assets \
+            index.html \
+            package.json \
+            package-lock.json \
+            .npmrc \
+            'tsconfig*.json' \
+            'vite.config.*' \
+            scripts/check-design-tokens.mjs \
+            .github/workflows/frontend.yml)"
+          native="$(has_changes \
+            src-tauri \
+            rust-toolchain.toml \
+            scripts/verify-version.ps1 \
+            .github/workflows/native.yml)"
+          compliance="$(has_changes \
+            .npmrc \
+            package.json \
+            package-lock.json \
+            src-tauri/Cargo.toml \
+            src-tauri/Cargo.lock \
+            src-tauri/about.toml \
+            scripts/generate-license-report.mjs \
+            scripts/licenses \
+            THIRD_PARTY_LICENSES.md \
+            THIRD_PARTY_NOTICES.txt \
+            THIRD_PARTY_SOURCES.md \
+            bom.cyclonedx.json \
+            .github/workflows/compliance.yml)"
+
+          if [[ "$workflow_core" == "true" ]]; then
+            frontend=true
+            native=true
+            compliance=true
+          fi
+
+          {
+            echo "frontend=$frontend"
+            echo "native=$native"
+            echo "compliance=$compliance"
+          } >> "$GITHUB_OUTPUT"
+
+  frontend:
+    name: Frontend checks
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/frontend.yml
+
+  native:
+    name: Native checks
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    uses: ./.github/workflows/native.yml
+
+  compliance:
+    name: Dependency compliance
+    needs: changes
+    if: needs.changes.outputs.compliance == 'true'
+    uses: ./.github/workflows/compliance.yml
+
+  gate:
+    name: PR Gate
+    needs:
+      - changes
+      - frontend
+      - native
+      - compliance
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGES_RESULT: ${{ needs.changes.result }}
+      FRONTEND_RESULT: ${{ needs.frontend.result }}
+      NATIVE_RESULT: ${{ needs.native.result }}
+      COMPLIANCE_RESULT: ${{ needs.compliance.result }}
+
+    steps:
+      - name: Require every affected check to pass
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change detection did not succeed: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          for result in "$FRONTEND_RESULT" "$NATIVE_RESULT" "$COMPLIANCE_RESULT"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "An affected check did not succeed: $result"
+              exit 1
+            fi
+          done
+
+          echo "Every affected pull-request check passed."

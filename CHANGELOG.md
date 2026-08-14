@@ -26,6 +26,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Added an always-reported pull-request gate that runs only the frontend,
+  native, and dependency checks affected by changed paths, allowing `main`
+  protection without making documentation-only changes run application builds.
 - Split contribution CI into path-scoped frontend, native, and dependency
   compliance checks, while keeping executable and installer builds exclusive
   to tagged releases.
