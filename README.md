@@ -19,7 +19,7 @@
 
 <p align="center">
   <img alt="Platform: Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
-  <img alt="Version: 0.6.0" src="https://img.shields.io/badge/version-0.6.0-56615D?style=flat-square">
+  <img alt="Version: 0.7.0" src="https://img.shields.io/badge/version-0.7.0-56615D?style=flat-square">
   <img alt="Status: early preview" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
   <img alt="Privacy: local first" src="https://img.shields.io/badge/privacy-local%20first-2F7D71?style=flat-square">
   <img alt="Telemetry: none" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">

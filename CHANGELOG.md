@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-22
+
 ### Added
 
 - Added a bilingual contribution guide covering privacy-safe fixtures,
@@ -315,10 +317,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.6.0...HEAD
-[0.6.0]: https://github.com/kwp-lab/nota/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/kwp-lab/nota/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/kwp-lab/nota/compare/v0.3.0...v0.4.0
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kwp-lab/nota/compare/069d067d016282ae7a9ca24a360fcc64a7b4155b...v0.7.0
+[0.6.0]: https://github.com/kwp-lab/nota/compare/9dca2a84e556bf813f98beb0bab82ab5c5eb6295...069d067d016282ae7a9ca24a360fcc64a7b4155b
+[0.5.0]: https://github.com/kwp-lab/nota/compare/526ae588227869b930c6bd78aa54bfaa36c52a31...9dca2a84e556bf813f98beb0bab82ab5c5eb6295
+[0.4.0]: https://github.com/kwp-lab/nota/compare/v0.3.0...526ae588227869b930c6bd78aa54bfaa36c52a31
 [0.3.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...v0.3.0
 [0.2.0]: https://github.com/kwp-lab/nota/compare/v0.1.1...a9091aaca969bf901e30d32ed55affe43f5efe2a
 [0.1.1]: https://github.com/kwp-lab/nota/compare/v0.1.0...v0.1.1
