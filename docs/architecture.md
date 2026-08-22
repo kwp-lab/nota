@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-13
+- Last updated: 2026-08-22
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -9,6 +9,7 @@
   `src-tauri/src/ai.rs`
 - Related decisions:
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
+  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md),
   [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md),
   [`0008-local-privacy-safe-diagnostic-logs.md`](decisions/0008-local-privacy-safe-diagnostic-logs.md)
 
@@ -44,6 +45,7 @@ flowchart LR
     I --> K["ASR manager"]
     K -->|"FunASR: original Ogg job"| L["Nota ASR Server"]
     K -->|"OpenAI-compatible: temporary WAV chunks"| M["Configured provider"]
+    K -->|"DashScope: temporary upload + async whole-file task"| V["Alibaba Cloud DashScope"]
     J -->|"typed summaries and transcript"| H
     K -->|"asr://status"| H
     F --> N["Voiceprint manager"]
@@ -64,7 +66,8 @@ flowchart LR
 | Audio pipeline | Capture scope, clock alignment, AEC, mixing, Opus encoding, recovery | Network access or transcript state |
 | Audio import manager | Local file validation, exact-file deduplication, decode/resample, managed Ogg creation, cancellation, and crash cleanup | Source-file mutation, network access, ASR, or UI rendering |
 | Storage | Settings, recording index, provider snapshots, transcription state and results | Audio capture or HTTP retry policy |
-| ASR manager | Queueing, cancellation, provider protocol selection, retry and result normalization | UI rendering or raw credential disclosure |
+| ASR manager | Queueing, cancellation, provider protocol selection, durable checkpoints, and final commit | UI rendering or raw credential disclosure |
+| ASR provider adapter | Provider HTTP, upload validation, task/result parsing, and normalization into Nota transcript types | Queue ownership, React state, or SQLite credentials outside the active request |
 | Voiceprint manager | Timestamp candidate planning, bounded Ogg sampling, clean-range response mapping, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
 | AI document manager | Prompt assembly, LLM requests, cancellation, version lifecycle, atomic Markdown creation, and relinking | Automatic generation, transcript mutation, or in-place overwrite of generated files |
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
@@ -84,6 +87,9 @@ flowchart LR
 - The original Ogg recording is never replaced by transcription intermediates.
 - A transcript is complete only after its final result is durable in local
   SQLite.
+- Cloud Provider capabilities and voiceprint support are snapshotted per
+  transcription generation; changing the default Provider cannot rewrite
+  historical feature availability.
 - API keys, authorization headers, audio, and transcript content must not enter
   technical logs.
 - Rust and TypeScript IPC models must change together.
@@ -119,6 +125,9 @@ For ASR, user cancellation and application shutdown differ:
 
 - User cancellation requests remote cancellation for FunASR and leaves the
   local job resumable.
+- DashScope cancellation is remote only while `PENDING`. During `RUNNING`,
+  Nota stops local polling, retains the task id, and reports that cloud work
+  may continue; resume queries that same task.
 - Application shutdown interrupts local work without intentionally cancelling
   the remote FunASR job. A later resume can recover server progress.
 

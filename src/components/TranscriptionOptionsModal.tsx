@@ -5,15 +5,22 @@ import { AppTooltip } from "./AppTooltip";
 interface TranscriptionOptionsModalProps {
   recordingTitle: string;
   retranscription: boolean;
+  providerName: string;
+  speakerCountMin: number;
+  speakerCountMax: number;
+  cloudUpload: boolean;
+  maxDurationMinutes: number | null;
   onCancel: () => void;
   onConfirm: (speakerCount: number | null) => void;
 }
 
 export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps) {
   const [mode, setMode] = useState<"auto" | "specified">("auto");
-  const [countText, setCountText] = useState("2");
+  const [countText, setCountText] = useState(String(Math.max(2, props.speakerCountMin)));
   const count = Number(countText);
-  const validCount = Number.isInteger(count) && count >= 1 && count <= 64;
+  const validCount = Number.isInteger(count)
+    && count >= props.speakerCountMin
+    && count <= props.speakerCountMax;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -60,13 +67,15 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
               />
               <span>
                 <strong>指定目标人数</strong>
-                <small>用于已知参会人数的会议，范围为 1–64 人；结果可能更多</small>
+                <small>
+                  用于已知参会人数的会议，范围为 {props.speakerCountMin}–{props.speakerCountMax} 人；结果可能更多
+                </small>
               </span>
               <input
                 aria-label="说话人数"
                 type="number"
-                min={1}
-                max={64}
+                min={props.speakerCountMin}
+                max={props.speakerCountMax}
                 step={1}
                 value={countText}
                 disabled={mode !== "specified"}
@@ -76,11 +85,17 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
             </label>
           </fieldset>
           {mode === "specified" && !validCount && (
-            <p className="field-error">请输入 1–64 之间的整数。</p>
+            <p className="field-error">
+              请输入 {props.speakerCountMin}–{props.speakerCountMax} 之间的整数。
+            </p>
           )}
           <div className="transcription-options-warning">
             <AlertTriangle size={17} />
-            <span>准确性优先：人数仅作为安全聚类目标，相似度不足时不会为凑人数强行合并。</span>
+            <span>
+              {props.cloudUpload
+                ? `将把完整录音上传至${props.providerName}，临时文件约 48 小时后清理；始终开启匿名说话人分离${props.maxDurationMinutes ? `，最长 ${props.maxDurationMinutes} 分钟` : ""}。`
+                : "准确性优先：人数仅作为安全聚类目标，相似度不足时不会为凑人数强行合并。"}
+            </span>
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 # Local Diagnostic Logging
 
 - Status: Accepted
-- Last updated: 2026-08-13
+- Last updated: 2026-08-22
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/logging.rs`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`,
@@ -88,6 +88,8 @@ The following data must never enter technical logs:
 - API keys, authorization headers, cookies, or other credentials;
 - Base URLs, user file paths, request bodies, response bodies, or Provider
   error bodies.
+- temporary `oss://` object names, signed upload fields, task result URLs, or
+  complete DashScope control responses.
 
 Executable identity is reduced to a basename before logging. Network failures
 use application-owned error codes plus optional HTTP status and duration.

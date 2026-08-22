@@ -299,8 +299,9 @@ impl Storage {
               generation INTEGER NOT NULL DEFAULT 1,
               provider_id TEXT,
               provider_name TEXT NOT NULL,
+              provider_kind TEXT NOT NULL DEFAULT 'open_ai_compatible',
               model_id TEXT NOT NULL,
-              speaker_count INTEGER CHECK(speaker_count BETWEEN 1 AND 64),
+              speaker_count INTEGER CHECK(speaker_count BETWEEN 1 AND 100),
               status TEXT NOT NULL,
               completed_chunks INTEGER NOT NULL DEFAULT 0,
               total_chunks INTEGER NOT NULL DEFAULT 0,
@@ -313,6 +314,7 @@ impl Storage {
               completed_at TEXT,
               protocol TEXT NOT NULL DEFAULT 'legacy_chunks',
               remote_job_id TEXT,
+              provider_state_json TEXT NOT NULL DEFAULT '{}',
               idempotency_key TEXT NOT NULL DEFAULT '',
               progress_phase TEXT,
               progress_current INTEGER NOT NULL DEFAULT 0,
@@ -450,6 +452,7 @@ impl Storage {
         ensure_ai_generation_detail_columns(&connection)?;
         seed_ai_templates(&connection)?;
         ensure_transcription_job_columns(&connection)?;
+        ensure_transcription_speaker_count_constraint(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -763,7 +766,7 @@ impl Storage {
                      t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
                      t.error_message, t.text, t.protocol, t.progress_phase,
                      t.progress_current, t.progress_total, t.progress_unit,
-                     t.speaker_count, r.origin, r.source_file_name,
+                     t.speaker_count, t.provider_kind, r.origin, r.source_file_name,
                      r.source_format, r.imported_at
              FROM recordings r
              LEFT JOIN transcriptions t ON t.recording_id = r.id
@@ -784,7 +787,7 @@ impl Storage {
                          t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
                          t.error_message, t.text, t.protocol, t.progress_phase,
                          t.progress_current, t.progress_total, t.progress_unit,
-                         t.speaker_count, r.origin, r.source_file_name,
+                         t.speaker_count, t.provider_kind, r.origin, r.source_file_name,
                          r.source_format, r.imported_at
                  FROM recordings r
                  LEFT JOIN transcriptions t ON t.recording_id = r.id
@@ -839,16 +842,18 @@ impl Storage {
                 [id],
                 |row| {
                     let api_key: String = row.get(5)?;
+                    let kind = AsrProviderKind::from_str(&row.get::<_, String>(2)?);
                     Ok(AsrProviderCredentials {
                         provider: AsrProvider {
                             id: row.get(0)?,
                             name: row.get(1)?,
-                            kind: AsrProviderKind::from_str(&row.get::<_, String>(2)?),
+                            kind,
                             base_url: row.get(3)?,
                             model_id: row.get(4)?,
                             has_api_key: !api_key.is_empty(),
                             created_at: row.get(6)?,
                             updated_at: row.get(7)?,
+                            capabilities: kind.capabilities(),
                         },
                         api_key,
                     })
@@ -878,6 +883,7 @@ impl Storage {
             AsrApiKeyUpdate::Clear => String::new(),
         };
         let now = Utc::now().to_rfc3339();
+        let kind = request.kind;
         Ok(AsrProviderCredentials {
             provider: AsrProvider {
                 id: existing
@@ -888,7 +894,7 @@ impl Storage {
                     .as_ref()
                     .map(|credentials| credentials.provider.name.clone())
                     .unwrap_or_else(|| "未保存的语音转写服务".into()),
-                kind: request.kind,
+                kind,
                 base_url: request.base_url,
                 model_id: request.model_id,
                 has_api_key: !api_key.is_empty(),
@@ -897,6 +903,7 @@ impl Storage {
                     .map(|credentials| credentials.provider.created_at.clone())
                     .unwrap_or_else(|| now.clone()),
                 updated_at: now,
+                capabilities: kind.capabilities(),
             },
             api_key,
         })
@@ -1677,19 +1684,28 @@ impl Storage {
         provider: &AsrProvider,
         speaker_count: Option<u32>,
     ) -> Result<u32> {
-        if speaker_count.is_some_and(|count| !(1..=64).contains(&count)) {
-            bail!("说话人数必须在 1 到 64 之间");
-        }
-        if speaker_count.is_some() && provider.kind != AsrProviderKind::FunAsr {
-            bail!("只有 FunASR 转写服务支持指定说话人数");
+        let capabilities = provider.kind.capabilities();
+        if let Some(count) = speaker_count {
+            let (Some(min), Some(max)) = (
+                capabilities.speaker_count_min,
+                capabilities.speaker_count_max,
+            ) else {
+                bail!("当前转写服务不支持指定说话人数");
+            };
+            if !(min..=max).contains(&count) {
+                bail!("当前转写服务的说话人数必须在 {min} 到 {max} 之间");
+            }
         }
         let now = Utc::now().to_rfc3339();
-        let protocol = if provider.kind == AsrProviderKind::FunAsr {
-            TranscriptionProtocol::NotaBatchV1
-        } else {
-            TranscriptionProtocol::LegacyChunks
+        let protocol = match provider.kind {
+            AsrProviderKind::FunAsr => TranscriptionProtocol::NotaBatchV1,
+            AsrProviderKind::OpenAiCompatible => TranscriptionProtocol::LegacyChunks,
+            AsrProviderKind::DashScope => TranscriptionProtocol::DashScopeFileTransV1,
         };
-        let progress_phase = if protocol == TranscriptionProtocol::NotaBatchV1 {
+        let progress_phase = if matches!(
+            protocol,
+            TranscriptionProtocol::NotaBatchV1 | TranscriptionProtocol::DashScopeFileTransV1
+        ) {
             TranscriptionProgressPhase::Uploading
         } else {
             TranscriptionProgressPhase::Preparing
@@ -1712,13 +1728,14 @@ impl Storage {
               completed_chunks, total_chunks, text, segments_json, language,
               error_message, created_at, updated_at, completed_at, protocol,
               remote_job_id, idempotency_key, progress_phase, progress_current,
-              progress_total, progress_unit, speaker_count)
+              progress_total, progress_unit, speaker_count, provider_kind, provider_state_json)
              VALUES(?1, ?2, ?3, ?4, ?5, 'queued', 0, 0, '', '[]', NULL, NULL, ?6, ?6, NULL,
-                    ?7, NULL, ?8, ?9, 0, 0, ?10, ?11)
+                    ?7, NULL, ?8, ?9, 0, 0, ?10, ?11, ?12, '{}')
              ON CONFLICT(recording_id) DO UPDATE SET
                generation = excluded.generation,
                provider_id = excluded.provider_id,
                provider_name = excluded.provider_name,
+               provider_kind = excluded.provider_kind,
                model_id = excluded.model_id,
                status = 'queued',
                completed_chunks = 0,
@@ -1728,6 +1745,7 @@ impl Storage {
                completed_at = NULL,
                protocol = excluded.protocol,
                remote_job_id = NULL,
+               provider_state_json = '{}',
                idempotency_key = excluded.idempotency_key,
                progress_phase = excluded.progress_phase,
                progress_current = 0,
@@ -1744,12 +1762,17 @@ impl Storage {
                 protocol.as_str(),
                 idempotency_key,
                 progress_phase.as_str(),
-                if protocol == TranscriptionProtocol::NotaBatchV1 {
+                if matches!(
+                    protocol,
+                    TranscriptionProtocol::NotaBatchV1
+                        | TranscriptionProtocol::DashScopeFileTransV1
+                ) {
                     TranscriptionProgressUnit::Bytes.as_str()
                 } else {
                     TranscriptionProgressUnit::Chunks.as_str()
                 },
                 speaker_count,
+                provider.kind.as_str(),
             ],
         )?;
         transaction.execute(
@@ -1772,7 +1795,7 @@ impl Storage {
             "UPDATE transcriptions
              SET status = 'queued',
                  progress_phase = CASE
-                   WHEN protocol = 'nota_batch_v1' THEN 'queued'
+                   WHEN protocol IN ('nota_batch_v1', 'dashscope_filetrans_v1') THEN 'queued'
                    ELSE 'preparing'
                  END,
                  error_message = NULL, updated_at = ?2
@@ -1890,6 +1913,11 @@ impl Storage {
                   progress_total = CASE
                     WHEN progress_total > 0 THEN progress_total ELSE 1
                   END,
+                  remote_job_id = CASE
+                    WHEN protocol = 'dashscope_filetrans_v1' THEN NULL
+                    ELSE remote_job_id
+                  END,
+                  provider_state_json = '{}',
                   updated_at = ?6, completed_at = ?6
              WHERE recording_id = ?1 AND generation = ?2",
             params![
@@ -1931,7 +1959,8 @@ impl Storage {
             .query_row(
                 "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
                         error_message, text, protocol, progress_phase,
-                        progress_current, progress_total, progress_unit, speaker_count
+                        progress_current, progress_total, progress_unit, speaker_count,
+                        provider_kind
                  FROM transcriptions WHERE recording_id = ?1",
                 [recording_id],
                 transcription_summary_from_row,
@@ -1973,7 +2002,8 @@ impl Storage {
         self.connection
             .lock()
             .query_row(
-                "SELECT protocol, remote_job_id, idempotency_key, speaker_count
+                "SELECT protocol, remote_job_id, idempotency_key, speaker_count,
+                        provider_kind, provider_state_json
                  FROM transcriptions WHERE recording_id = ?1",
                 [recording_id],
                 |row| {
@@ -1982,6 +2012,8 @@ impl Storage {
                         remote_job_id: row.get(1)?,
                         idempotency_key: row.get(2)?,
                         speaker_count: row.get(3)?,
+                        provider_kind: AsrProviderKind::from_str(&row.get::<_, String>(4)?),
+                        provider_state_json: row.get(5)?,
                     })
                 },
             )
@@ -2002,6 +2034,30 @@ impl Storage {
                 recording_id,
                 generation,
                 remote_job_id,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_transcription_provider_checkpoint(
+        &self,
+        recording_id: &str,
+        generation: u32,
+        remote_job_id: Option<&str>,
+        provider_state_json: &str,
+    ) -> Result<()> {
+        serde_json::from_str::<serde_json::Value>(provider_state_json)
+            .context("Provider checkpoint 不是有效 JSON")?;
+        self.connection.lock().execute(
+            "UPDATE transcriptions
+             SET remote_job_id = ?3, provider_state_json = ?4, updated_at = ?5
+             WHERE recording_id = ?1 AND generation = ?2",
+            params![
+                recording_id,
+                generation,
+                remote_job_id,
+                provider_state_json,
                 Utc::now().to_rfc3339()
             ],
         )?;
@@ -2044,7 +2100,8 @@ impl Storage {
         let mut document = connection
             .query_row(
                 "SELECT status, provider_name, model_id, language, text, segments_json,
-                        completed_chunks, total_chunks, error_message, updated_at
+                        completed_chunks, total_chunks, error_message, updated_at,
+                        provider_kind, protocol
                  FROM transcriptions WHERE recording_id = ?1",
                 [recording_id],
                 |row| {
@@ -2063,6 +2120,13 @@ impl Storage {
                         total_chunks: row.get::<_, i64>(7)?.max(0) as u32,
                         error_message: row.get(8)?,
                         updated_at: row.get(9)?,
+                        provider_kind: AsrProviderKind::from_str(&row.get::<_, String>(10)?),
+                        protocol: TranscriptionProtocol::from_str(&row.get::<_, String>(11)?),
+                        voiceprint_analysis_supported: AsrProviderKind::from_str(
+                            &row.get::<_, String>(10)?,
+                        )
+                        .capabilities()
+                        .voiceprint_analysis,
                     })
                 },
             )
@@ -2437,6 +2501,10 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
             .as_deref()
             .and_then(TranscriptionProgressUnit::from_str);
         let speaker_count = row.get(19)?;
+        let provider_kind = AsrProviderKind::from_str(
+            &row.get::<_, Option<String>>(20)?
+                .unwrap_or_else(|| "open_ai_compatible".into()),
+        );
         Some(TranscriptionSummary {
             status: TranscriptionStatus::from_str(&status),
             completed_chunks,
@@ -2451,6 +2519,8 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
             progress_current,
             progress_total,
             progress_unit,
+            provider_kind,
+            voiceprint_analysis_supported: provider_kind.capabilities().voiceprint_analysis,
         })
     } else {
         None
@@ -2464,12 +2534,12 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
         size_bytes: row.get::<_, i64>(5)?.max(0) as u64,
         recovered: row.get::<_, i32>(6)? != 0,
         origin: RecordingOrigin::from_str(
-            &row.get::<_, Option<String>>(20)?
+            &row.get::<_, Option<String>>(21)?
                 .unwrap_or_else(|| "captured".into()),
         ),
-        source_file_name: row.get(21)?,
-        source_format: row.get(22)?,
-        imported_at: row.get(23)?,
+        source_file_name: row.get(22)?,
+        source_format: row.get(23)?,
+        imported_at: row.get(24)?,
         transcription,
     })
 }
@@ -2519,15 +2589,17 @@ fn decode_embedding(bytes: &[u8], dimension: usize) -> Option<Vec<f32>> {
 }
 
 fn provider_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AsrProvider> {
+    let kind = AsrProviderKind::from_str(&row.get::<_, String>(2)?);
     Ok(AsrProvider {
         id: row.get(0)?,
         name: row.get(1)?,
-        kind: AsrProviderKind::from_str(&row.get::<_, String>(2)?),
+        kind,
         base_url: row.get(3)?,
         model_id: row.get(4)?,
         has_api_key: row.get::<_, i64>(5)? != 0,
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
+        capabilities: kind.capabilities(),
     })
 }
 
@@ -2741,6 +2813,10 @@ fn transcription_summary_from_row(
             .get::<_, Option<String>>(11)?
             .as_deref()
             .and_then(TranscriptionProgressUnit::from_str),
+        provider_kind: AsrProviderKind::from_str(&row.get::<_, String>(13)?),
+        voiceprint_analysis_supported: AsrProviderKind::from_str(&row.get::<_, String>(13)?)
+            .capabilities()
+            .voiceprint_analysis,
     })
 }
 
@@ -2844,7 +2920,15 @@ fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
         ),
         (
             "speaker_count",
-            "ALTER TABLE transcriptions ADD COLUMN speaker_count INTEGER CHECK(speaker_count BETWEEN 1 AND 64)",
+            "ALTER TABLE transcriptions ADD COLUMN speaker_count INTEGER CHECK(speaker_count BETWEEN 1 AND 100)",
+        ),
+        (
+            "provider_kind",
+            "ALTER TABLE transcriptions ADD COLUMN provider_kind TEXT NOT NULL DEFAULT 'open_ai_compatible'",
+        ),
+        (
+            "provider_state_json",
+            "ALTER TABLE transcriptions ADD COLUMN provider_state_json TEXT NOT NULL DEFAULT '{}'",
         ),
     ];
     for (name, sql) in additions {
@@ -2852,6 +2936,77 @@ fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
             connection.execute(sql, [])?;
         }
     }
+    connection.execute(
+        "UPDATE transcriptions
+         SET provider_kind = CASE protocol
+           WHEN 'nota_batch_v1' THEN 'fun_asr'
+           WHEN 'dashscope_filetrans_v1' THEN 'dash_scope'
+           ELSE 'open_ai_compatible'
+         END
+         WHERE provider_kind = '' OR provider_kind = 'open_ai_compatible'",
+        [],
+    )?;
+    Ok(())
+}
+
+fn ensure_transcription_speaker_count_constraint(connection: &Connection) -> Result<()> {
+    let schema = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transcriptions'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .unwrap_or_default();
+    if !schema.contains("BETWEEN 1 AND 64") {
+        return Ok(());
+    }
+    connection.execute_batch(
+        "BEGIN IMMEDIATE;
+         ALTER TABLE transcriptions RENAME TO transcriptions_legacy;
+         CREATE TABLE transcriptions (
+           recording_id TEXT PRIMARY KEY REFERENCES recordings(id) ON DELETE CASCADE,
+           generation INTEGER NOT NULL DEFAULT 1,
+           provider_id TEXT,
+           provider_name TEXT NOT NULL,
+           provider_kind TEXT NOT NULL DEFAULT 'open_ai_compatible',
+           model_id TEXT NOT NULL,
+           speaker_count INTEGER CHECK(speaker_count BETWEEN 1 AND 100),
+           status TEXT NOT NULL,
+           completed_chunks INTEGER NOT NULL DEFAULT 0,
+           total_chunks INTEGER NOT NULL DEFAULT 0,
+           text TEXT NOT NULL DEFAULT '',
+           segments_json TEXT NOT NULL DEFAULT '[]',
+           language TEXT,
+           error_message TEXT,
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           completed_at TEXT,
+           protocol TEXT NOT NULL DEFAULT 'legacy_chunks',
+           remote_job_id TEXT,
+           provider_state_json TEXT NOT NULL DEFAULT '{}',
+           idempotency_key TEXT NOT NULL DEFAULT '',
+           progress_phase TEXT,
+           progress_current INTEGER NOT NULL DEFAULT 0,
+           progress_total INTEGER NOT NULL DEFAULT 0,
+           progress_unit TEXT
+         );
+         INSERT INTO transcriptions (
+           recording_id, generation, provider_id, provider_name, provider_kind, model_id,
+           speaker_count, status, completed_chunks, total_chunks, text, segments_json,
+           language, error_message, created_at, updated_at, completed_at, protocol,
+           remote_job_id, provider_state_json, idempotency_key, progress_phase,
+           progress_current, progress_total, progress_unit
+         )
+         SELECT recording_id, generation, provider_id, provider_name, provider_kind, model_id,
+                speaker_count, status, completed_chunks, total_chunks, text, segments_json,
+                language, error_message, created_at, updated_at, completed_at, protocol,
+                remote_job_id, provider_state_json, idempotency_key, progress_phase,
+                progress_current, progress_total, progress_unit
+         FROM transcriptions_legacy;
+         DROP TABLE transcriptions_legacy;
+         COMMIT;",
+    )?;
     Ok(())
 }
 
@@ -4077,7 +4232,7 @@ mod tests {
         let unsupported = storage
             .begin_transcription(&recording.id, &openai_provider, Some(3))
             .unwrap_err();
-        assert!(format!("{unsupported:#}").contains("只有 FunASR"));
+        assert!(format!("{unsupported:#}").contains("不支持指定说话人数"));
         let generation = storage
             .begin_transcription(&recording.id, &provider, Some(3))
             .unwrap();
@@ -4125,6 +4280,81 @@ mod tests {
         );
         assert_eq!(summary.completed_chunks, 0);
         assert_eq!(summary.total_chunks, 0);
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dashscope_jobs_snapshot_capabilities_and_clear_temporary_state_on_commit() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths.default_recordings.join("dashscope.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        let recording = RecordingItem {
+            id: "dashscope-recording".into(),
+            title: "dashscope".into(),
+            path: recording_path.to_string_lossy().into_owned(),
+            created_at: "2026-08-22T00:00:00Z".into(),
+            duration_ms: 10_000,
+            size_bytes: 5,
+            recovered: false,
+            origin: RecordingOrigin::Captured,
+            source_file_name: None,
+            source_format: None,
+            imported_at: None,
+            transcription: None,
+        };
+        storage.insert_recording(&recording).unwrap();
+        let mut provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Keep))
+            .unwrap();
+        provider.kind = AsrProviderKind::DashScope;
+        provider.capabilities = provider.kind.capabilities();
+        provider.base_url = "https://dashscope.aliyuncs.com/api/v1".into();
+        provider.model_id = "qwen-audio-3.0-asr-flash-filetrans".into();
+
+        assert!(
+            storage
+                .begin_transcription(&recording.id, &provider, Some(1))
+                .is_err()
+        );
+        assert!(
+            storage
+                .begin_transcription(&recording.id, &provider, Some(101))
+                .is_err()
+        );
+        let generation = storage
+            .begin_transcription(&recording.id, &provider, Some(100))
+            .unwrap();
+        storage
+            .set_transcription_provider_checkpoint(
+                &recording.id,
+                generation,
+                Some("task-id"),
+                r#"{"version":1,"stage":"running"}"#,
+            )
+            .unwrap();
+
+        let execution = storage.transcription_execution(&recording.id).unwrap();
+        assert_eq!(
+            execution.protocol,
+            TranscriptionProtocol::DashScopeFileTransV1
+        );
+        assert_eq!(execution.provider_kind, AsrProviderKind::DashScope);
+        assert_eq!(execution.remote_job_id.as_deref(), Some("task-id"));
+        let summary = storage.transcription_summary(&recording.id).unwrap();
+        assert_eq!(summary.provider_kind, AsrProviderKind::DashScope);
+        assert!(!summary.voiceprint_analysis_supported);
+
+        storage
+            .complete_transcription(&recording.id, generation, "完成", &[], Some("zh"))
+            .unwrap();
+        let execution = storage.transcription_execution(&recording.id).unwrap();
+        assert_eq!(execution.remote_job_id, None);
+        assert_eq!(execution.provider_state_json, "{}");
+        let transcript = storage.transcript(&recording.id).unwrap();
+        assert_eq!(transcript.provider_kind, AsrProviderKind::DashScope);
+        assert!(!transcript.voiceprint_analysis_supported);
 
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
@@ -4225,8 +4455,11 @@ mod tests {
         assert!(columns.contains("progress_total"));
         assert!(columns.contains("progress_unit"));
         assert!(columns.contains("speaker_count"));
+        assert!(columns.contains("provider_kind"));
+        assert!(columns.contains("provider_state_json"));
         let summary = storage.transcription_summary("legacy").unwrap();
         assert_eq!(summary.protocol, TranscriptionProtocol::LegacyChunks);
+        assert_eq!(summary.provider_kind, AsrProviderKind::OpenAiCompatible);
         assert_eq!(summary.speaker_count, None);
         assert_eq!(summary.completed_chunks, 1);
         assert_eq!(summary.total_chunks, 2);

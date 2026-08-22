@@ -1,27 +1,36 @@
 # ASR Integration Specification
 
 - Status: Accepted
-- Last updated: 2026-08-04
+- Last updated: 2026-08-22
 - Owners: Nota desktop and Nota ASR Server maintainers
 - Related code: `src-tauri/src/asr.rs`, `src-tauri/src/models.rs`,
   `src-tauri/src/storage.rs`, `src/components/RecordingsWorkspace.tsx`
 - Related tests: Rust `asr::tests`, Rust `storage::tests`,
   `src/components/RecordingsWorkspace.test.tsx`
-- Related decision:
-  [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md)
+- Related decisions:
+  [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
+  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md)
 
 ## Scope
 
-Nota supports two deliberately different transcription protocols.
+Nota supports three deliberately different transcription protocols.
 
 | Provider kind | Protocol | Uploaded audio | Speaker scope |
 |---|---|---|---|
 | `funAsr` | `nota_batch_v1` | Original 48 kHz Ogg Opus, resumable byte upload | Whole final meeting |
 | `openAiCompatible` | `legacy_chunks` | Temporary 16 kHz mono WAV chunks | One provider request per chunk |
+| `dashScope` | `dashscope_filetrans_v1` | Original Ogg through model-bound temporary Alibaba Cloud storage | Whole final meeting |
 
 The provider kind selects the protocol when a new local transcription
 generation begins. Existing records migrated from older Nota versions remain
 `legacy_chunks`.
+
+DashScope protocol details, recovery semantics, capability values, and the
+third-party Provider extension checklist are canonical in
+[`dashscope-asr-provider.md`](dashscope-asr-provider.md). Its first release
+fixes the China endpoint and `qwen-audio-3.0-asr-flash-filetrans`, always
+enables diarization, accepts automatic or `2–100` speaker count, and rejects
+audio longer than two hours before network access.
 
 The durable protocol is model-independent: SenseVoice, Paraformer, and
 Fun-ASR-Nano may be selected by provider model id while retaining the same

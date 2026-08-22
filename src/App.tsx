@@ -684,11 +684,21 @@ export default function App() {
       toggleShortcut: draftSettings.toggleShortcut.trim(),
       stopShortcut: draftSettings.stopShortcut.trim(),
     };
+    const previousProviderId = settings.activeAsrProviderId;
+    const nextProvider = providers.find(
+      (provider) => provider.id === next.activeAsrProviderId,
+    );
     try {
       await api.saveSettings(next);
       setSettings(next);
       setDraftSettings(next);
       showToast("success", "设置已保存");
+      if (nextProvider?.kind === "dashScope" && previousProviderId !== nextProvider.id) {
+        showToast(
+          "info",
+          "已切换到千问云转写：新任务会上传完整录音，支持匿名说话人分离，但不支持 Nota 声纹分析。",
+        );
+      }
     } catch (error) {
       showError(error);
     }
@@ -1233,6 +1243,9 @@ export default function App() {
           activeProviderKind={providers.find(
             (provider) => provider.id === settings.activeAsrProviderId,
           )?.kind ?? null}
+          activeProviderName={providers.find(
+            (provider) => provider.id === settings.activeAsrProviderId,
+          )?.name ?? null}
           hasVoiceprintProvider={providers.some(
             (provider) => provider.id === settings.voiceprintProviderId
               && provider.kind === "funAsr",

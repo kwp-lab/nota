@@ -11,6 +11,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added Alibaba Cloud DashScope whole-meeting transcription with temporary
+  Ogg upload, asynchronous task recovery, anonymous speaker separation,
+  sentence timestamps, and a fixed two-hour safety limit.
+- Added generation-scoped ASR Provider capabilities so historical transcripts
+  retain the correct speaker and voiceprint behavior after the default
+  Provider changes.
+
 - Added a bilingual contribution guide covering privacy-safe fixtures,
   architecture boundaries, focused pull requests, and proportionate checks.
 - Added generated third-party notices, a CycloneDX SBOM, an MPL dependency
@@ -27,6 +34,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   after application audio returns.
 
 ### Changed
+
+- Renamed the recording action to **Manage speakers** and kept manual names
+  and representative playback available when a cloud transcription Provider
+  does not support Nota voiceprint analysis.
 
 - Added an always-reported pull-request gate that runs only the frontend,
   native, and dependency checks affected by changed paths, allowing `main`

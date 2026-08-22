@@ -31,11 +31,13 @@ const completed: RecordingItem = {
     completedChunks: 1,
     totalChunks: 1,
     providerName: "Local FunASR",
+    providerKind: "funAsr",
     modelId: "sensevoice",
     speakerCount: null,
     errorMessage: null,
     hasText: true,
     protocol: "legacy_chunks",
+    voiceprintAnalysisSupported: true,
     progressPhase: null,
     progressCurrent: 1,
     progressTotal: 1,
@@ -61,7 +63,10 @@ const transcript: TranscriptDocument = {
   recordingId: completed.id,
   status: "completed",
   providerName: "Local FunASR",
+  providerKind: "funAsr",
   modelId: "sensevoice",
+  protocol: "nota_batch_v1",
+  voiceprintAnalysisSupported: true,
   language: "zh",
   text: "先确认本周目标。",
   segments: [
@@ -266,7 +271,7 @@ describe("RecordingsWorkspace", () => {
       resolveAnalysis = resolve;
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
 
     expect(screen.getByRole("dialog", { name: "管理说话人" })).toBeInTheDocument();
     expect(screen.getByText(/声纹分析是可选功能/)).toBeInTheDocument();
@@ -288,7 +293,7 @@ describe("RecordingsWorkspace", () => {
       false,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
 
     expect(screen.getByRole("dialog", { name: "管理说话人" })).toBeInTheDocument();
     expect(screen.getByText(/可直接手动设置姓名/)).toBeInTheDocument();
@@ -338,7 +343,7 @@ describe("RecordingsWorkspace", () => {
     actions.onIdentifySpeakers.mockReturnValue(new Promise((resolve) => {
       resolveAnalysis = resolve;
     }));
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     fireEvent.click(screen.getByRole("button", { name: "稍后继续" }));
 
@@ -367,7 +372,7 @@ describe("RecordingsWorkspace", () => {
     );
     actions.onIdentifySpeakers.mockResolvedValue(enrollableSession);
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
     fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
@@ -407,7 +412,7 @@ describe("RecordingsWorkspace", () => {
     );
     actions.onIdentifySpeakers.mockResolvedValue(enrollableSession);
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
     fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
@@ -434,7 +439,7 @@ describe("RecordingsWorkspace", () => {
     actions.onIdentifySpeakers.mockResolvedValue(identificationSession);
     await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
     fireEvent.click(screen.getByRole("button", { name: "纯净试听" }));

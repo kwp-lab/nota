@@ -1,7 +1,7 @@
 # Speaker Identification and Local Voiceprints
 
 - Status: Accepted
-- Last updated: 2026-08-06
+- Last updated: 2026-08-22
 - Owners: Nota maintainers
 
 This specification describes the optional, user-triggered workflow that maps
@@ -81,6 +81,11 @@ flowchart LR
   transcript. It only prevents reusable voiceprint enrollment for that speaker.
 - Meeting-local assignment editing must remain available without an ASR Server.
   It updates names only and must not create or mutate a voiceprint sample.
+- Voiceprint availability is a transcription-generation property. A DashScope
+  generation retains anonymous speaker playback and manual names but never
+  permits CAM++ analysis or enrollment, even after the default transcription
+  Provider changes. Rust rejects a direct or stale-UI attempt with
+  `voiceprint_not_supported_for_transcription_provider` before network access.
 
 ## Continuous Management
 
@@ -96,6 +101,12 @@ from local settings; network connectivity and server capabilities are checked
 only after the explicit analysis click. The manager keeps all manual naming and
 representative-preview controls available when no provider exists or analysis
 fails.
+
+For a generation whose transcription Provider does not support Nota
+voiceprints, the manager instead shows the Provider name and the permanent
+generation-level limitation. It does not offer **Go to voiceprint management**,
+and both analysis and enrollment controls remain unavailable. Manual meeting
+names and representative playback remain fully functional.
 
 Each speaker exposes up to five representative transcript utterances chosen by
 duration and then displayed chronologically. These bounded original-recording

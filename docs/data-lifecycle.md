@@ -1,7 +1,7 @@
 # Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-12
+- Last updated: 2026-08-22
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`, `src-tauri/src/importer.rs`,
@@ -26,6 +26,9 @@
 | Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
+| DashScope temporary Ogg object | Alibaba Cloud model-bound temporary storage | About 48 hours; Nota cannot delete it early |
+| DashScope task result | Alibaba Cloud signed result URL | Provider-controlled, currently about 24 hours; Nota downloads promptly |
+| DashScope checkpoint | Local SQLite `provider_state_json` and `remote_job_id` | Until local transcript commit or a new confirmed generation |
 | LLM provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
 | AI templates, context, document/version ledger, and prompt snapshots | Local SQLite | Until recording or template deletion rules apply |
 | AI request and successful Provider response JSON snapshots | Local SQLite, loaded on demand | Until the owning recording is deleted |
@@ -117,11 +120,12 @@ There is at most one current row per recording. Important fields are:
 |---|---|
 | `generation` | Monotonic local attempt number |
 | `provider_id` | Provider used to resolve current credentials |
-| `provider_name`, `model_id` | Snapshot used for stable display and execution |
-| `speaker_count` | Nullable per-generation FunASR whole-meeting clustering safety target |
+| `provider_name`, `provider_kind`, `model_id` | Snapshot used for stable display, execution, and capabilities |
+| `speaker_count` | Nullable per-generation Provider-specific clustering reference (`1–64` FunASR, `2–100` DashScope) |
 | `status` | Local lifecycle status |
-| `protocol` | `nota_batch_v1` or `legacy_chunks` |
-| `remote_job_id` | Current FunASR server task, if acknowledged |
+| `protocol` | `nota_batch_v1`, `legacy_chunks`, or `dashscope_filetrans_v1` |
+| `remote_job_id` | Current FunASR job id or DashScope `task_id`, if acknowledged |
+| `provider_state_json` | Versioned Provider-private recovery checkpoint; never returned to React |
 | `idempotency_key` | Stable UUID for creation retries within this generation |
 | `progress_phase/current/total/unit` | Provider-independent progress |
 | `completed_chunks/total_chunks` | Legacy chunk compatibility progress |
@@ -164,6 +168,11 @@ work already committed for the current generation.
 
 FunASR server windows must not be copied into this table; they remain private
 server checkpoints until the meeting-wide result is finalized.
+
+DashScope never uses `transcription_chunks`. Its checkpoint stores only stage,
+the temporary `oss://` object and expiry, and submit-attempt time. A successful
+local commit clears both checkpoint and task id. A `submitting` checkpoint
+without task id is deliberately ambiguous and cannot be automatically retried.
 
 ### `audio_import_jobs`
 

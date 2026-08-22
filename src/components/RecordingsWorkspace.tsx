@@ -6,7 +6,6 @@ import {
   Download,
   FileAudio,
   FileUp,
-  Fingerprint,
   FolderOpen,
   LoaderCircle,
   MoreHorizontal,
@@ -17,6 +16,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -39,6 +39,7 @@ import {
   type SpeakerAnalysisStatus,
   type SpeakerManagementSpeaker,
   type SpeakerPreviewRequest,
+  type VoiceprintAvailability,
 } from "./SpeakerIdentificationModal";
 import { TranscriptionOptionsModal } from "./TranscriptionOptionsModal";
 
@@ -52,6 +53,7 @@ interface RecordingsWorkspaceProps {
   audioImport: AudioImportBatchSnapshot | null;
   hasProvider: boolean;
   activeProviderKind: AsrProviderKind | null;
+  activeProviderName?: string | null;
   hasVoiceprintProvider: boolean;
   llmProviders: LlmProvider[];
   activeLlmProviderId: string | null;
@@ -191,14 +193,14 @@ const batchPhaseLabels = {
 } as const;
 
 const transcriptionLabel = (transcription: TranscriptionSummary) =>
-  transcription.protocol === "nota_batch_v1"
+  transcription.protocol !== "legacy_chunks"
   && processingStatuses.includes(transcription.status)
   && transcription.progressPhase
     ? batchPhaseLabels[transcription.progressPhase]
     : statusLabels[transcription.status];
 
 const transcriptionProgress = (transcription: TranscriptionSummary) => {
-  if (transcription.protocol !== "nota_batch_v1") {
+  if (transcription.protocol === "legacy_chunks") {
     return transcription.totalChunks
       ? `已完成 ${transcription.completedChunks} / ${transcription.totalChunks} 个分块`
       : "正在准备 16 kHz 音频分块";
@@ -217,7 +219,7 @@ const transcriptionProgress = (transcription: TranscriptionSummary) => {
 
 const transcriptionProgressSuffix = (transcription: TranscriptionSummary) => {
   if (!processingStatuses.includes(transcription.status)) return "";
-  if (transcription.protocol === "nota_batch_v1") {
+  if (transcription.protocol !== "legacy_chunks") {
     if (transcription.progressTotal <= 0) return "";
     if (transcription.progressUnit === "bytes") {
       return ` ${Math.min(100, Math.round(
@@ -249,6 +251,8 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     recordingId: string;
     recordingTitle: string;
     retranscription: boolean;
+    providerKind: "funAsr" | "dashScope";
+    providerName: string;
   } | null>(null);
   const [detailTab, setDetailTab] = useState<"transcript" | "ai">("transcript");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -496,11 +500,20 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   };
 
   const requestTranscription = (item: RecordingItem, retranscription: boolean) => {
-    if (props.activeProviderKind === "funAsr") {
+    if (props.activeProviderKind === "dashScope" && item.durationMs > 7_200_000) {
+      props.onPlaybackError(
+        "该录音超过 2 小时，无法使用千问云转写；Nota 不会自动切片或关闭说话人分离。",
+      );
+      return;
+    }
+    if (props.activeProviderKind === "funAsr" || props.activeProviderKind === "dashScope") {
       setTranscriptionOptions({
         recordingId: item.id,
         recordingTitle: item.title,
         retranscription,
+        providerKind: props.activeProviderKind,
+        providerName: props.activeProviderName
+          ?? (props.activeProviderKind === "dashScope" ? "千问云服务" : "FunASR"),
       });
       return;
     }
@@ -550,6 +563,23 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   };
 
   const transcription = selected?.transcription;
+  const requiresPaidRetryConfirmation = Boolean(
+    transcription?.errorMessage
+    && (
+      transcription.errorMessage.includes("可能重复计费")
+      || transcription.errorMessage.includes("不会自动重试")
+      || transcription.errorMessage.includes("重新转写可能产生费用")
+    ),
+  );
+  const voiceprintAvailability: VoiceprintAvailability =
+    props.transcript && !props.transcript.voiceprintAnalysisSupported
+      ? {
+          kind: "transcriptionProviderUnsupported",
+          providerName: props.transcript.providerName,
+        }
+      : props.hasVoiceprintProvider
+        ? { kind: "available" }
+        : { kind: "providerNotConfigured" };
   const isProcessing = !!transcription && processingStatuses.includes(transcription.status);
   const importActive = props.audioImport?.status === "running";
   const failedImportItem = props.audioImport?.items.find((item) => item.status === "failed");
@@ -876,7 +906,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   {transcription?.providerName && (
                     <small>
                       {transcription.providerName} · {transcription.modelId}
-                      {transcription.protocol === "nota_batch_v1"
+                      {transcription.protocol !== "legacy_chunks"
                         ? ` · ${transcription.speakerCount === null
                           ? "自动判断人数"
                           : `目标 ${transcription.speakerCount} 人（安全优先）`}`
@@ -888,6 +918,19 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   {isProcessing ? (
                     <button className="button secondary compact" onClick={() => props.onCancelTranscription(selected.id)}>
                       <Square size={13} fill="currentColor" />中断
+                    </button>
+                  ) : transcription && resumableStatuses.includes(transcription.status)
+                    && requiresPaidRetryConfirmation ? (
+                    <button
+                      className="button primary compact"
+                      onClick={() => {
+                        if (!confirm(
+                          "原 DashScope 任务的提交或结果状态无法确认。重新创建任务可能重复计费，仍要继续吗？",
+                        )) return;
+                        requestTranscription(selected, true);
+                      }}
+                    >
+                      <RotateCcw size={15} />重新创建任务
                     </button>
                   ) : transcription && resumableStatuses.includes(transcription.status) ? (
                     <button className="button primary compact" onClick={() => props.onResumeTranscription(selected.id)}>
@@ -902,9 +945,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                         <Download size={15} />导出 TXT
                       </button>
                       <AppTooltip
-                        content={props.hasVoiceprintProvider
-                          ? "管理当前会议说话人并按需分析声纹"
-                          : "可以手动管理姓名；配置 Nota ASR Server 后可分析声纹"}
+                        content={voiceprintAvailability.kind === "transcriptionProviderUnsupported"
+                          ? `管理匿名说话人与姓名；${voiceprintAvailability.providerName}生成的本次转写不支持 Nota 声纹分析`
+                          : voiceprintAvailability.kind === "available"
+                            ? "管理当前会议说话人并按需分析声纹"
+                            : "可以手动管理姓名；配置 Nota ASR Server 后可分析声纹"}
                         wrapDisabled={managementSpeakers.length === 0}
                       >
                         <button
@@ -912,10 +957,8 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                           disabled={managementSpeakers.length === 0}
                           onClick={() => openSpeakerManagement(null)}
                         >
-                          <Fingerprint size={15} />
-                          {Object.keys(props.transcript?.speakerAssignments ?? {}).length > 0
-                            ? "管理说话人"
-                            : "说话人识别"}
+                          <Users size={15} />
+                          管理说话人
                         </button>
                       </AppTooltip>
                       <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
@@ -951,12 +994,12 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <progress
                   max={Math.max(
                     1,
-                    transcription!.protocol === "nota_batch_v1"
+                    transcription!.protocol !== "legacy_chunks"
                       ? transcription!.progressTotal
                       : transcription!.totalChunks,
                   )}
                   value={
-                    transcription!.protocol === "nota_batch_v1"
+                    transcription!.protocol !== "legacy_chunks"
                       ? transcription!.progressCurrent
                       : transcription!.completedChunks
                   }
@@ -1072,7 +1115,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
           participants={props.participants}
           initialSpeaker={identification.initialSpeaker}
           saving={identificationSaving}
-          canAnalyzeVoiceprints={props.hasVoiceprintProvider}
+          voiceprintAvailability={voiceprintAvailability}
           activePreviewId={activeSpeakerPreview?.id ?? null}
           previewPlaying={Boolean(activeSpeakerPreview && playing)}
           onAnalyze={() => void analyzeSpeakers(identification.recordingId)}
@@ -1120,6 +1163,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         <TranscriptionOptionsModal
           recordingTitle={transcriptionOptions.recordingTitle}
           retranscription={transcriptionOptions.retranscription}
+          providerName={transcriptionOptions.providerName}
+          speakerCountMin={transcriptionOptions.providerKind === "dashScope" ? 2 : 1}
+          speakerCountMax={transcriptionOptions.providerKind === "dashScope" ? 100 : 64}
+          cloudUpload={transcriptionOptions.providerKind === "dashScope"}
+          maxDurationMinutes={transcriptionOptions.providerKind === "dashScope" ? 120 : null}
           onCancel={() => setTranscriptionOptions(null)}
           onConfirm={(speakerCount) => {
             const recordingId = transcriptionOptions.recordingId;
