@@ -19,7 +19,7 @@
 
 <p align="center">
   <img alt="平台：Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0B6AA2?style=flat-square&logo=windows11&logoColor=white">
-  <img alt="版本：0.6.0" src="https://img.shields.io/badge/version-0.6.0-56615D?style=flat-square">
+  <img alt="版本：0.7.0" src="https://img.shields.io/badge/version-0.7.0-56615D?style=flat-square">
   <img alt="状态：早期预览" src="https://img.shields.io/badge/status-early%20preview-C18B48?style=flat-square">
   <img alt="隐私：本地优先" src="https://img.shields.io/badge/privacy-local%20first-2F7D71?style=flat-square">
   <img alt="遥测：无" src="https://img.shields.io/badge/telemetry-none-2F7D71?style=flat-square">
