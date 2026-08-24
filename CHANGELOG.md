@@ -7,8 +7,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-08-22
-
 ### Added
 
 - Added Alibaba Cloud DashScope whole-meeting transcription with temporary
@@ -20,6 +18,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added transcription version history. Retranscription now preserves previous
   completed results, and recording details can switch between FunASR,
   DashScope, and other completed generations.
+
+### Changed
+
+- Renamed the recording action to **Manage speakers** and kept manual names
+  and representative playback available when a cloud transcription Provider
+  does not support Nota voiceprint analysis.
+
+## [0.7.0] - 2026-08-22
+
+### Added
 
 - Added a bilingual contribution guide covering privacy-safe fixtures,
   architecture boundaries, focused pull requests, and proportionate checks.
@@ -37,10 +45,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   after application audio returns.
 
 ### Changed
-
-- Renamed the recording action to **Manage speakers** and kept manual names
-  and representative playback available when a cloud transcription Provider
-  does not support Nota voiceprint analysis.
 
 - Added an always-reported pull-request gate that runs only the frontend,
   native, and dependency checks affected by changed paths, allowing `main`
