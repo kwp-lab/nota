@@ -90,9 +90,12 @@ impl VoiceprintManager {
         if transcript.status != crate::models::TranscriptionStatus::Completed {
             bail!("请先完成这场会议的文字转写");
         }
+        if !transcript.voiceprint_analysis_supported {
+            bail!("voiceprint_not_supported_for_transcription_provider");
+        }
         let credentials = self.resolve_provider(provider_id)?;
         let capabilities = fetch_speaker_embedding_capabilities(&credentials)?;
-        let generation = self.storage.transcription_generation(recording_id)?;
+        let generation = transcript.generation;
 
         let max_samples_by_bytes = capabilities.max_bytes.saturating_sub(44) / 2;
         let target_samples = SAMPLE_RATE

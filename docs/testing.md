@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-13
+- Last updated: 2026-08-22
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
@@ -71,6 +71,7 @@ required devices or environment variables in the test name and ignore message.
 | IPC serialization | `src-tauri/src/models.rs` tests |
 | SQLite schema and migrations | `src-tauri/src/storage.rs` tests |
 | ASR parsing, capability checks, request construction, chunk merging | `src-tauri/src/asr.rs` tests |
+| DashScope policy/upload/task validation and result normalization | `src-tauri/src/asr/providers/dashscope.rs` tests plus ignored manual example |
 | Voiceprint candidate planning, clean-range mapping, local matching, and confirmation sessions | `src-tauri/src/voiceprints.rs` tests |
 | AI prompt boundaries, provider response parsing, Markdown metadata, version semantics, and SQLite snapshots | `src-tauri/src/ai.rs` and `src-tauri/src/storage.rs` tests |
 | Ogg encoding, decoding, and recovery | `src-tauri/src/audio/` tests |
@@ -116,6 +117,9 @@ Automated client coverage must include:
 - an old FunASR server producing a visible upgrade warning;
 - authenticated batch request construction with a stable idempotency key;
 - migration of old transcription rows to `legacy_chunks`;
+- migration from one-row-per-recording transcription storage to the composite
+  generation key, preservation of completed results, current-version pointer
+  updates, and completed-version selection;
 - persistence of remote job identity and generic progress;
 - FunASR manual speaker-count defaults, 1/64 boundaries, invalid input,
   cancellation, retranscription, and recovery from the persisted snapshot;
@@ -141,6 +145,16 @@ Automated client coverage must include:
   rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
 - Ogg Opus decode coverage for the legacy path.
+- DashScope fixed endpoint/model, `2–100` count, two-hour preflight, trusted
+  HTTPS host validation, sentence/speaker normalization, generation snapshot,
+  and completed-checkpoint cleanup;
+- DashScope UI fixed fields, no model discovery, temporary-cloud disclosure,
+  automatic-upload wording, and generation-bound voiceprint degradation;
+- recording-detail switching between FunASR and DashScope transcript versions,
+  including generation-specific text, speaker count, manual assignments, and
+  voiceprint availability;
+- no real DashScope request in routine automated tests. Manual acceptance uses
+  ignored `examples/dashscope-filetrans/sample.ogg` and a local `.env` only;
 - selected-application capture failure using a 15-second continuous grace,
   transient-recovery reset, automatic prompt dismissal after successful
   recovery, one alert per uninterrupted failure, session-scoped stale-action

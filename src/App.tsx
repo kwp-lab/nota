@@ -51,6 +51,7 @@ import type {
   RecordingItem,
   RecordingSnapshot,
   TranscriptDocument,
+  TranscriptionVersionSummary,
 } from "./types";
 
 const defaultSnapshot: RecordingSnapshot = {
@@ -137,6 +138,7 @@ export default function App() {
   const [page, setPage] = useState<AppPage>("recorder");
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptDocument | null>(null);
+  const [transcriptionVersions, setTranscriptionVersions] = useState<TranscriptionVersionSummary[]>([]);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [recordingDeleteRequest, setRecordingDeleteRequest] = useState<RecordingDeleteRequest | null>(null);
   const [deleteAiDocuments, setDeleteAiDocuments] = useState(false);
@@ -401,7 +403,13 @@ export default function App() {
             ),
           );
           if (event.recordingId === selectedRecordingIdRef.current && event.summary.status === "completed") {
-            void api.getTranscript(event.recordingId).then(setTranscript).catch(() => undefined);
+            void Promise.all([
+              api.getTranscript(event.recordingId),
+              api.listTranscriptionVersions(event.recordingId),
+            ]).then(([document, versions]) => {
+              setTranscript(document);
+              setTranscriptionVersions(versions);
+            }).catch(() => undefined);
           }
         });
       })
@@ -463,13 +471,22 @@ export default function App() {
     const item = recordings.find((candidate) => candidate.id === selectedRecordingId);
     if (!item?.transcription) {
       setTranscript(null);
+      setTranscriptionVersions([]);
       return;
     }
     setTranscriptLoading(true);
-    void api
-      .getTranscript(item.id)
-      .then(setTranscript)
-      .catch(() => setTranscript(null))
+    void Promise.all([
+      api.getTranscript(item.id),
+      api.listTranscriptionVersions(item.id),
+    ])
+      .then(([document, versions]) => {
+        setTranscript(document);
+        setTranscriptionVersions(versions);
+      })
+      .catch(() => {
+        setTranscript(null);
+        setTranscriptionVersions([]);
+      })
       .finally(() => setTranscriptLoading(false));
   }, [recordings, selectedRecordingId]);
 
@@ -684,11 +701,21 @@ export default function App() {
       toggleShortcut: draftSettings.toggleShortcut.trim(),
       stopShortcut: draftSettings.stopShortcut.trim(),
     };
+    const previousProviderId = settings.activeAsrProviderId;
+    const nextProvider = providers.find(
+      (provider) => provider.id === next.activeAsrProviderId,
+    );
     try {
       await api.saveSettings(next);
       setSettings(next);
       setDraftSettings(next);
       showToast("success", "设置已保存");
+      if (nextProvider?.kind === "dashScope" && previousProviderId !== nextProvider.id) {
+        showToast(
+          "info",
+          "已切换到千问云转写：新任务会上传完整录音，支持匿名说话人分离，但不支持 Nota 声纹分析。",
+        );
+      }
     } catch (error) {
       showError(error);
     }
@@ -1224,6 +1251,7 @@ export default function App() {
           recoverable={recoverable}
           selectedId={selectedRecordingId}
           transcript={transcript}
+          transcriptionVersions={transcriptionVersions}
           transcriptLoading={transcriptLoading}
           recordingActive={isActive(snapshot.state)}
           audioImport={audioImport}
@@ -1233,6 +1261,9 @@ export default function App() {
           activeProviderKind={providers.find(
             (provider) => provider.id === settings.activeAsrProviderId,
           )?.kind ?? null}
+          activeProviderName={providers.find(
+            (provider) => provider.id === settings.activeAsrProviderId,
+          )?.name ?? null}
           hasVoiceprintProvider={providers.some(
             (provider) => provider.id === settings.voiceprintProviderId
               && provider.kind === "funAsr",
@@ -1252,6 +1283,18 @@ export default function App() {
           }
           onResumeTranscription={(id) => void resumeTranscription(id)}
           onCancelTranscription={(id) => void cancelTranscription(id)}
+          onSelectTranscriptionVersion={async (id, generation) => {
+            setTranscriptLoading(true);
+            try {
+              const document = await api.selectTranscriptionVersion(id, generation);
+              setTranscript(document);
+              setTranscriptionVersions(await api.listTranscriptionVersions(id));
+            } catch (error) {
+              showError(error);
+            } finally {
+              setTranscriptLoading(false);
+            }
+          }}
           onCopyTranscript={(id) =>
             void api
               .copyTranscript(id)

@@ -149,7 +149,18 @@ export interface AppSettings {
   activeLlmProviderId: string | null;
 }
 
-export type AsrProviderKind = "funAsr" | "openAiCompatible";
+export type AsrProviderKind = "funAsr" | "openAiCompatible" | "dashScope";
+
+export interface AsrProviderCapabilities {
+  wholeMeeting: boolean;
+  diarization: boolean;
+  speakerCountMin: number | null;
+  speakerCountMax: number | null;
+  voiceprintAnalysis: boolean;
+  modelDiscovery: boolean;
+  cloudUpload: boolean;
+  maxReliableAudioSeconds: number | null;
+}
 
 export interface AsrProvider {
   id: string;
@@ -158,6 +169,7 @@ export interface AsrProvider {
   baseUrl: string;
   modelId: string;
   hasApiKey: boolean;
+  capabilities: AsrProviderCapabilities;
   createdAt: string;
   updatedAt: string;
 }
@@ -253,7 +265,10 @@ export type TranscriptionStatus =
   | "interrupted"
   | "cancelled";
 
-export type TranscriptionProtocol = "legacy_chunks" | "nota_batch_v1";
+export type TranscriptionProtocol =
+  | "legacy_chunks"
+  | "nota_batch_v1"
+  | "dashscope_filetrans_v1";
 
 export type TranscriptionProgressPhase =
   | "preparing"
@@ -270,15 +285,30 @@ export interface TranscriptionSummary {
   completedChunks: number;
   totalChunks: number;
   providerName: string;
+  providerKind: AsrProviderKind;
   modelId: string;
   speakerCount: number | null;
   errorMessage: string | null;
   hasText: boolean;
   protocol: TranscriptionProtocol;
+  voiceprintAnalysisSupported: boolean;
   progressPhase: TranscriptionProgressPhase | null;
   progressCurrent: number;
   progressTotal: number;
   progressUnit: TranscriptionProgressUnit | null;
+}
+
+export interface TranscriptionVersionSummary {
+  generation: number;
+  providerName: string;
+  providerKind: AsrProviderKind;
+  modelId: string;
+  speakerCount: number | null;
+  protocol: TranscriptionProtocol;
+  voiceprintAnalysisSupported: boolean;
+  createdAt: string;
+  completedAt: string;
+  isCurrent: boolean;
 }
 
 export interface TranscriptSegment {
@@ -290,9 +320,14 @@ export interface TranscriptSegment {
 
 export interface TranscriptDocument {
   recordingId: string;
+  generation: number;
   status: TranscriptionStatus;
   providerName: string;
+  providerKind: AsrProviderKind;
   modelId: string;
+  speakerCount: number | null;
+  protocol: TranscriptionProtocol;
+  voiceprintAnalysisSupported: boolean;
   language: string | null;
   text: string;
   segments: TranscriptSegment[];
@@ -302,6 +337,7 @@ export interface TranscriptDocument {
   totalChunks: number;
   errorMessage: string | null;
   updatedAt: string;
+  completedAt: string | null;
 }
 
 export interface RecordingSpeakerAssignment {

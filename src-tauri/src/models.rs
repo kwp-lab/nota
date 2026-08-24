@@ -372,6 +372,7 @@ pub struct LlmConnectionTest {
 pub enum AsrProviderKind {
     FunAsr,
     OpenAiCompatible,
+    DashScope,
 }
 
 impl AsrProviderKind {
@@ -379,15 +380,67 @@ impl AsrProviderKind {
         match self {
             Self::FunAsr => "fun_asr",
             Self::OpenAiCompatible => "open_ai_compatible",
+            Self::DashScope => "dash_scope",
         }
     }
 
     pub fn from_str(value: &str) -> Self {
         match value {
             "fun_asr" => Self::FunAsr,
+            "dash_scope" => Self::DashScope,
             _ => Self::OpenAiCompatible,
         }
     }
+
+    pub fn capabilities(self) -> AsrProviderCapabilities {
+        match self {
+            Self::FunAsr => AsrProviderCapabilities {
+                whole_meeting: true,
+                diarization: true,
+                speaker_count_min: Some(1),
+                speaker_count_max: Some(64),
+                voiceprint_analysis: true,
+                model_discovery: true,
+                cloud_upload: false,
+                max_reliable_audio_seconds: None,
+            },
+            Self::OpenAiCompatible => AsrProviderCapabilities {
+                whole_meeting: false,
+                diarization: false,
+                speaker_count_min: None,
+                speaker_count_max: None,
+                // Preserve the existing optional FunASR voiceprint workflow
+                // when a compatible transcript happens to include speakers.
+                voiceprint_analysis: true,
+                model_discovery: true,
+                cloud_upload: false,
+                max_reliable_audio_seconds: None,
+            },
+            Self::DashScope => AsrProviderCapabilities {
+                whole_meeting: true,
+                diarization: true,
+                speaker_count_min: Some(2),
+                speaker_count_max: Some(100),
+                voiceprint_analysis: false,
+                model_discovery: false,
+                cloud_upload: true,
+                max_reliable_audio_seconds: Some(2 * 60 * 60),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AsrProviderCapabilities {
+    pub whole_meeting: bool,
+    pub diarization: bool,
+    pub speaker_count_min: Option<u32>,
+    pub speaker_count_max: Option<u32>,
+    pub voiceprint_analysis: bool,
+    pub model_discovery: bool,
+    pub cloud_upload: bool,
+    pub max_reliable_audio_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -399,6 +452,7 @@ pub struct AsrProvider {
     pub base_url: String,
     pub model_id: String,
     pub has_api_key: bool,
+    pub capabilities: AsrProviderCapabilities,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -510,6 +564,7 @@ impl TranscriptionStatus {
 pub enum TranscriptionProtocol {
     LegacyChunks,
     NotaBatchV1,
+    DashScopeFileTransV1,
 }
 
 impl TranscriptionProtocol {
@@ -517,12 +572,14 @@ impl TranscriptionProtocol {
         match self {
             Self::LegacyChunks => "legacy_chunks",
             Self::NotaBatchV1 => "nota_batch_v1",
+            Self::DashScopeFileTransV1 => "dashscope_filetrans_v1",
         }
     }
 
     pub fn from_str(value: &str) -> Self {
         match value {
             "nota_batch_v1" => Self::NotaBatchV1,
+            "dashscope_filetrans_v1" => Self::DashScopeFileTransV1,
             _ => Self::LegacyChunks,
         }
     }
@@ -601,15 +658,32 @@ pub struct TranscriptionSummary {
     pub completed_chunks: u32,
     pub total_chunks: u32,
     pub provider_name: String,
+    pub provider_kind: AsrProviderKind,
     pub model_id: String,
     pub speaker_count: Option<u32>,
     pub error_message: Option<String>,
     pub has_text: bool,
     pub protocol: TranscriptionProtocol,
+    pub voiceprint_analysis_supported: bool,
     pub progress_phase: Option<TranscriptionProgressPhase>,
     pub progress_current: u64,
     pub progress_total: u64,
     pub progress_unit: Option<TranscriptionProgressUnit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionVersionSummary {
+    pub generation: u32,
+    pub provider_name: String,
+    pub provider_kind: AsrProviderKind,
+    pub model_id: String,
+    pub speaker_count: Option<u32>,
+    pub protocol: TranscriptionProtocol,
+    pub voiceprint_analysis_supported: bool,
+    pub created_at: String,
+    pub completed_at: String,
+    pub is_current: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -634,18 +708,25 @@ pub struct StoredTranscriptionChunk {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptionExecution {
     pub protocol: TranscriptionProtocol,
+    pub provider_kind: AsrProviderKind,
     pub remote_job_id: Option<String>,
     pub idempotency_key: String,
     pub speaker_count: Option<u32>,
+    pub provider_state_json: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptDocument {
     pub recording_id: String,
+    pub generation: u32,
     pub status: TranscriptionStatus,
     pub provider_name: String,
+    pub provider_kind: AsrProviderKind,
     pub model_id: String,
+    pub speaker_count: Option<u32>,
+    pub protocol: TranscriptionProtocol,
+    pub voiceprint_analysis_supported: bool,
     pub language: Option<String>,
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
@@ -657,6 +738,7 @@ pub struct TranscriptDocument {
     pub total_chunks: u32,
     pub error_message: Option<String>,
     pub updated_at: String,
+    pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

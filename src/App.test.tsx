@@ -226,11 +226,13 @@ vi.mock("./api", () => ({
       completedChunks: 0,
       totalChunks: 0,
       providerName: "FunASR",
+      providerKind: "funAsr" as const,
       modelId: "paraformer",
       speakerCount: null,
       errorMessage: null,
       hasText: false,
       protocol: "nota_batch_v1" as const,
+      voiceprintAnalysisSupported: true,
       progressPhase: "queued" as const,
       progressCurrent: 0,
       progressTotal: 0,
@@ -252,6 +254,22 @@ vi.mock("./api", () => ({
     deleteParticipant: vi.fn(async () => []),
     deleteVoiceprint: vi.fn(async () => []),
     getTranscript: vi.fn(async () => {
+      if (!testState.transcript) throw new Error("没有转写结果");
+      return testState.transcript;
+    }),
+    listTranscriptionVersions: vi.fn(async () => testState.transcript ? [{
+      generation: testState.transcript.generation,
+      providerName: testState.transcript.providerName,
+      providerKind: testState.transcript.providerKind,
+      modelId: testState.transcript.modelId,
+      speakerCount: testState.transcript.speakerCount,
+      protocol: testState.transcript.protocol,
+      voiceprintAnalysisSupported: testState.transcript.voiceprintAnalysisSupported,
+      createdAt: testState.transcript.updatedAt,
+      completedAt: testState.transcript.completedAt ?? testState.transcript.updatedAt,
+      isCurrent: true,
+    }] : []),
+    selectTranscriptionVersion: vi.fn(async () => {
       if (!testState.transcript) throw new Error("没有转写结果");
       return testState.transcript;
     }),
@@ -703,8 +721,10 @@ describe("Nota UI states", () => {
       completedChunks: 1,
       totalChunks: 1,
       providerName: "FunASR",
+      providerKind: "funAsr" as const,
       modelId: "sensevoice",
       speakerCount: null,
+      voiceprintAnalysisSupported: true,
       errorMessage: null,
       hasText: true,
       protocol: "nota_batch_v1" as const,
@@ -731,9 +751,14 @@ describe("Nota UI states", () => {
     ];
     testState.transcript = {
       recordingId: "export-recording",
+      generation: 1,
       status: "completed",
       providerName: "FunASR",
+      providerKind: "funAsr",
       modelId: "sensevoice",
+      speakerCount: null,
+      protocol: "nota_batch_v1",
+      voiceprintAnalysisSupported: true,
       language: "zh",
       text: "大家好。",
       segments: [
@@ -750,6 +775,7 @@ describe("Nota UI states", () => {
       totalChunks: 1,
       errorMessage: null,
       updatedAt: "2026-08-02T01:01:00Z",
+      completedAt: "2026-08-02T01:01:00Z",
     };
     const exportPath = "C:\\Exports\\项目例会.txt";
     dialogMocks.save.mockResolvedValue(exportPath);

@@ -78,6 +78,14 @@ interface Feedback {
 }
 
 const STORED_API_KEY_MASK = "••••••••";
+const DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
+const DASHSCOPE_MODEL = "qwen-audio-3.0-asr-flash-filetrans";
+
+const providerKindLabel = (kind: AsrProviderKind) => {
+  if (kind === "funAsr") return "FunASR";
+  if (kind === "dashScope") return "阿里云千问";
+  return "Compatible";
+};
 
 const emptyProvider = (): ProviderDraft => ({
   id: null,
@@ -98,6 +106,34 @@ const providerDraft = (provider: AsrProvider): ProviderDraft => ({
   modelId: provider.modelId,
   hasApiKey: provider.hasApiKey,
 });
+
+const changeProviderKind = (draft: ProviderDraft, kind: AsrProviderKind): ProviderDraft => {
+  if (kind === "dashScope") {
+    return {
+      ...draft,
+      kind,
+      name: draft.id ? draft.name : "千问云转写",
+      baseUrl: DASHSCOPE_BASE_URL,
+      modelId: DASHSCOPE_MODEL,
+    };
+  }
+  if (kind === "funAsr") {
+    return {
+      ...draft,
+      kind,
+      name: draft.id ? draft.name : "本地 FunASR",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      modelId: "sensevoice",
+    };
+  }
+  return {
+    ...draft,
+    kind,
+    name: draft.id ? draft.name : "兼容转写服务",
+    baseUrl: "http://127.0.0.1:8000/v1",
+    modelId: "whisper-1",
+  };
+};
 
 const apiKeyUpdate = (draft: ProviderDraft) =>
   draft.hasApiKey && draft.apiKey === STORED_API_KEY_MASK
@@ -372,7 +408,7 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
           <Bot size={17} />
           <div>
             <strong>语音转写</strong>
-            <span>兼容 FunASR 和 OpenAI-compatible 语音转写接口</span>
+            <span>支持 Nota ASR Server、OpenAI-compatible 与阿里云千问文件转写</span>
           </div>
           <button type="button" className="text-button" onClick={() => selectProvider(emptyProvider())}>
             <Plus size={14} /> 添加
@@ -400,10 +436,20 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
             ))}
           </select>
         </label>
+        {activeProvider?.kind === "dashScope" && (
+          <p className="upload-disclosure" role="status">
+            <Wifi size={14} />
+            千问云转写会把完整录音上传至阿里云临时存储，约 48 小时后清理；支持匿名说话人分离，但不支持 Nota 声纹分析。
+          </p>
+        )}
         <label className="settings-row">
           <span>
             <strong>录音结束后自动转写</strong>
-            <small>仅在停止并保存后开始；录音进行中不会上传。</small>
+            <small>
+              {activeProvider?.kind === "dashScope"
+                ? "停止并保存后会自动上传完整录音至阿里云；录音进行中不会上传。"
+                : "仅在停止并保存后开始；录音进行中不会上传。"}
+            </small>
           </span>
           <input
             type="checkbox"
@@ -429,7 +475,7 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                   <strong>{provider.name}</strong>
                   <small>{provider.baseUrl} · {provider.modelId}</small>
                 </span>
-                <span>{provider.kind === "funAsr" ? "FunASR" : "Compatible"}</span>
+                <span>{providerKindLabel(provider.kind)}</span>
               </button>
             ))}
           </div>
@@ -465,21 +511,21 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                 <span>服务类型</span>
                 <select
                   value={editing.kind}
-                  onChange={(event) =>
-                    changeConnectionField({
-                      ...editing,
-                      kind: event.target.value as AsrProviderKind,
-                    })
-                  }
+                  onChange={(event) => changeConnectionField(changeProviderKind(
+                    editing,
+                    event.target.value as AsrProviderKind,
+                  ))}
                 >
                   <option value="funAsr">FunASR</option>
                   <option value="openAiCompatible">OpenAI-compatible</option>
+                  <option value="dashScope">阿里云千问（DashScope）</option>
                 </select>
               </label>
               <label className="wide">
                 <span>API Base URL（以 /v1 为根）</span>
                 <input
                   value={editing.baseUrl}
+                  readOnly={editing.kind === "dashScope"}
                   placeholder="http://192.168.1.10:8000/v1"
                   onChange={(event) =>
                     changeConnectionField({ ...editing, baseUrl: event.target.value })
@@ -510,11 +556,12 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                 <span>模型 ID</span>
                 <input
                   value={editing.modelId}
+                  readOnly={editing.kind === "dashScope"}
                   placeholder="例如 sensevoice"
                   onChange={(event) => changeModelId(event.target.value)}
                 />
               </label>
-              <div className="model-fetch-row wide">
+              {editing.kind !== "dashScope" && <div className="model-fetch-row wide">
                 <button
                   type="button"
                   className="button secondary"
@@ -525,8 +572,8 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                   {loadingModels ? "正在获取…" : "获取模型列表"}
                 </button>
                 <span>访问当前服务的 `/models`，不会保存配置或上传录音。</span>
-              </div>
-              {models.length > 0 && (
+              </div>}
+              {editing.kind !== "dashScope" && models.length > 0 && (
                 <label className="wide returned-models">
                   <span>服务返回的模型（{models.length}）</span>
                   <select
@@ -549,6 +596,12 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                   </select>
                 </label>
               )}
+              {editing.kind === "dashScope" && (
+                <p className="upload-disclosure wide">
+                  <AlertTriangle size={14} />
+                  完整 Ogg 录音会上传至阿里云临时存储并约在 48 小时后清理。单次最长 2 小时，始终开启匿名说话人分离；本次转写不支持 Nota 声纹分析。
+                </p>
+              )}
             </div>
 
             <InlineFeedback feedback={modelFeedback} />
@@ -567,7 +620,11 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                 )}
                 {testingConnection ? "测试中…" : "测试连接"}
               </button>
-              <span>检测健康状态和模型接口，不上传录音文件。</span>
+              <span>
+                {editing.kind === "dashScope"
+                  ? "只获取临时上传凭证，不上传音频，也不创建计费任务。"
+                  : "检测健康状态和模型接口，不上传录音文件。"}
+              </span>
             </div>
 
             <InlineFeedback feedback={connectionFeedback} />

@@ -46,6 +46,16 @@ const provider: AsrProvider = {
   baseUrl: "http://192.168.1.20:8000/v1",
   modelId: "sensevoice",
   hasApiKey: true,
+  capabilities: {
+    wholeMeeting: true,
+    diarization: true,
+    speakerCountMin: 1,
+    speakerCountMax: 64,
+    voiceprintAnalysis: true,
+    modelDiscovery: true,
+    cloudUpload: false,
+    maxReliableAudioSeconds: null,
+  },
   createdAt: "2026-07-28T00:00:00Z",
   updatedAt: "2026-07-28T00:00:00Z",
 };
@@ -104,6 +114,35 @@ const openProvider = async () => {
 afterEach(cleanup);
 
 describe("SettingsWorkspace ASR provider feedback", () => {
+  it("uses fixed DashScope fields and explains the cloud boundary", async () => {
+    const actions = renderSettings();
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.change(screen.getByDisplayValue("FunASR"), {
+      target: { value: "dashScope" },
+    });
+
+    expect(screen.getByDisplayValue("千问云转写")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://dashscope.aliyuncs.com/api/v1"))
+      .toHaveAttribute("readonly");
+    expect(screen.getByDisplayValue("qwen-audio-3.0-asr-flash-filetrans"))
+      .toHaveAttribute("readonly");
+    expect(screen.queryByRole("button", { name: "获取模型列表" })).not.toBeInTheDocument();
+    expect(screen.getByText(/约在 48 小时后清理/)).toBeInTheDocument();
+    expect(screen.getByText(/不支持 Nota 声纹分析/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("API Key"), {
+      target: { value: "test-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
+    await waitFor(() => expect(actions.onTestProvider).toHaveBeenCalledWith({
+      id: null,
+      kind: "dashScope",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      modelId: "qwen-audio-3.0-asr-flash-filetrans",
+      apiKey: { kind: "replace", value: "test-key" },
+    }));
+  });
+
   it("tests the current unsaved draft and shows loading then success inline", async () => {
     let resolveProbe: ((result: AsrConnectionTest) => void) | undefined;
     const actions = renderSettings();

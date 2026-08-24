@@ -54,6 +54,38 @@ const session: SpeakerIdentificationSession = {
 };
 
 describe("SpeakerIdentificationModal", () => {
+  it("keeps manual naming but hides voiceprint actions for a DashScope generation", () => {
+    render(
+      <SpeakerIdentificationModal
+        speakers={speakers}
+        session={null}
+        analysisStatus="idle"
+        analysisError={null}
+        participants={participants}
+        initialSpeaker={null}
+        saving={false}
+        voiceprintAvailability={{
+          kind: "transcriptionProviderUnsupported",
+          providerName: "千问云转写",
+        }}
+        activePreviewId={null}
+        previewPlaying={false}
+        onAnalyze={vi.fn()}
+        onConfigureVoiceprints={vi.fn()}
+        onPreview={vi.fn()}
+        onStopPreview={vi.fn()}
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/支持区分匿名说话人，但不支持 Nota 声纹分析/))
+      .toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "speaker_0 真实姓名" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "声纹分析不可用" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "前往声纹管理" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+  });
+
   it("keeps a confirmed assignment ahead of a new voiceprint suggestion", () => {
     const onPreview = vi.fn();
     const onSave = vi.fn();
@@ -66,7 +98,7 @@ describe("SpeakerIdentificationModal", () => {
         participants={participants}
         initialSpeaker={null}
         saving={false}
-        canAnalyzeVoiceprints
+        voiceprintAvailability={{ kind: "available" }}
         activePreviewId={null}
         previewPlaying={false}
         onAnalyze={vi.fn()}
@@ -126,7 +158,7 @@ describe("SpeakerIdentificationModal", () => {
         participants={[]}
         initialSpeaker="speaker_0"
         saving={false}
-        canAnalyzeVoiceprints
+        voiceprintAvailability={{ kind: "available" }}
         activePreviewId={null}
         previewPlaying={false}
         onAnalyze={vi.fn()}
@@ -180,7 +212,7 @@ describe("SpeakerIdentificationModal", () => {
         participants={participants}
         initialSpeaker={null}
         saving={false}
-        canAnalyzeVoiceprints
+        voiceprintAvailability={{ kind: "available" }}
         activePreviewId={null}
         previewPlaying={false}
         onAnalyze={vi.fn()}
@@ -225,7 +257,7 @@ describe("SpeakerIdentificationModal", () => {
       participants,
       initialSpeaker: "speaker_1",
       saving: false,
-      canAnalyzeVoiceprints: true,
+      voiceprintAvailability: { kind: "available" } as const,
       activePreviewId: null,
       previewPlaying: false,
       onAnalyze: vi.fn(),
@@ -276,7 +308,7 @@ describe("SpeakerIdentificationModal", () => {
       participants,
       initialSpeaker: null,
       saving: false,
-      canAnalyzeVoiceprints: true,
+      voiceprintAvailability: { kind: "available" } as const,
       previewPlaying: true,
       onAnalyze: vi.fn(),
       onConfigureVoiceprints: vi.fn(),
@@ -320,7 +352,7 @@ describe("SpeakerIdentificationModal", () => {
         participants={participants}
         initialSpeaker={null}
         saving={false}
-        canAnalyzeVoiceprints={false}
+        voiceprintAvailability={{ kind: "providerNotConfigured" }}
         activePreviewId={null}
         previewPlaying={false}
         onAnalyze={onAnalyze}
@@ -349,7 +381,7 @@ describe("SpeakerIdentificationModal", () => {
         participants={participants}
         initialSpeaker={null}
         saving={false}
-        canAnalyzeVoiceprints
+        voiceprintAvailability={{ kind: "available" }}
         activePreviewId={null}
         previewPlaying={false}
         onAnalyze={vi.fn()}
@@ -384,7 +416,7 @@ describe("SpeakerIdentificationModal", () => {
         participants={participants}
         initialSpeaker={null}
         saving
-        canAnalyzeVoiceprints
+        voiceprintAvailability={{ kind: "available" }}
         activePreviewId={null}
         previewPlaying={false}
         onAnalyze={vi.fn()}

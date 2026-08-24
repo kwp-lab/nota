@@ -1,27 +1,37 @@
 # ASR Integration Specification
 
 - Status: Accepted
-- Last updated: 2026-08-04
+- Last updated: 2026-08-22
 - Owners: Nota desktop and Nota ASR Server maintainers
 - Related code: `src-tauri/src/asr.rs`, `src-tauri/src/models.rs`,
   `src-tauri/src/storage.rs`, `src/components/RecordingsWorkspace.tsx`
 - Related tests: Rust `asr::tests`, Rust `storage::tests`,
   `src/components/RecordingsWorkspace.test.tsx`
-- Related decision:
-  [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md)
+- Related decisions:
+  [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
+  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md),
+  [`0011-versioned-transcription-generations.md`](decisions/0011-versioned-transcription-generations.md)
 
 ## Scope
 
-Nota supports two deliberately different transcription protocols.
+Nota supports three deliberately different transcription protocols.
 
 | Provider kind | Protocol | Uploaded audio | Speaker scope |
 |---|---|---|---|
 | `funAsr` | `nota_batch_v1` | Original 48 kHz Ogg Opus, resumable byte upload | Whole final meeting |
 | `openAiCompatible` | `legacy_chunks` | Temporary 16 kHz mono WAV chunks | One provider request per chunk |
+| `dashScope` | `dashscope_filetrans_v1` | Original Ogg through model-bound temporary Alibaba Cloud storage | Whole final meeting |
 
 The provider kind selects the protocol when a new local transcription
 generation begins. Existing records migrated from older Nota versions remain
 `legacy_chunks`.
+
+DashScope protocol details, recovery semantics, capability values, and the
+third-party Provider extension checklist are canonical in
+[`dashscope-asr-provider.md`](dashscope-asr-provider.md). Its first release
+fixes the China endpoint and `qwen-audio-3.0-asr-flash-filetrans`, always
+enables diarization, accepts automatic or `2–100` speaker count, and rejects
+audio longer than two hours before network access.
 
 The durable protocol is model-independent: SenseVoice, Paraformer, and
 Fun-ASR-Nano may be selected by provider model id while retaining the same
@@ -206,7 +216,18 @@ also applies its configured retention fallback.
 
 Starting a new transcription creates a new local generation and idempotency
 key. Any previous remote job is cleaned up best-effort and must never be reused
-as the new generation.
+as the new generation. The new row does not overwrite or mutate an earlier
+completed transcript. Until the new generation completes, the previously
+selected completed generation remains available for reading, export, speaker
+management, and AI generation. Successful local commit atomically selects the
+new generation as current.
+
+The recording detail lists every completed generation in descending order.
+Selecting one changes the recording's current transcription generation and
+loads that generation's text, segments, Provider snapshot, speaker-count
+snapshot, capabilities, and speaker assignments together. Failed, cancelled,
+and interrupted attempts remain durable for resume and diagnostics but do not
+appear as selectable transcript versions.
 
 ## Server-Owned Speaker Turn Refinement
 

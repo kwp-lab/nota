@@ -7,6 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added Alibaba Cloud DashScope whole-meeting transcription with temporary
+  Ogg upload, asynchronous task recovery, anonymous speaker separation,
+  sentence timestamps, and a fixed two-hour safety limit.
+- Added generation-scoped ASR Provider capabilities so historical transcripts
+  retain the correct speaker and voiceprint behavior after the default
+  Provider changes.
+- Added transcription version history. Retranscription now preserves previous
+  completed results, and recording details can switch between FunASR,
+  DashScope, and other completed generations.
+
+### Changed
+
+- Renamed the recording action to **Manage speakers** and kept manual names
+  and representative playback available when a cloud transcription Provider
+  does not support Nota voiceprint analysis.
+
 ## [0.7.0] - 2026-08-22
 
 ### Added

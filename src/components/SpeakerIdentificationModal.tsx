@@ -33,6 +33,10 @@ export interface SpeakerManagementSpeaker {
 }
 
 export type SpeakerAnalysisStatus = "idle" | "loading" | "ready" | "failed";
+export type VoiceprintAvailability =
+  | { kind: "available" }
+  | { kind: "providerNotConfigured" }
+  | { kind: "transcriptionProviderUnsupported"; providerName: string };
 
 export interface SpeakerPreviewRequest {
   id: string;
@@ -54,7 +58,7 @@ interface SpeakerIdentificationModalProps {
   participants: ParticipantProfile[];
   initialSpeaker: string | null;
   saving: boolean;
-  canAnalyzeVoiceprints: boolean;
+  voiceprintAvailability: VoiceprintAvailability;
   activePreviewId: string | null;
   previewPlaying: boolean;
   onAnalyze: () => void;
@@ -236,6 +240,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
   const candidate = selectedSpeaker ? candidates.get(selectedSpeaker.rawSpeaker) : undefined;
   const isNew = selection?.participantId === "__new__";
   const canSaveVoiceprints = Boolean(props.session && voiceprintAssignments.length > 0);
+  const canAnalyzeVoiceprints = props.voiceprintAvailability.kind === "available";
   const hasSaveableWork = mappingAssignments.length > 0
     || (saveVoiceprints && voiceprintAssignments.length > 0);
 
@@ -300,7 +305,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <span>声纹分析完成，{props.session?.voiceprintCount ?? 0} 位具备可用声纹。</span>
               <button
                 className="button secondary compact speaker-analysis-action"
-                disabled={!props.canAnalyzeVoiceprints}
+                disabled={!canAnalyzeVoiceprints}
                 onClick={props.onAnalyze}
               >
                 <RotateCcw size={13} />重新分析
@@ -312,13 +317,31 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <span>声纹分析失败：{props.analysisError}</span>
               <button
                 className="button secondary speaker-analysis-action"
-                disabled={!props.canAnalyzeVoiceprints}
+                disabled={!canAnalyzeVoiceprints}
                 onClick={props.onAnalyze}
               >
                 <RotateCcw size={13} />重试
               </button>
             </>
-          ) : !props.canAnalyzeVoiceprints ? (
+          ) : props.voiceprintAvailability.kind === "transcriptionProviderUnsupported" ? (
+            <>
+              <Info size={16} />
+              <span>
+                本次转写由{props.voiceprintAvailability.providerName}生成，支持区分匿名说话人，但不支持 Nota 声纹分析。你仍可试听发言并手动设置姓名。
+              </span>
+              <AppTooltip
+                content={`本次转写由${props.voiceprintAvailability.providerName}生成，不支持 Nota 声纹分析`}
+                wrapDisabled
+              >
+                <button
+                  className="button secondary speaker-analysis-action"
+                  disabled
+                >
+                  <Waves size={13} />声纹分析不可用
+                </button>
+              </AppTooltip>
+            </>
+          ) : props.voiceprintAvailability.kind === "providerNotConfigured" ? (
             <>
               <Info size={16} />
               <span>可直接手动设置姓名；如需声纹分析，请先选择声纹提取服务。</span>
@@ -509,11 +532,17 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
 
         <footer>
           <div className="speaker-save-options">
-            <label className={!canSaveVoiceprints ? "disabled" : ""}>
+            <AppTooltip
+              content={props.voiceprintAvailability.kind === "transcriptionProviderUnsupported"
+                ? `本次转写由${props.voiceprintAvailability.providerName}生成，不支持 Nota 声纹分析`
+                : ""}
+              wrapDisabled={props.voiceprintAvailability.kind === "transcriptionProviderUnsupported"}
+            >
+            <label className={!canSaveVoiceprints || !canAnalyzeVoiceprints ? "disabled" : ""}>
               <input
                 type="checkbox"
                 checked={saveVoiceprints}
-                disabled={!canSaveVoiceprints || props.saving}
+                disabled={!canSaveVoiceprints || !canAnalyzeVoiceprints || props.saving}
                 onChange={(event) => setSaveVoiceprints(event.target.checked)}
               />
               <span>
@@ -521,6 +550,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
                 <small>默认关闭；以后需要跨会议识别时再保存。</small>
               </span>
             </label>
+            </AppTooltip>
           </div>
           <div>
             <button className="button secondary" disabled={props.saving} onClick={props.onCancel}>

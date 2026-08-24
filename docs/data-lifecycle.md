@@ -1,7 +1,7 @@
 # Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-12
+- Last updated: 2026-08-22
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`, `src-tauri/src/importer.rs`,
@@ -20,12 +20,15 @@
 | Recovery Ogg | Nota recovery directory | Until recovery, discard, or successful finalization |
 | Settings and recording index | Local SQLite | Application lifetime |
 | ASR provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
-| Local transcript and segments | Local SQLite | Until retranscription or recording deletion |
+| Local transcript generations and segments | Local SQLite | Until recording deletion |
 | Participant names and confirmed meeting assignments | Local SQLite, Rust access only | Until participant, assignment, or recording deletion |
 | CAM++ voiceprint embeddings | Local SQLite BLOB, Rust access only | Until sample or participant deletion |
 | Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
 | Remote FunASR upload and checkpoints | Nota ASR Server data directory | Until client DELETE or server retention expiry |
+| DashScope temporary Ogg object | Alibaba Cloud model-bound temporary storage | About 48 hours; Nota cannot delete it early |
+| DashScope task result | Alibaba Cloud signed result URL | Provider-controlled, currently about 24 hours; Nota downloads promptly |
+| DashScope checkpoint | Local SQLite `provider_state_json` and `remote_job_id` | Until local transcript commit or a new confirmed generation |
 | LLM provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
 | AI templates, context, document/version ledger, and prompt snapshots | Local SQLite | Until recording or template deletion rules apply |
 | AI request and successful Provider response JSON snapshots | Local SQLite, loaded on demand | Until the owning recording is deleted |
@@ -46,7 +49,9 @@ Owns the durable recording identity, title, path, creation time, duration,
 indexed byte size, and recovery marker. `origin` distinguishes `captured` and
 `imported` media. Imported rows also retain the original file name, detected
 format, exact-source SHA-256, and import time. The hash remains Rust/SQLite
-metadata and is not exposed to React.
+metadata and is not exposed to React. `current_transcription_generation`
+points to the completed transcript version selected for display, export,
+speaker management, and new AI document generation.
 
 An imported row points to Nota's normalized Ogg copy, never to the external
 source path. Deleting or recycling an imported recording affects only that
@@ -111,21 +116,24 @@ requires matching Nota YAML document and version identities.
 
 ### `transcriptions`
 
-There is at most one current row per recording. Important fields are:
+Rows use `(recording_id, generation)` as their primary key. A recording may
+therefore retain multiple attempts and completed transcript versions. Important
+fields are:
 
 | Field | Meaning |
 |---|---|
 | `generation` | Monotonic local attempt number |
 | `provider_id` | Provider used to resolve current credentials |
-| `provider_name`, `model_id` | Snapshot used for stable display and execution |
-| `speaker_count` | Nullable per-generation FunASR whole-meeting clustering safety target |
+| `provider_name`, `provider_kind`, `model_id` | Snapshot used for stable display, execution, and capabilities |
+| `speaker_count` | Nullable per-generation Provider-specific clustering reference (`1–64` FunASR, `2–100` DashScope) |
 | `status` | Local lifecycle status |
-| `protocol` | `nota_batch_v1` or `legacy_chunks` |
-| `remote_job_id` | Current FunASR server task, if acknowledged |
+| `protocol` | `nota_batch_v1`, `legacy_chunks`, or `dashscope_filetrans_v1` |
+| `remote_job_id` | Current FunASR job id or DashScope `task_id`, if acknowledged |
+| `provider_state_json` | Versioned Provider-private recovery checkpoint; never returned to React |
 | `idempotency_key` | Stable UUID for creation retries within this generation |
 | `progress_phase/current/total/unit` | Provider-independent progress |
 | `completed_chunks/total_chunks` | Legacy chunk compatibility progress |
-| `text`, `segments_json`, `language` | Current durable result |
+| `text`, `segments_json`, `language` | Durable result for this generation |
 | `error_message` | Bounded user-facing failure detail |
 
 ### `participants`, `voiceprints`, and `recording_speaker_assignments`
@@ -152,9 +160,26 @@ the embedding usable but its preview unavailable.
 
 Beginning a new transcription increments `generation`, snapshots the selected
 provider and optional FunASR speaker count, creates a new idempotency key,
-resets execution progress, and removes legacy chunk checkpoints. Previous transcript text may remain visible while a
-replacement is in progress, but completion atomically replaces the final
-result fields.
+and creates a new row without changing any older row. The previously selected
+completed transcript remains current while replacement work is in progress.
+Completion atomically commits the new result and advances
+`recordings.current_transcription_generation`. Selecting an older completed
+generation moves only that pointer; it never rewrites transcript content or
+Provider metadata. Explicitly starting a replacement retires resumable state
+from the previous unfinished attempt: temporary Provider checkpoint fields and
+legacy chunk checkpoints are cleared after best-effort remote cleanup, while
+the bounded failure row remains as attempt history.
+
+```mermaid
+flowchart LR
+    A["Generation 1<br/>FunASR completed"] --> P["recordings.current_transcription_generation"]
+    B["Generation 2<br/>DashScope running"] --> C{"Local result committed?"}
+    C -->|"no"| P
+    C -->|"yes"| D["Generation 2<br/>DashScope completed"]
+    D --> P
+    U["User selects an older completed version"] --> P
+    P --> R["Read, copy, export, speakers, and AI use one generation"]
+```
 
 ### `transcription_chunks`
 
@@ -164,6 +189,11 @@ work already committed for the current generation.
 
 FunASR server windows must not be copied into this table; they remain private
 server checkpoints until the meeting-wide result is finalized.
+
+DashScope never uses `transcription_chunks`. Its checkpoint stores only stage,
+the temporary `oss://` object and expiry, and submit-attempt time. A successful
+local commit clears both checkpoint and task id. A `submitting` checkpoint
+without task id is deliberately ambiguous and cannot be automatically retried.
 
 ### `audio_import_jobs`
 
@@ -244,8 +274,7 @@ server deletes the only completed result.
 
 ## Migration Rules
 
-Transcription schema migration is additive. Missing transcription execution
-columns are added at database open:
+Missing transcription execution columns are added at database open:
 
 - `protocol`;
 - `remote_job_id`;
@@ -259,6 +288,13 @@ columns are added at database open:
 Existing rows default to `legacy_chunks` so previously completed or resumable
 work preserves its original semantics; their speaker count remains null. A migration must not reinterpret old
 independent chunks as a meeting-wide speaker scope.
+
+The transcription-history migration rebuilds the former
+`recording_id`-primary-key table with `(recording_id, generation)` as the
+composite key, adds `recordings.current_transcription_generation`, and points
+each existing recording at its newest completed generation or, when none is
+complete, its newest attempt. No transcript body is duplicated or sent over
+the network during migration.
 
 Audio-import migration is additive. Existing `recordings` rows receive
 `origin = 'captured'` and nullable source metadata. New databases create the

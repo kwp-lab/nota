@@ -11,6 +11,11 @@ const renderModal = () => {
     <TranscriptionOptionsModal
       recordingTitle="产品周会"
       retranscription={false}
+      providerName="FunASR"
+      speakerCountMin={1}
+      speakerCountMax={64}
+      cloudUpload={false}
+      maxDurationMinutes={null}
       onCancel={onCancel}
       onConfirm={onConfirm}
     />,
@@ -61,5 +66,31 @@ describe("TranscriptionOptionsModal", () => {
 
     expect(screen.getByText(/结果可能更多/)).toBeInTheDocument();
     expect(screen.getByText(/不会为凑人数强行合并/)).toBeInTheDocument();
+  });
+
+  it("uses the DashScope 2–100 range and cloud disclosure", () => {
+    const onConfirm = vi.fn();
+    render(
+      <TranscriptionOptionsModal
+        recordingTitle="客户会议"
+        retranscription={false}
+        providerName="千问云转写"
+        speakerCountMin={2}
+        speakerCountMax={100}
+        cloudUpload
+        maxDurationMinutes={120}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /指定目标人数/ }));
+    const input = screen.getByRole("spinbutton", { name: "说话人数" });
+    fireEvent.change(input, { target: { value: "1" } });
+    expect(screen.getByRole("button", { name: "开始转写" })).toBeDisabled();
+    fireEvent.change(input, { target: { value: "100" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始转写" }));
+    expect(onConfirm).toHaveBeenCalledWith(100);
+    expect(screen.getByText(/上传至千问云转写/)).toBeInTheDocument();
+    expect(screen.getByText(/最长 120 分钟/)).toBeInTheDocument();
   });
 });

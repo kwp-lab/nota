@@ -6,6 +6,7 @@ import type {
   RecordingItem,
   SpeakerIdentificationSession,
   TranscriptDocument,
+  TranscriptionVersionSummary,
 } from "../types";
 import "../styles.css";
 import { RecordingsWorkspace } from "./RecordingsWorkspace";
@@ -31,11 +32,13 @@ const completed: RecordingItem = {
     completedChunks: 1,
     totalChunks: 1,
     providerName: "Local FunASR",
+    providerKind: "funAsr",
     modelId: "sensevoice",
     speakerCount: null,
     errorMessage: null,
     hasText: true,
     protocol: "legacy_chunks",
+    voiceprintAnalysisSupported: true,
     progressPhase: null,
     progressCurrent: 1,
     progressTotal: 1,
@@ -59,9 +62,14 @@ const failed: RecordingItem = {
 
 const transcript: TranscriptDocument = {
   recordingId: completed.id,
+  generation: 1,
   status: "completed",
   providerName: "Local FunASR",
+  providerKind: "funAsr",
   modelId: "sensevoice",
+  speakerCount: null,
+  protocol: "nota_batch_v1",
+  voiceprintAnalysisSupported: true,
   language: "zh",
   text: "先确认本周目标。",
   segments: [
@@ -78,6 +86,7 @@ const transcript: TranscriptDocument = {
   totalChunks: 1,
   errorMessage: null,
   updatedAt: "2026-07-28T04:02:00Z",
+  completedAt: "2026-07-28T04:02:00Z",
 };
 
 const participantProfiles: ParticipantProfile[] = [{
@@ -121,6 +130,18 @@ const renderWorkspace = (
   activeProviderKind: AsrProviderKind | null = "funAsr",
   participants: ParticipantProfile[] = [],
   hasVoiceprintProvider = true,
+  transcriptionVersions: TranscriptionVersionSummary[] = document ? [{
+    generation: document.generation,
+    providerName: document.providerName,
+    providerKind: document.providerKind,
+        modelId: document.modelId,
+        speakerCount: document.speakerCount,
+    protocol: document.protocol,
+    voiceprintAnalysisSupported: document.voiceprintAnalysisSupported,
+    createdAt: document.updatedAt,
+    completedAt: document.completedAt ?? document.updatedAt,
+    isCurrent: true,
+  }] : [],
 ) => {
   const actions = {
     onSelect: vi.fn(),
@@ -133,6 +154,7 @@ const renderWorkspace = (
     onStartTranscription: vi.fn(),
     onResumeTranscription: vi.fn(),
     onCancelTranscription: vi.fn(),
+    onSelectTranscriptionVersion: vi.fn(async () => undefined),
     onCopyTranscript: vi.fn(),
     onExportTranscript: vi.fn(),
     onIdentifySpeakers: vi.fn<() => Promise<SpeakerIdentificationSession>>(),
@@ -154,6 +176,7 @@ const renderWorkspace = (
       recoverable={[]}
       selectedId={selectedId}
       transcript={document}
+      transcriptionVersions={transcriptionVersions}
       transcriptLoading={false}
       recordingActive={false}
       audioImport={null}
@@ -179,6 +202,47 @@ afterEach(() => {
 });
 
 describe("RecordingsWorkspace", () => {
+  it("switches between completed transcription generations", () => {
+    const versions: TranscriptionVersionSummary[] = [{
+      generation: 2,
+      providerName: "千问云转写",
+      providerKind: "dashScope",
+      modelId: "qwen-audio-3.0-asr-flash-filetrans",
+      speakerCount: null,
+      protocol: "dashscope_filetrans_v1",
+      voiceprintAnalysisSupported: false,
+      createdAt: "2026-08-22T02:00:00Z",
+      completedAt: "2026-08-22T02:02:00Z",
+      isCurrent: true,
+    }, {
+      generation: 1,
+      providerName: "Local FunASR",
+      providerKind: "funAsr",
+      modelId: "sensevoice",
+      speakerCount: 3,
+      protocol: "nota_batch_v1",
+      voiceprintAnalysisSupported: true,
+      createdAt: "2026-08-22T01:00:00Z",
+      completedAt: "2026-08-22T01:02:00Z",
+      isCurrent: false,
+    }];
+    const actions = renderWorkspace(
+      undefined,
+      undefined,
+      { ...transcript, generation: 2, providerName: "千问云转写" },
+      "dashScope",
+      [],
+      true,
+      versions,
+    );
+
+    expect(screen.getByRole("combobox", { name: "转写版本" })).toHaveValue("2");
+    fireEvent.change(screen.getByRole("combobox", { name: "转写版本" }), {
+      target: { value: "1" },
+    });
+    expect(actions.onSelectTranscriptionVersion).toHaveBeenCalledWith(completed.id, 1);
+  });
+
   it("filters recordings and exposes transcription states", async () => {
     const actions = renderWorkspace();
     await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
@@ -266,7 +330,7 @@ describe("RecordingsWorkspace", () => {
       resolveAnalysis = resolve;
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
 
     expect(screen.getByRole("dialog", { name: "管理说话人" })).toBeInTheDocument();
     expect(screen.getByText(/声纹分析是可选功能/)).toBeInTheDocument();
@@ -288,7 +352,7 @@ describe("RecordingsWorkspace", () => {
       false,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
 
     expect(screen.getByRole("dialog", { name: "管理说话人" })).toBeInTheDocument();
     expect(screen.getByText(/可直接手动设置姓名/)).toBeInTheDocument();
@@ -338,7 +402,7 @@ describe("RecordingsWorkspace", () => {
     actions.onIdentifySpeakers.mockReturnValue(new Promise((resolve) => {
       resolveAnalysis = resolve;
     }));
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     fireEvent.click(screen.getByRole("button", { name: "稍后继续" }));
 
@@ -367,7 +431,7 @@ describe("RecordingsWorkspace", () => {
     );
     actions.onIdentifySpeakers.mockResolvedValue(enrollableSession);
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
     fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
@@ -407,7 +471,7 @@ describe("RecordingsWorkspace", () => {
     );
     actions.onIdentifySpeakers.mockResolvedValue(enrollableSession);
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
     fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
@@ -434,7 +498,7 @@ describe("RecordingsWorkspace", () => {
     actions.onIdentifySpeakers.mockResolvedValue(identificationSession);
     await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole("button", { name: "说话人识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
     fireEvent.click(screen.getByRole("button", { name: "纯净试听" }));
@@ -500,7 +564,7 @@ describe("RecordingsWorkspace", () => {
         speakerCount: 3,
       },
     };
-    renderWorkspace([specified], specified.id);
+    renderWorkspace([specified], specified.id, { ...transcript, speakerCount: 3 });
     expect(screen.getByText(/目标 3 人（安全优先）/)).toBeInTheDocument();
   });
 

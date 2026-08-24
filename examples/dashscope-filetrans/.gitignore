@@ -1,0 +1,14 @@
+# Local audio inputs and provider outputs may contain private meeting data.
+*.aac
+*.flac
+*.m4a
+*.mp3
+*.ogg
+*.opus
+*.wav
+
+output/
+state.json
+.env
+__pycache__/
+.venv/

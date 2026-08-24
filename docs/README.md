@@ -20,23 +20,26 @@ use this index to find the specification that owns the behavior being changed.
    OpenAI-compatible legacy chunks, state mapping, and recovery rules.
 3. [`audio-import.md`](audio-import.md) — local phone-recording import,
    normalization, task state, duplicate handling, and crash cleanup.
-4. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
+4. [`dashscope-asr-provider.md`](dashscope-asr-provider.md) — direct cloud
+   file transcription, durable task recovery, provider capabilities, and the
+   checklist for adding another third-party ASR provider.
+5. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
    templates, versions, providers, and relinking.
-5. [`design-system.md`](design-system.md) — product visual language, design
+6. [`design-system.md`](design-system.md) — product visual language, design
    tokens, typography, color, spacing, and component styling rules.
-6. [`diagnostic-logging.md`](diagnostic-logging.md) — local event format,
+7. [`diagnostic-logging.md`](diagnostic-logging.md) — local event format,
    privacy boundary, correlation, and rotation.
-7. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
+8. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
    migrations, retention, and deletion ordering.
-8. [`testing.md`](testing.md) — automated checks and hardware acceptance
+9. [`testing.md`](testing.md) — automated checks and hardware acceptance
    scenarios.
-9. [`decisions/README.md`](decisions/README.md) — architectural decision
+10. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-10. [`speaker-identification.md`](speaker-identification.md) — local
+11. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
-11. [`releasing.md`](releasing.md) — version, tag, package, and release process.
-12. [`open-source-compliance.md`](open-source-compliance.md) — dependency
-    license policy, generated notices, SBOM, and source-delivery rules.
+12. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+13. [`open-source-compliance.md`](open-source-compliance.md) — dependency
+   license policy, generated notices, SBOM, and source-delivery rules.
 
 ## Sources of Truth
 

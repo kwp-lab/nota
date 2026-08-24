@@ -6,7 +6,8 @@ use crate::ai::{
 };
 use crate::asr::{
     AsrManager, clean_stale_temporary_chunks, list_models as list_provider_models,
-    normalize_base_url, remove_temporary_chunks, test_connection,
+    normalize_provider_base_url as normalize_asr_provider_base_url, remove_temporary_chunks,
+    test_connection,
 };
 use crate::audio::{
     AudioMixer, AudioPacket, CaptureEvent, CaptureHandle, CaptureSource, OpusOggWriter,
@@ -1848,7 +1849,12 @@ fn save_asr_provider(
         }
         request.name = request.name.trim().to_owned();
         request.model_id = request.model_id.trim().to_owned();
-        request.base_url = normalize_base_url(&request.base_url)?;
+        request.base_url = normalize_asr_provider_base_url(request.kind, &request.base_url)?;
+        if request.kind == AsrProviderKind::DashScope
+            && request.model_id != "qwen-audio-3.0-asr-flash-filetrans"
+        {
+            bail!("DashScope 第一版仅支持 qwen-audio-3.0-asr-flash-filetrans 模型");
+        }
         let provider = state.storage.save_asr_provider(request)?;
         logging::info(
             "settings",
@@ -1902,7 +1908,7 @@ async fn test_asr_provider(
 ) -> std::result::Result<AsrConnectionTest, String> {
     let storage = Arc::clone(&state.storage);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        request.base_url = normalize_base_url(&request.base_url)?;
+        request.base_url = normalize_asr_provider_base_url(request.kind, &request.base_url)?;
         let credentials = storage.asr_probe_credentials(request)?;
         test_connection(&credentials)
     })
@@ -1918,7 +1924,7 @@ async fn list_asr_models(
 ) -> std::result::Result<Vec<AsrModel>, String> {
     let storage = Arc::clone(&state.storage);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        request.base_url = normalize_base_url(&request.base_url)?;
+        request.base_url = normalize_asr_provider_base_url(request.kind, &request.base_url)?;
         let credentials = storage.asr_probe_credentials(request)?;
         list_provider_models(&credentials)
     })
@@ -2270,6 +2276,27 @@ fn get_transcript(
     recording_id: String,
 ) -> std::result::Result<TranscriptDocument, String> {
     command_result(state.storage.transcript(&recording_id))
+}
+
+#[tauri::command]
+fn list_transcription_versions(
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<Vec<TranscriptionVersionSummary>, String> {
+    command_result(state.storage.list_transcription_versions(&recording_id))
+}
+
+#[tauri::command]
+fn select_transcription_version(
+    state: State<AppState>,
+    recording_id: String,
+    generation: u32,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result(
+        state
+            .storage
+            .select_transcription_generation(&recording_id, generation),
+    )
 }
 
 #[tauri::command]
@@ -3016,6 +3043,8 @@ pub fn run_app() {
             cancel_transcription,
             resume_transcription,
             get_transcript,
+            list_transcription_versions,
+            select_transcription_version,
             copy_transcript,
             export_transcript,
             reveal_transcript_export,
@@ -3077,9 +3106,14 @@ mod transcript_export_tests {
     fn transcript(text: &str, segments: Vec<TranscriptSegment>) -> TranscriptDocument {
         TranscriptDocument {
             recording_id: "recording".into(),
+            generation: 1,
             status: TranscriptionStatus::Completed,
             provider_name: "FunASR".into(),
+            provider_kind: AsrProviderKind::FunAsr,
             model_id: "sensevoice".into(),
+            speaker_count: None,
+            protocol: TranscriptionProtocol::NotaBatchV1,
+            voiceprint_analysis_supported: true,
             language: Some("zh".into()),
             text: text.into(),
             segments,
@@ -3089,6 +3123,7 @@ mod transcript_export_tests {
             total_chunks: 1,
             error_message: None,
             updated_at: "2026-08-02T00:00:00Z".into(),
+            completed_at: Some("2026-08-02T00:00:00Z".into()),
         }
     }
 

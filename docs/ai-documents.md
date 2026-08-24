@@ -1,12 +1,13 @@
 # AI Meeting Documents
 
 - Status: Accepted
-- Last updated: 2026-08-09
+- Last updated: 2026-08-22
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/ai.rs`, `src-tauri/src/storage.rs`,
   `src/components/AiDocumentsPanel.tsx`, `src/components/AiSettingsSection.tsx`
 - Related decision:
-  [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md)
+  [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md),
+  [`0011-versioned-transcription-generations.md`](decisions/0011-versioned-transcription-generations.md)
 
 ## Scope
 
@@ -217,6 +218,12 @@ requirement explicitly. Updating a custom template increments its revision.
 Each version snapshots the exact task
 instructions, output requirements, provider name/model, speaker-name mapping,
 transcription generation, and all three context layers used for that run.
+
+When a recording has multiple completed transcription generations, the
+recording-detail version selector determines the current source. Starting an
+AI generation reads that exact transcript and stores its generation number in
+the AI version ledger. Switching the recording to another transcription later
+does not relabel or rewrite an existing AI document version.
 
 Regeneration uses the current template revision. Historical versions retain
 their snapshots so future UI and diagnostics can explain how they were made

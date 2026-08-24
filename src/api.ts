@@ -39,6 +39,7 @@ import type {
   SpeakerIdentificationSession,
   TranscriptionEvent,
   TranscriptionSummary,
+  TranscriptionVersionSummary,
 } from "./types";
 
 export const api = {
@@ -173,6 +174,10 @@ export const api = {
     invoke<TranscriptionSummary>("resume_transcription", { recordingId }),
   getTranscript: (recordingId: string) =>
     invoke<TranscriptDocument>("get_transcript", { recordingId }),
+  listTranscriptionVersions: (recordingId: string) =>
+    invoke<TranscriptionVersionSummary[]>("list_transcription_versions", { recordingId }),
+  selectTranscriptionVersion: (recordingId: string, generation: number) =>
+    invoke<TranscriptDocument>("select_transcription_version", { recordingId, generation }),
   copyTranscript: (recordingId: string) =>
     invoke<void>("copy_transcript", { recordingId }),
   exportTranscript: (recordingId: string, path: string) =>
