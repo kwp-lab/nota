@@ -6,6 +6,7 @@ import type {
   RecordingItem,
   SpeakerIdentificationSession,
   TranscriptDocument,
+  TranscriptionVersionSummary,
 } from "../types";
 import "../styles.css";
 import { RecordingsWorkspace } from "./RecordingsWorkspace";
@@ -61,10 +62,12 @@ const failed: RecordingItem = {
 
 const transcript: TranscriptDocument = {
   recordingId: completed.id,
+  generation: 1,
   status: "completed",
   providerName: "Local FunASR",
   providerKind: "funAsr",
   modelId: "sensevoice",
+  speakerCount: null,
   protocol: "nota_batch_v1",
   voiceprintAnalysisSupported: true,
   language: "zh",
@@ -83,6 +86,7 @@ const transcript: TranscriptDocument = {
   totalChunks: 1,
   errorMessage: null,
   updatedAt: "2026-07-28T04:02:00Z",
+  completedAt: "2026-07-28T04:02:00Z",
 };
 
 const participantProfiles: ParticipantProfile[] = [{
@@ -126,6 +130,18 @@ const renderWorkspace = (
   activeProviderKind: AsrProviderKind | null = "funAsr",
   participants: ParticipantProfile[] = [],
   hasVoiceprintProvider = true,
+  transcriptionVersions: TranscriptionVersionSummary[] = document ? [{
+    generation: document.generation,
+    providerName: document.providerName,
+    providerKind: document.providerKind,
+        modelId: document.modelId,
+        speakerCount: document.speakerCount,
+    protocol: document.protocol,
+    voiceprintAnalysisSupported: document.voiceprintAnalysisSupported,
+    createdAt: document.updatedAt,
+    completedAt: document.completedAt ?? document.updatedAt,
+    isCurrent: true,
+  }] : [],
 ) => {
   const actions = {
     onSelect: vi.fn(),
@@ -138,6 +154,7 @@ const renderWorkspace = (
     onStartTranscription: vi.fn(),
     onResumeTranscription: vi.fn(),
     onCancelTranscription: vi.fn(),
+    onSelectTranscriptionVersion: vi.fn(async () => undefined),
     onCopyTranscript: vi.fn(),
     onExportTranscript: vi.fn(),
     onIdentifySpeakers: vi.fn<() => Promise<SpeakerIdentificationSession>>(),
@@ -159,6 +176,7 @@ const renderWorkspace = (
       recoverable={[]}
       selectedId={selectedId}
       transcript={document}
+      transcriptionVersions={transcriptionVersions}
       transcriptLoading={false}
       recordingActive={false}
       audioImport={null}
@@ -184,6 +202,47 @@ afterEach(() => {
 });
 
 describe("RecordingsWorkspace", () => {
+  it("switches between completed transcription generations", () => {
+    const versions: TranscriptionVersionSummary[] = [{
+      generation: 2,
+      providerName: "千问云转写",
+      providerKind: "dashScope",
+      modelId: "qwen-audio-3.0-asr-flash-filetrans",
+      speakerCount: null,
+      protocol: "dashscope_filetrans_v1",
+      voiceprintAnalysisSupported: false,
+      createdAt: "2026-08-22T02:00:00Z",
+      completedAt: "2026-08-22T02:02:00Z",
+      isCurrent: true,
+    }, {
+      generation: 1,
+      providerName: "Local FunASR",
+      providerKind: "funAsr",
+      modelId: "sensevoice",
+      speakerCount: 3,
+      protocol: "nota_batch_v1",
+      voiceprintAnalysisSupported: true,
+      createdAt: "2026-08-22T01:00:00Z",
+      completedAt: "2026-08-22T01:02:00Z",
+      isCurrent: false,
+    }];
+    const actions = renderWorkspace(
+      undefined,
+      undefined,
+      { ...transcript, generation: 2, providerName: "千问云转写" },
+      "dashScope",
+      [],
+      true,
+      versions,
+    );
+
+    expect(screen.getByRole("combobox", { name: "转写版本" })).toHaveValue("2");
+    fireEvent.change(screen.getByRole("combobox", { name: "转写版本" }), {
+      target: { value: "1" },
+    });
+    expect(actions.onSelectTranscriptionVersion).toHaveBeenCalledWith(completed.id, 1);
+  });
+
   it("filters recordings and exposes transcription states", async () => {
     const actions = renderWorkspace();
     await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
@@ -505,7 +564,7 @@ describe("RecordingsWorkspace", () => {
         speakerCount: 3,
       },
     };
-    renderWorkspace([specified], specified.id);
+    renderWorkspace([specified], specified.id, { ...transcript, speakerCount: 3 });
     expect(screen.getByText(/目标 3 人（安全优先）/)).toBeInTheDocument();
   });
 

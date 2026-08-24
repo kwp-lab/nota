@@ -298,6 +298,19 @@ export interface TranscriptionSummary {
   progressUnit: TranscriptionProgressUnit | null;
 }
 
+export interface TranscriptionVersionSummary {
+  generation: number;
+  providerName: string;
+  providerKind: AsrProviderKind;
+  modelId: string;
+  speakerCount: number | null;
+  protocol: TranscriptionProtocol;
+  voiceprintAnalysisSupported: boolean;
+  createdAt: string;
+  completedAt: string;
+  isCurrent: boolean;
+}
+
 export interface TranscriptSegment {
   startMs: number;
   endMs: number;
@@ -307,10 +320,12 @@ export interface TranscriptSegment {
 
 export interface TranscriptDocument {
   recordingId: string;
+  generation: number;
   status: TranscriptionStatus;
   providerName: string;
   providerKind: AsrProviderKind;
   modelId: string;
+  speakerCount: number | null;
   protocol: TranscriptionProtocol;
   voiceprintAnalysisSupported: boolean;
   language: string | null;
@@ -322,6 +337,7 @@ export interface TranscriptDocument {
   totalChunks: number;
   errorMessage: string | null;
   updatedAt: string;
+  completedAt: string | null;
 }
 
 export interface RecordingSpeakerAssignment {

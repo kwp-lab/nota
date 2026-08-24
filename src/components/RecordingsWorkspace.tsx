@@ -31,6 +31,7 @@ import type {
   TranscriptDocument,
   TranscriptionStatus,
   TranscriptionSummary,
+  TranscriptionVersionSummary,
 } from "../types";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import { AppTooltip } from "./AppTooltip";
@@ -48,6 +49,7 @@ interface RecordingsWorkspaceProps {
   recoverable: RecordingItem[];
   selectedId: string | null;
   transcript: TranscriptDocument | null;
+  transcriptionVersions: TranscriptionVersionSummary[];
   transcriptLoading: boolean;
   recordingActive: boolean;
   audioImport: AudioImportBatchSnapshot | null;
@@ -68,6 +70,7 @@ interface RecordingsWorkspaceProps {
   onStartTranscription: (id: string, speakerCount: number | null) => void;
   onResumeTranscription: (id: string) => void;
   onCancelTranscription: (id: string) => void;
+  onSelectTranscriptionVersion: (id: string, generation: number) => Promise<void>;
   onCopyTranscript: (id: string) => void;
   onExportTranscript: (id: string, title: string) => void;
   onIdentifySpeakers: (id: string) => Promise<SpeakerIdentificationSession>;
@@ -149,6 +152,13 @@ const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+const formatVersionDate = (value: string) => new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+}).format(new Date(value));
 
 const audioImportStatusLabel = (status: AudioImportBatchSnapshot["items"][number]["status"]) => {
   switch (status) {
@@ -903,18 +913,38 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       {transcriptionLabel(transcription)}
                     </span>
                   )}
-                  {transcription?.providerName && (
+                  {props.transcript?.providerName && (
                     <small>
-                      {transcription.providerName} · {transcription.modelId}
-                      {transcription.protocol !== "legacy_chunks"
-                        ? ` · ${transcription.speakerCount === null
+                      {props.transcript.providerName} · {props.transcript.modelId}
+                      {props.transcript.protocol !== "legacy_chunks"
+                        ? ` · ${props.transcript.speakerCount === null
                           ? "自动判断人数"
-                          : `目标 ${transcription.speakerCount} 人（安全优先）`}`
+                          : `目标 ${props.transcript.speakerCount} 人（安全优先）`}`
                         : ""}
                     </small>
                   )}
                 </div>
                 <div className="transcript-actions">
+                  {props.transcript && props.transcriptionVersions.length > 1 && (
+                    <label className="transcription-version-select">
+                      <span>转写版本</span>
+                      <select
+                        aria-label="转写版本"
+                        disabled={props.transcriptLoading}
+                        value={props.transcript.generation}
+                        onChange={(event) => void props.onSelectTranscriptionVersion(
+                          selected.id,
+                          Number(event.target.value),
+                        )}
+                      >
+                        {props.transcriptionVersions.map((version) => (
+                          <option key={version.generation} value={version.generation}>
+                            {`第 ${version.generation} 次 · ${version.providerName} · ${formatVersionDate(version.completedAt)}`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   {isProcessing ? (
                     <button className="button secondary compact" onClick={() => props.onCancelTranscription(selected.id)}>
                       <Square size={13} fill="currentColor" />中断

@@ -192,7 +192,8 @@ impl AsrManager {
                 ],
             );
             self.enqueue(app, recording_id, generation)?;
-            self.storage.transcription_summary(recording_id)
+            self.storage
+                .transcription_summary_for_generation(recording_id, generation)
         })();
         if result.is_err() {
             self.cancellations.lock().remove(recording_id);
@@ -213,7 +214,8 @@ impl AsrManager {
                 ],
             );
             self.enqueue(app, recording_id, generation)?;
-            self.storage.transcription_summary(recording_id)
+            self.storage
+                .transcription_summary_for_generation(recording_id, generation)
         })();
         if result.is_err() {
             self.cancellations.lock().remove(recording_id);
@@ -251,7 +253,7 @@ impl AsrManager {
             .context("该录音当前没有可取消的转写任务")?;
         cancellation.requested.store(true, Ordering::Release);
         cancellation.remote_requested.store(true, Ordering::Release);
-        let generation = self.current_generation(recording_id)?;
+        let generation = self.storage.latest_transcription_generation(recording_id)?;
         logging::info(
             "asr",
             "cancel_requested",
@@ -261,7 +263,7 @@ impl AsrManager {
             ],
         );
         if let Ok(Some((credentials, remote_job_id))) =
-            remote_batch_target(&self.storage, recording_id)
+            remote_batch_target(&self.storage, recording_id, generation)
         {
             let cancel_recording_id = recording_id.to_owned();
             if let Err(error) = std::thread::Builder::new()
@@ -290,7 +292,9 @@ impl AsrManager {
                 );
             }
         }
-        let execution = self.storage.transcription_execution(recording_id)?;
+        let execution = self
+            .storage
+            .transcription_execution_for_generation(recording_id, generation)?;
         let dashscope_cloud_task = execution.protocol
             == TranscriptionProtocol::DashScopeFileTransV1
             && execution.remote_job_id.is_some();
@@ -308,7 +312,9 @@ impl AsrManager {
                 "用户已中断转写；可以稍后继续"
             },
         )?;
-        let summary = self.storage.transcription_summary(recording_id)?;
+        let summary = self
+            .storage
+            .transcription_summary_for_generation(recording_id, generation)?;
         logging::info(
             "asr",
             "cancelled",
@@ -334,10 +340,6 @@ impl AsrManager {
             cancellation.requested.store(true, Ordering::Release);
         }
         self.storage.interrupt_running_transcriptions()
-    }
-
-    fn current_generation(&self, recording_id: &str) -> Result<u32> {
-        self.storage.transcription_generation(recording_id)
     }
 }
 
@@ -400,7 +402,9 @@ fn worker_loop(
                     ],
                 );
             }
-            if let Ok(summary) = storage.transcription_summary(&job.recording_id) {
+            if let Ok(summary) =
+                storage.transcription_summary_for_generation(&job.recording_id, job.generation)
+            {
                 emit_status(&job.app, &job.recording_id, summary);
             }
             logging::error(
@@ -458,12 +462,13 @@ fn process_job(
     ensure_not_cancelled(&cancellation.requested)?;
 
     let recording = storage.find_recording(&job.recording_id)?;
-    let (provider_id, provider_name, model_id) =
-        storage.transcription_provider_snapshot(&job.recording_id)?;
+    let (provider_id, provider_name, model_id) = storage
+        .transcription_provider_snapshot_for_generation(&job.recording_id, job.generation)?;
     let mut credentials = storage.find_asr_provider(&provider_id)?;
     credentials.provider.name = provider_name;
     credentials.provider.model_id = model_id;
-    let execution = storage.transcription_execution(&job.recording_id)?;
+    let execution =
+        storage.transcription_execution_for_generation(&job.recording_id, job.generation)?;
     logging::info(
         "asr",
         "protocol_selected",
@@ -517,7 +522,7 @@ fn process_job(
         completed_count as u64,
         declared_total_chunks as u64,
     );
-    emit_current_status(&job.app, storage, &job.recording_id);
+    emit_current_status(&job.app, storage, &job.recording_id, job.generation);
 
     let temp_directory = storage.paths().recovery.join("TranscriptionTemp");
     std::fs::create_dir_all(&temp_directory)?;
@@ -576,7 +581,7 @@ fn process_job(
                 current_total as u64,
             );
         }
-        emit_current_status(&job.app, storage, &job.recording_id);
+        emit_current_status(&job.app, storage, &job.recording_id, job.generation);
 
         if !completed.contains(&chunk_index) {
             let wav_path = temp_directory.join(format!(
@@ -613,7 +618,7 @@ fn process_job(
             }
             upload_result?;
             completed_count = completed_count.saturating_add(1);
-            emit_current_status(&job.app, storage, &job.recording_id);
+            emit_current_status(&job.app, storage, &job.recording_id, job.generation);
         }
 
         overlap = if samples.len() > OVERLAP_SAMPLES && !is_last {
@@ -658,7 +663,7 @@ fn process_job(
         &segments,
         language.as_deref(),
     )?;
-    emit_current_status(&job.app, storage, &job.recording_id);
+    emit_current_status(&job.app, storage, &job.recording_id, job.generation);
     Ok(())
 }
 
@@ -754,7 +759,8 @@ fn process_batch_job(
         bail!("录音时长超过 ASR Server 允许的上限");
     }
     let chunk_bytes = capabilities.upload_chunk_bytes.clamp(1, 16 * 1024 * 1024) as usize;
-    let execution = storage.transcription_execution(&job.recording_id)?;
+    let execution =
+        storage.transcription_execution_for_generation(&job.recording_id, job.generation)?;
     let had_remote_job = execution.remote_job_id.is_some();
     ensure_batch_not_cancelled(
         cancellation,
@@ -868,7 +874,7 @@ fn process_batch_job(
                     1,
                     TranscriptionProgressUnit::Steps,
                 )?;
-                emit_current_status(&job.app, storage, &job.recording_id);
+                emit_current_status(&job.app, storage, &job.recording_id, job.generation);
                 let transcript = fetch_batch_result(credentials, &remote.id)?;
                 storage.complete_transcription(
                     &job.recording_id,
@@ -877,7 +883,7 @@ fn process_batch_job(
                     &transcript.segments,
                     transcript.language.as_deref(),
                 )?;
-                emit_current_status(&job.app, storage, &job.recording_id);
+                emit_current_status(&job.app, storage, &job.recording_id, job.generation);
                 match delete_batch_job(credentials, &remote.id) {
                     Ok(()) => {
                         storage.set_remote_transcription_job(
@@ -940,7 +946,8 @@ fn process_dashscope_job(
         );
     }
 
-    let execution = storage.transcription_execution(&job.recording_id)?;
+    let execution =
+        storage.transcription_execution_for_generation(&job.recording_id, job.generation)?;
     let mut checkpoint = dashscope::Checkpoint::from_json(&execution.provider_state_json)?;
     if execution.remote_job_id.is_none() && checkpoint.stage == dashscope::Stage::Submitting {
         bail!(
@@ -964,7 +971,7 @@ fn process_dashscope_job(
                 actual_size,
                 TranscriptionProgressUnit::Bytes,
             )?;
-            emit_current_status(&job.app, storage, &job.recording_id);
+            emit_current_status(&job.app, storage, &job.recording_id, job.generation);
             ensure_not_cancelled(&cancellation.requested)?;
 
             let progress_storage = Arc::clone(storage);
@@ -993,7 +1000,12 @@ fn process_dashscope_job(
                     actual_size,
                     TranscriptionProgressUnit::Bytes,
                 );
-                emit_current_status(&progress_app, &progress_storage, &progress_recording_id);
+                emit_current_status(
+                    &progress_app,
+                    &progress_storage,
+                    &progress_recording_id,
+                    generation,
+                );
             });
             let uploaded = dashscope::DashScopeAdapter::upload_audio(
                 credentials,
@@ -1024,7 +1036,7 @@ fn process_dashscope_job(
             3,
             TranscriptionProgressUnit::Steps,
         )?;
-        emit_current_status(&job.app, storage, &job.recording_id);
+        emit_current_status(&job.app, storage, &job.recording_id, job.generation);
         let submitted_id = dashscope::DashScopeAdapter::submit_task(
             credentials,
             oss_url,
@@ -1105,7 +1117,7 @@ fn process_dashscope_job(
                     3,
                     TranscriptionProgressUnit::Steps,
                 )?;
-                emit_current_status(&job.app, storage, &job.recording_id);
+                emit_current_status(&job.app, storage, &job.recording_id, job.generation);
                 let result_url = remote.result_url.context(
                     "DashScope 任务结果已过期或缺少下载地址，无法恢复；重新转写可能产生费用",
                 )?;
@@ -1119,7 +1131,7 @@ fn process_dashscope_job(
                     &transcript.segments,
                     transcript.language.as_deref(),
                 )?;
-                emit_current_status(&job.app, storage, &job.recording_id);
+                emit_current_status(&job.app, storage, &job.recording_id, job.generation);
                 return Ok(());
             }
             dashscope::TaskState::Failed => {
@@ -1148,7 +1160,7 @@ fn process_dashscope_job(
                 )
             }
         }
-        emit_current_status(&job.app, storage, &job.recording_id);
+        emit_current_status(&job.app, storage, &job.recording_id, job.generation);
         wait_for_dashscope_poll(cancellation)?;
     }
 }
@@ -1703,7 +1715,7 @@ fn persist_batch_status(
         remote.progress_total,
         unit,
     )?;
-    emit_current_status(&job.app, storage, &job.recording_id);
+    emit_current_status(&job.app, storage, &job.recording_id, job.generation);
     Ok(())
 }
 
@@ -1746,21 +1758,27 @@ fn batch_job_url(credentials: &AsrProviderCredentials, remote_job_id: &str) -> R
 fn remote_batch_target(
     storage: &Storage,
     recording_id: &str,
+    generation: u32,
 ) -> Result<Option<(AsrProviderCredentials, String)>> {
-    let execution = storage.transcription_execution(recording_id)?;
+    let execution = storage.transcription_execution_for_generation(recording_id, generation)?;
     if execution.protocol != TranscriptionProtocol::NotaBatchV1 {
         return Ok(None);
     }
     let Some(remote_job_id) = execution.remote_job_id else {
         return Ok(None);
     };
-    let (provider_id, _, _) = storage.transcription_provider_snapshot(recording_id)?;
+    let (provider_id, _, _) =
+        storage.transcription_provider_snapshot_for_generation(recording_id, generation)?;
     let credentials = storage.find_asr_provider(&provider_id)?;
     Ok(Some((credentials, remote_job_id)))
 }
 
 fn cleanup_previous_batch_job_if_present(storage: &Storage, recording_id: &str) -> Result<()> {
-    let execution = match storage.transcription_execution(recording_id) {
+    let generation = match storage.latest_transcription_generation(recording_id) {
+        Ok(generation) => generation,
+        Err(_) => return Ok(()),
+    };
+    let execution = match storage.transcription_execution_for_generation(recording_id, generation) {
         Ok(execution) => execution,
         Err(_) => return Ok(()),
     };
@@ -1770,7 +1788,8 @@ fn cleanup_previous_batch_job_if_present(storage: &Storage, recording_id: &str) 
     let Some(remote_job_id) = execution.remote_job_id else {
         return Ok(());
     };
-    let (provider_id, _, _) = storage.transcription_provider_snapshot(recording_id)?;
+    let (provider_id, _, _) =
+        storage.transcription_provider_snapshot_for_generation(recording_id, generation)?;
     let credentials = storage.find_asr_provider(&provider_id)?;
     let _ = cancel_batch_job(&credentials, &remote_job_id);
     delete_batch_job(&credentials, &remote_job_id)
@@ -2198,8 +2217,8 @@ fn log_asr_phase(job: &TranscriptionJob, phase: &'static str, current: u64, tota
     );
 }
 
-fn emit_current_status(app: &AppHandle, storage: &Storage, recording_id: &str) {
-    if let Ok(summary) = storage.transcription_summary(recording_id) {
+fn emit_current_status(app: &AppHandle, storage: &Storage, recording_id: &str, generation: u32) {
+    if let Ok(summary) = storage.transcription_summary_for_generation(recording_id, generation) {
         emit_status(app, recording_id, summary);
     }
 }

@@ -90,6 +90,9 @@ flowchart LR
 - Cloud Provider capabilities and voiceprint support are snapshotted per
   transcription generation; changing the default Provider cannot rewrite
   historical feature availability.
+- Completed transcription generations are append-only until recording
+  deletion. One recording-level pointer selects which generation supplies
+  display, copy, export, speaker management, and new AI documents.
 - API keys, authorization headers, audio, and transcript content must not enter
   technical logs.
 - Rust and TypeScript IPC models must change together.

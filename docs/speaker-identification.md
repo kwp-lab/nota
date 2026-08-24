@@ -75,6 +75,9 @@ flowchart LR
   either state.
 - Saved assignments are scoped by recording and transcription generation.
   Retranscription must not silently reuse assignments from an older generation.
+- Switching the completed transcript version loads that generation's speaker
+  assignments and Provider capabilities together. An in-progress voiceprint
+  session becomes stale if the current generation changes before save.
 - The resolved display label is `participant name ?? raw speaker label`.
   Detail views, copy, and TXT export must use the same resolver.
 - Failure to find a clean sample must not modify or fail the completed

@@ -671,6 +671,21 @@ pub struct TranscriptionSummary {
     pub progress_unit: Option<TranscriptionProgressUnit>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionVersionSummary {
+    pub generation: u32,
+    pub provider_name: String,
+    pub provider_kind: AsrProviderKind,
+    pub model_id: String,
+    pub speaker_count: Option<u32>,
+    pub protocol: TranscriptionProtocol,
+    pub voiceprint_analysis_supported: bool,
+    pub created_at: String,
+    pub completed_at: String,
+    pub is_current: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
@@ -704,10 +719,12 @@ pub struct TranscriptionExecution {
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptDocument {
     pub recording_id: String,
+    pub generation: u32,
     pub status: TranscriptionStatus,
     pub provider_name: String,
     pub provider_kind: AsrProviderKind,
     pub model_id: String,
+    pub speaker_count: Option<u32>,
     pub protocol: TranscriptionProtocol,
     pub voiceprint_analysis_supported: bool,
     pub language: Option<String>,
@@ -721,6 +738,7 @@ pub struct TranscriptDocument {
     pub total_chunks: u32,
     pub error_message: Option<String>,
     pub updated_at: String,
+    pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -7,7 +7,7 @@ use crate::models::{
     SaveAsrProviderRequest, SaveLlmProviderRequest, SpeakerIdentificationAssignment,
     StoredTranscriptionChunk, TranscriptDocument, TranscriptSegment, TranscriptionExecution,
     TranscriptionProgressPhase, TranscriptionProgressUnit, TranscriptionProtocol,
-    TranscriptionStatus, TranscriptionSummary, VoiceprintSample,
+    TranscriptionStatus, TranscriptionSummary, TranscriptionVersionSummary, VoiceprintSample,
 };
 use crate::paths::AppPaths;
 use anyhow::{Context, Result, bail};
@@ -274,7 +274,8 @@ impl Storage {
               source_file_name TEXT,
               source_format TEXT,
               source_sha256 TEXT,
-              imported_at TEXT
+              imported_at TEXT,
+              current_transcription_generation INTEGER
             );
             CREATE TABLE IF NOT EXISTS events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -295,7 +296,7 @@ impl Storage {
               updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS transcriptions (
-              recording_id TEXT PRIMARY KEY REFERENCES recordings(id) ON DELETE CASCADE,
+              recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
               generation INTEGER NOT NULL DEFAULT 1,
               provider_id TEXT,
               provider_name TEXT NOT NULL,
@@ -319,7 +320,8 @@ impl Storage {
               progress_phase TEXT,
               progress_current INTEGER NOT NULL DEFAULT 0,
               progress_total INTEGER NOT NULL DEFAULT 0,
-              progress_unit TEXT
+              progress_unit TEXT,
+              PRIMARY KEY(recording_id, generation)
             );
             CREATE TABLE IF NOT EXISTS transcription_chunks (
               recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
@@ -453,6 +455,7 @@ impl Storage {
         seed_ai_templates(&connection)?;
         ensure_transcription_job_columns(&connection)?;
         ensure_transcription_speaker_count_constraint(&connection)?;
+        ensure_transcription_history_schema(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -770,6 +773,10 @@ impl Storage {
                      r.source_format, r.imported_at
              FROM recordings r
              LEFT JOIN transcriptions t ON t.recording_id = r.id
+               AND t.generation = (
+                 SELECT MAX(latest.generation) FROM transcriptions latest
+                 WHERE latest.recording_id = r.id
+               )
              ORDER BY r.created_at DESC",
         )?;
         let rows = statement.query_map([], recording_from_row)?;
@@ -791,6 +798,10 @@ impl Storage {
                          r.source_format, r.imported_at
                  FROM recordings r
                  LEFT JOIN transcriptions t ON t.recording_id = r.id
+                   AND t.generation = (
+                     SELECT MAX(latest.generation) FROM transcriptions latest
+                     WHERE latest.recording_id = r.id
+                   )
                  WHERE r.id = ?1",
                 [id],
                 recording_from_row,
@@ -1713,15 +1724,33 @@ impl Storage {
         let idempotency_key = uuid::Uuid::new_v4().to_string();
         let mut connection = self.connection.lock();
         let transaction = connection.transaction()?;
-        let current_generation = transaction
+        let active_generation = transaction
             .query_row(
-                "SELECT generation FROM transcriptions WHERE recording_id = ?1",
+                "SELECT generation FROM transcriptions
+                 WHERE recording_id = ?1
+                   AND status IN ('queued', 'preparing', 'transcribing')
+                 ORDER BY generation DESC LIMIT 1",
                 [recording_id],
                 |row| row.get::<_, i64>(0),
             )
-            .optional()?
+            .optional()?;
+        if active_generation.is_some() {
+            bail!("该录音已有转写任务正在排队或处理");
+        }
+        let latest_generation = transaction
+            .query_row(
+                "SELECT MAX(generation) FROM transcriptions WHERE recording_id = ?1",
+                [recording_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )?
             .unwrap_or(0);
-        let generation = current_generation.saturating_add(1).max(1);
+        let generation = latest_generation.saturating_add(1).max(1);
+        transaction.execute(
+            "UPDATE transcriptions
+             SET remote_job_id = NULL, provider_state_json = '{}'
+             WHERE recording_id = ?1 AND status != 'completed'",
+            [recording_id],
+        )?;
         transaction.execute(
             "INSERT INTO transcriptions
              (recording_id, generation, provider_id, provider_name, model_id, status,
@@ -1730,28 +1759,7 @@ impl Storage {
               remote_job_id, idempotency_key, progress_phase, progress_current,
               progress_total, progress_unit, speaker_count, provider_kind, provider_state_json)
              VALUES(?1, ?2, ?3, ?4, ?5, 'queued', 0, 0, '', '[]', NULL, NULL, ?6, ?6, NULL,
-                    ?7, NULL, ?8, ?9, 0, 0, ?10, ?11, ?12, '{}')
-             ON CONFLICT(recording_id) DO UPDATE SET
-               generation = excluded.generation,
-               provider_id = excluded.provider_id,
-               provider_name = excluded.provider_name,
-               provider_kind = excluded.provider_kind,
-               model_id = excluded.model_id,
-               status = 'queued',
-               completed_chunks = 0,
-               total_chunks = 0,
-               error_message = NULL,
-               updated_at = excluded.updated_at,
-               completed_at = NULL,
-               protocol = excluded.protocol,
-               remote_job_id = NULL,
-               provider_state_json = '{}',
-               idempotency_key = excluded.idempotency_key,
-               progress_phase = excluded.progress_phase,
-               progress_current = 0,
-               progress_total = 0,
-               progress_unit = excluded.progress_unit,
-               speaker_count = excluded.speaker_count",
+                    ?7, NULL, ?8, ?9, 0, 0, ?10, ?11, ?12, '{}')",
             params![
                 recording_id,
                 generation,
@@ -1787,7 +1795,11 @@ impl Storage {
         let connection = self.connection.lock();
         let generation = connection.query_row(
             "SELECT generation FROM transcriptions
-             WHERE recording_id = ?1 AND status IN ('failed', 'interrupted', 'cancelled')",
+             WHERE recording_id = ?1 AND status IN ('failed', 'interrupted', 'cancelled')
+               AND generation = (
+                 SELECT MAX(latest.generation) FROM transcriptions latest
+                 WHERE latest.recording_id = ?1
+               )",
             [recording_id],
             |row| row.get::<_, i64>(0),
         )?;
@@ -1799,8 +1811,8 @@ impl Storage {
                    ELSE 'preparing'
                  END,
                  error_message = NULL, updated_at = ?2
-             WHERE recording_id = ?1",
-            params![recording_id, Utc::now().to_rfc3339()],
+             WHERE recording_id = ?1 AND generation = ?3",
+            params![recording_id, Utc::now().to_rfc3339(), generation],
         )?;
         Ok(generation.max(1).min(u32::MAX as i64) as u32)
     }
@@ -1902,7 +1914,9 @@ impl Storage {
         language: Option<&str>,
     ) -> Result<()> {
         let now = Utc::now().to_rfc3339();
-        self.connection.lock().execute(
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        let changed = transaction.execute(
             "UPDATE transcriptions
              SET status = 'completed', text = ?3, segments_json = ?4, language = ?5,
                   completed_chunks = total_chunks, error_message = NULL,
@@ -1929,6 +1943,14 @@ impl Storage {
                 now
             ],
         )?;
+        if changed == 0 {
+            bail!("转写 generation 已不存在");
+        }
+        transaction.execute(
+            "UPDATE recordings SET current_transcription_generation = ?2 WHERE id = ?1",
+            params![recording_id, generation],
+        )?;
+        transaction.commit()?;
         Ok(())
     }
 
@@ -1953,6 +1975,7 @@ impl Storage {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn transcription_summary(&self, recording_id: &str) -> Result<TranscriptionSummary> {
         self.connection
             .lock()
@@ -1961,32 +1984,65 @@ impl Storage {
                         error_message, text, protocol, progress_phase,
                         progress_current, progress_total, progress_unit, speaker_count,
                         provider_kind
-                 FROM transcriptions WHERE recording_id = ?1",
+                 FROM transcriptions WHERE recording_id = ?1
+                 ORDER BY generation DESC LIMIT 1",
                 [recording_id],
                 transcription_summary_from_row,
             )
             .context("该录音还没有转写任务")
     }
 
+    pub fn transcription_summary_for_generation(
+        &self,
+        recording_id: &str,
+        generation: u32,
+    ) -> Result<TranscriptionSummary> {
+        self.connection
+            .lock()
+            .query_row(
+                "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
+                        error_message, text, protocol, progress_phase,
+                        progress_current, progress_total, progress_unit, speaker_count,
+                        provider_kind
+                 FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
+                params![recording_id, generation],
+                transcription_summary_from_row,
+            )
+            .context("该转写 generation 已不存在")
+    }
+
     pub fn transcription_generation(&self, recording_id: &str) -> Result<u32> {
         let generation = self.connection.lock().query_row(
-            "SELECT generation FROM transcriptions WHERE recording_id = ?1",
+            "SELECT COALESCE(
+               (SELECT current_transcription_generation FROM recordings WHERE id = ?1),
+               (SELECT MAX(generation) FROM transcriptions WHERE recording_id = ?1)
+             )",
             [recording_id],
             |row| row.get::<_, i64>(0),
         )?;
         Ok(generation.max(1).min(u32::MAX as i64) as u32)
     }
 
-    pub fn transcription_provider_snapshot(
+    pub fn latest_transcription_generation(&self, recording_id: &str) -> Result<u32> {
+        let generation = self.connection.lock().query_row(
+            "SELECT MAX(generation) FROM transcriptions WHERE recording_id = ?1",
+            [recording_id],
+            |row| row.get::<_, i64>(0),
+        )?;
+        Ok(generation.max(1).min(u32::MAX as i64) as u32)
+    }
+
+    pub fn transcription_provider_snapshot_for_generation(
         &self,
         recording_id: &str,
+        generation: u32,
     ) -> Result<(String, String, String)> {
         self.connection
             .lock()
             .query_row(
                 "SELECT provider_id, provider_name, model_id
-                 FROM transcriptions WHERE recording_id = ?1",
-                [recording_id],
+                 FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
+                params![recording_id, generation],
                 |row| {
                     let provider_id = row
                         .get::<_, Option<String>>(0)?
@@ -1998,14 +2054,24 @@ impl Storage {
             .context("转写任务关联的服务配置已不存在")
     }
 
+    #[cfg(test)]
     pub fn transcription_execution(&self, recording_id: &str) -> Result<TranscriptionExecution> {
+        let generation = self.latest_transcription_generation(recording_id)?;
+        self.transcription_execution_for_generation(recording_id, generation)
+    }
+
+    pub fn transcription_execution_for_generation(
+        &self,
+        recording_id: &str,
+        generation: u32,
+    ) -> Result<TranscriptionExecution> {
         self.connection
             .lock()
             .query_row(
                 "SELECT protocol, remote_job_id, idempotency_key, speaker_count,
                         provider_kind, provider_state_json
-                 FROM transcriptions WHERE recording_id = ?1",
-                [recording_id],
+                 FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
+                params![recording_id, generation],
                 |row| {
                     Ok(TranscriptionExecution {
                         protocol: TranscriptionProtocol::from_str(&row.get::<_, String>(0)?),
@@ -2095,22 +2161,93 @@ impl Storage {
         Ok(())
     }
 
+    pub fn list_transcription_versions(
+        &self,
+        recording_id: &str,
+    ) -> Result<Vec<TranscriptionVersionSummary>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT t.generation, t.provider_name, t.provider_kind, t.model_id,
+                    t.speaker_count, t.protocol, t.created_at,
+                    COALESCE(t.completed_at, t.updated_at),
+                    t.generation = r.current_transcription_generation
+             FROM transcriptions t
+             JOIN recordings r ON r.id = t.recording_id
+             WHERE t.recording_id = ?1 AND t.status = 'completed'
+             ORDER BY t.generation DESC",
+        )?;
+        let rows = statement.query_map([recording_id], |row| {
+            let provider_kind = AsrProviderKind::from_str(&row.get::<_, String>(2)?);
+            Ok(TranscriptionVersionSummary {
+                generation: row.get::<_, i64>(0)?.max(1).min(u32::MAX as i64) as u32,
+                provider_name: row.get(1)?,
+                provider_kind,
+                model_id: row.get(3)?,
+                speaker_count: row.get(4)?,
+                protocol: TranscriptionProtocol::from_str(&row.get::<_, String>(5)?),
+                voiceprint_analysis_supported: provider_kind.capabilities().voiceprint_analysis,
+                created_at: row.get(6)?,
+                completed_at: row.get(7)?,
+                is_current: row.get::<_, i64>(8)? != 0,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("无法读取转写版本历史")
+    }
+
+    pub fn select_transcription_generation(
+        &self,
+        recording_id: &str,
+        generation: u32,
+    ) -> Result<TranscriptDocument> {
+        let connection = self.connection.lock();
+        let status = connection
+            .query_row(
+                "SELECT status FROM transcriptions
+                 WHERE recording_id = ?1 AND generation = ?2",
+                params![recording_id, generation],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .context("找不到该转写版本")?;
+        if TranscriptionStatus::from_str(&status) != TranscriptionStatus::Completed {
+            bail!("只有已完成的转写版本可以设为当前版本");
+        }
+        connection.execute(
+            "UPDATE recordings SET current_transcription_generation = ?2 WHERE id = ?1",
+            params![recording_id, generation],
+        )?;
+        drop(connection);
+        self.transcript_for_generation(recording_id, generation)
+    }
+
     pub fn transcript(&self, recording_id: &str) -> Result<TranscriptDocument> {
+        let generation = self.transcription_generation(recording_id)?;
+        self.transcript_for_generation(recording_id, generation)
+    }
+
+    pub fn transcript_for_generation(
+        &self,
+        recording_id: &str,
+        generation: u32,
+    ) -> Result<TranscriptDocument> {
         let connection = self.connection.lock();
         let mut document = connection
             .query_row(
                 "SELECT status, provider_name, model_id, language, text, segments_json,
                         completed_chunks, total_chunks, error_message, updated_at,
-                        provider_kind, protocol
-                 FROM transcriptions WHERE recording_id = ?1",
-                [recording_id],
+                        provider_kind, protocol, completed_at, speaker_count
+                 FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
+                params![recording_id, generation],
                 |row| {
                     let segments_json: String = row.get(5)?;
                     Ok(TranscriptDocument {
                         recording_id: recording_id.to_owned(),
+                        generation,
                         status: TranscriptionStatus::from_str(&row.get::<_, String>(0)?),
                         provider_name: row.get(1)?,
                         model_id: row.get(2)?,
+                        speaker_count: row.get(13)?,
                         language: row.get(3)?,
                         text: row.get(4)?,
                         segments: serde_json::from_str(&segments_json).unwrap_or_default(),
@@ -2120,6 +2257,7 @@ impl Storage {
                         total_chunks: row.get::<_, i64>(7)?.max(0) as u32,
                         error_message: row.get(8)?,
                         updated_at: row.get(9)?,
+                        completed_at: row.get(12)?,
                         provider_kind: AsrProviderKind::from_str(&row.get::<_, String>(10)?),
                         protocol: TranscriptionProtocol::from_str(&row.get::<_, String>(11)?),
                         voiceprint_analysis_supported: AsrProviderKind::from_str(
@@ -2137,10 +2275,10 @@ impl Storage {
              JOIN participants p ON p.id = a.participant_id
              JOIN transcriptions t
                ON t.recording_id = a.recording_id AND t.generation = a.generation
-             WHERE a.recording_id = ?1
+             WHERE a.recording_id = ?1 AND a.generation = ?2
              ORDER BY a.raw_speaker",
         )?;
-        let rows = statement.query_map([recording_id], |row| {
+        let rows = statement.query_map(params![recording_id, generation], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 RecordingSpeakerAssignment {
@@ -2294,8 +2432,11 @@ impl Storage {
         let transaction = connection.transaction()?;
         let (generation, status, segments_json) = transaction
             .query_row(
-                "SELECT generation, status, segments_json
-                 FROM transcriptions WHERE recording_id = ?1",
+                "SELECT t.generation, t.status, t.segments_json
+                 FROM transcriptions t
+                 JOIN recordings r ON r.id = t.recording_id
+                 WHERE t.recording_id = ?1
+                   AND t.generation = r.current_transcription_generation",
                 [recording_id],
                 |row| {
                     Ok((
@@ -2848,6 +2989,10 @@ fn ensure_recording_import_columns(connection: &Connection) -> Result<()> {
             "imported_at",
             "ALTER TABLE recordings ADD COLUMN imported_at TEXT",
         ),
+        (
+            "current_transcription_generation",
+            "ALTER TABLE recordings ADD COLUMN current_transcription_generation INTEGER",
+        ),
     ];
     for (name, sql) in additions {
         if !columns.contains(name) {
@@ -3006,6 +3151,85 @@ fn ensure_transcription_speaker_count_constraint(connection: &Connection) -> Res
          FROM transcriptions_legacy;
          DROP TABLE transcriptions_legacy;
          COMMIT;",
+    )?;
+    Ok(())
+}
+
+fn ensure_transcription_history_schema(connection: &Connection) -> Result<()> {
+    let primary_key = {
+        let mut statement = connection.prepare("PRAGMA table_info(transcriptions)")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(1)?, row.get::<_, i64>(5)?))
+        })?;
+        rows.filter_map(std::result::Result::ok)
+            .filter(|(_, position)| *position > 0)
+            .collect::<Vec<_>>()
+    };
+    let has_composite_key =
+        primary_key == vec![("recording_id".to_owned(), 1), ("generation".to_owned(), 2)];
+    if !has_composite_key {
+        connection.execute_batch(
+            "BEGIN IMMEDIATE;
+             ALTER TABLE transcriptions RENAME TO transcriptions_current;
+             CREATE TABLE transcriptions (
+               recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+               generation INTEGER NOT NULL DEFAULT 1,
+               provider_id TEXT,
+               provider_name TEXT NOT NULL,
+               provider_kind TEXT NOT NULL DEFAULT 'open_ai_compatible',
+               model_id TEXT NOT NULL,
+               speaker_count INTEGER CHECK(speaker_count BETWEEN 1 AND 100),
+               status TEXT NOT NULL,
+               completed_chunks INTEGER NOT NULL DEFAULT 0,
+               total_chunks INTEGER NOT NULL DEFAULT 0,
+               text TEXT NOT NULL DEFAULT '',
+               segments_json TEXT NOT NULL DEFAULT '[]',
+               language TEXT,
+               error_message TEXT,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL,
+               completed_at TEXT,
+               protocol TEXT NOT NULL DEFAULT 'legacy_chunks',
+               remote_job_id TEXT,
+               provider_state_json TEXT NOT NULL DEFAULT '{}',
+               idempotency_key TEXT NOT NULL DEFAULT '',
+               progress_phase TEXT,
+               progress_current INTEGER NOT NULL DEFAULT 0,
+               progress_total INTEGER NOT NULL DEFAULT 0,
+               progress_unit TEXT,
+               PRIMARY KEY(recording_id, generation)
+             );
+             INSERT INTO transcriptions (
+               recording_id, generation, provider_id, provider_name, provider_kind, model_id,
+               speaker_count, status, completed_chunks, total_chunks, text, segments_json,
+               language, error_message, created_at, updated_at, completed_at, protocol,
+               remote_job_id, provider_state_json, idempotency_key, progress_phase,
+               progress_current, progress_total, progress_unit
+             )
+             SELECT recording_id, generation, provider_id, provider_name, provider_kind, model_id,
+                    speaker_count, status, completed_chunks, total_chunks, text, segments_json,
+                    language, error_message, created_at, updated_at, completed_at, protocol,
+                    remote_job_id, provider_state_json, idempotency_key, progress_phase,
+                    progress_current, progress_total, progress_unit
+             FROM transcriptions_current;
+             DROP TABLE transcriptions_current;
+             COMMIT;",
+        )?;
+    }
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS transcriptions_recording_generation_desc
+           ON transcriptions(recording_id, generation DESC);
+         CREATE UNIQUE INDEX IF NOT EXISTS transcriptions_one_active_per_recording
+           ON transcriptions(recording_id)
+           WHERE status IN ('queued', 'preparing', 'transcribing');
+         UPDATE recordings
+         SET current_transcription_generation = COALESCE(
+           (SELECT MAX(t.generation) FROM transcriptions t
+            WHERE t.recording_id = recordings.id AND t.status = 'completed'),
+           (SELECT MAX(t.generation) FROM transcriptions t
+            WHERE t.recording_id = recordings.id)
+         )
+         WHERE current_transcription_generation IS NULL;",
     )?;
     Ok(())
 }
@@ -4361,6 +4585,83 @@ mod tests {
     }
 
     #[test]
+    fn completed_transcription_generations_are_preserved_and_selectable() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths.default_recordings.join("versions.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        let recording = RecordingItem {
+            id: "versioned-recording".into(),
+            title: "versions".into(),
+            path: recording_path.to_string_lossy().into_owned(),
+            created_at: "2026-08-22T00:00:00Z".into(),
+            duration_ms: 10_000,
+            size_bytes: 5,
+            recovered: false,
+            origin: RecordingOrigin::Captured,
+            source_file_name: None,
+            source_format: None,
+            imported_at: None,
+            transcription: None,
+        };
+        storage.insert_recording(&recording).unwrap();
+        let funasr = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Keep))
+            .unwrap();
+        let first = storage
+            .begin_transcription(&recording.id, &funasr, Some(2))
+            .unwrap();
+        storage
+            .complete_transcription(&recording.id, first, "FunASR 结果", &[], Some("zh"))
+            .unwrap();
+
+        let mut dashscope = funasr.clone();
+        dashscope.id = "dashscope".into();
+        dashscope.name = "千问云转写".into();
+        dashscope.kind = AsrProviderKind::DashScope;
+        dashscope.model_id = "qwen-audio-3.0-asr-flash-filetrans".into();
+        dashscope.capabilities = dashscope.kind.capabilities();
+        let second = storage
+            .begin_transcription(&recording.id, &dashscope, None)
+            .unwrap();
+        assert_eq!(
+            storage.transcription_generation(&recording.id).unwrap(),
+            first
+        );
+        assert_eq!(
+            storage.transcript(&recording.id).unwrap().text,
+            "FunASR 结果"
+        );
+        storage
+            .complete_transcription(&recording.id, second, "千问结果", &[], Some("zh"))
+            .unwrap();
+
+        let versions = storage.list_transcription_versions(&recording.id).unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].generation, second);
+        assert!(versions[0].is_current);
+        assert_eq!(versions[1].generation, first);
+        assert!(!versions[1].is_current);
+        assert_eq!(storage.transcript(&recording.id).unwrap().text, "千问结果");
+
+        let selected = storage
+            .select_transcription_generation(&recording.id, first)
+            .unwrap();
+        assert_eq!(selected.generation, first);
+        assert_eq!(selected.text, "FunASR 结果");
+        assert_eq!(selected.provider_kind, AsrProviderKind::FunAsr);
+        assert_eq!(
+            storage.transcription_generation(&recording.id).unwrap(),
+            first
+        );
+        let versions = storage.list_transcription_versions(&recording.id).unwrap();
+        assert!(!versions[0].is_current);
+        assert!(versions[1].is_current);
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn old_transcription_rows_migrate_to_legacy_chunk_protocol() {
         let root = std::env::temp_dir().join(format!(
             "nota-storage-batch-migration-{}",
@@ -4457,6 +4758,25 @@ mod tests {
         assert!(columns.contains("speaker_count"));
         assert!(columns.contains("provider_kind"));
         assert!(columns.contains("provider_state_json"));
+        let primary_key = {
+            let connection = storage.connection.lock();
+            let mut statement = connection
+                .prepare("PRAGMA table_info(transcriptions)")
+                .unwrap();
+            statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(1)?, row.get::<_, i64>(5)?))
+                })
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .filter(|(_, position)| *position > 0)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            primary_key,
+            vec![("recording_id".into(), 1), ("generation".into(), 2)]
+        );
+        assert_eq!(storage.transcription_generation("legacy").unwrap(), 1);
         let summary = storage.transcription_summary("legacy").unwrap();
         assert_eq!(summary.protocol, TranscriptionProtocol::LegacyChunks);
         assert_eq!(summary.provider_kind, AsrProviderKind::OpenAiCompatible);

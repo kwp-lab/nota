@@ -17,6 +17,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added generation-scoped ASR Provider capabilities so historical transcripts
   retain the correct speaker and voiceprint behavior after the default
   Provider changes.
+- Added transcription version history. Retranscription now preserves previous
+  completed results, and recording details can switch between FunASR,
+  DashScope, and other completed generations.
 
 - Added a bilingual contribution guide covering privacy-safe fixtures,
   architecture boundaries, focused pull requests, and proportionate checks.

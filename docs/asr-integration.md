@@ -9,7 +9,8 @@
   `src/components/RecordingsWorkspace.test.tsx`
 - Related decisions:
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
-  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md)
+  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md),
+  [`0011-versioned-transcription-generations.md`](decisions/0011-versioned-transcription-generations.md)
 
 ## Scope
 
@@ -215,7 +216,18 @@ also applies its configured retention fallback.
 
 Starting a new transcription creates a new local generation and idempotency
 key. Any previous remote job is cleaned up best-effort and must never be reused
-as the new generation.
+as the new generation. The new row does not overwrite or mutate an earlier
+completed transcript. Until the new generation completes, the previously
+selected completed generation remains available for reading, export, speaker
+management, and AI generation. Successful local commit atomically selects the
+new generation as current.
+
+The recording detail lists every completed generation in descending order.
+Selecting one changes the recording's current transcription generation and
+loads that generation's text, segments, Provider snapshot, speaker-count
+snapshot, capabilities, and speaker assignments together. Failed, cancelled,
+and interrupted attempts remain durable for resume and diagnostics but do not
+appear as selectable transcript versions.
 
 ## Server-Owned Speaker Turn Refinement
 

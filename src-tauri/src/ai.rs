@@ -106,9 +106,6 @@ impl AiManager {
     }
 
     pub fn start(&self, app: AppHandle, request: AiGenerationRequest) -> Result<AiDocumentVersion> {
-        let transcription_generation = self
-            .storage
-            .transcription_generation(&request.recording_id)?;
         let provider = resolve_generation_provider(&self.storage, &request)?;
         let provider_id = provider.provider.id.clone();
         let PreparedGeneration {
@@ -120,6 +117,7 @@ impl AiManager {
             system_prompt,
             input,
         } = prepare_generation(&self.storage, &request)?;
+        let transcription_generation = transcript.generation;
         let estimated_input_tokens = request
             .estimated_input_tokens
             .filter(|value| *value > 0)

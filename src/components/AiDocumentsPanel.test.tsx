@@ -74,10 +74,12 @@ const recording: RecordingItem = {
 
 const transcript: TranscriptDocument = {
   recordingId: recording.id,
+  generation: 1,
   status: "completed",
   providerName: "Test ASR",
   providerKind: "funAsr",
   modelId: "test-asr-model",
+  speakerCount: null,
   protocol: "nota_batch_v1",
   voiceprintAnalysisSupported: true,
   text: "Discussed the release.",
@@ -89,6 +91,7 @@ const transcript: TranscriptDocument = {
   totalChunks: 1,
   errorMessage: null,
   updatedAt: "2026-08-09T00:01:00Z",
+  completedAt: "2026-08-09T00:01:00Z",
 };
 
 const provider: LlmProvider = {

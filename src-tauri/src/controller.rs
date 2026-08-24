@@ -2279,6 +2279,27 @@ fn get_transcript(
 }
 
 #[tauri::command]
+fn list_transcription_versions(
+    state: State<AppState>,
+    recording_id: String,
+) -> std::result::Result<Vec<TranscriptionVersionSummary>, String> {
+    command_result(state.storage.list_transcription_versions(&recording_id))
+}
+
+#[tauri::command]
+fn select_transcription_version(
+    state: State<AppState>,
+    recording_id: String,
+    generation: u32,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result(
+        state
+            .storage
+            .select_transcription_generation(&recording_id, generation),
+    )
+}
+
+#[tauri::command]
 fn copy_transcript(
     state: State<AppState>,
     recording_id: String,
@@ -3022,6 +3043,8 @@ pub fn run_app() {
             cancel_transcription,
             resume_transcription,
             get_transcript,
+            list_transcription_versions,
+            select_transcription_version,
             copy_transcript,
             export_transcript,
             reveal_transcript_export,
@@ -3083,10 +3106,12 @@ mod transcript_export_tests {
     fn transcript(text: &str, segments: Vec<TranscriptSegment>) -> TranscriptDocument {
         TranscriptDocument {
             recording_id: "recording".into(),
+            generation: 1,
             status: TranscriptionStatus::Completed,
             provider_name: "FunASR".into(),
             provider_kind: AsrProviderKind::FunAsr,
             model_id: "sensevoice".into(),
+            speaker_count: None,
             protocol: TranscriptionProtocol::NotaBatchV1,
             voiceprint_analysis_supported: true,
             language: Some("zh".into()),
@@ -3098,6 +3123,7 @@ mod transcript_export_tests {
             total_chunks: 1,
             error_message: None,
             updated_at: "2026-08-02T00:00:00Z".into(),
+            completed_at: Some("2026-08-02T00:00:00Z".into()),
         }
     }
 
