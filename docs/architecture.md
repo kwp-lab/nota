@@ -43,6 +43,9 @@ flowchart LR
     I --> T
     I --> J["Storage"]
     I --> K["ASR manager"]
+    H --> W["Local hotword library"]
+    W --> J
+    J -->|"generation hotword snapshot"| K
     K -->|"FunASR: original Ogg job"| L["Nota ASR Server"]
     K -->|"OpenAI-compatible: temporary WAV chunks"| M["Configured provider"]
     K -->|"DashScope: temporary upload + async whole-file task"| V["Alibaba Cloud DashScope"]

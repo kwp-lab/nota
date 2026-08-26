@@ -7,7 +7,7 @@ use crate::ai::{
 use crate::asr::{
     AsrManager, clean_stale_temporary_chunks, list_models as list_provider_models,
     normalize_provider_base_url as normalize_asr_provider_base_url, remove_temporary_chunks,
-    test_connection,
+    test_connection, transcription_options as resolve_transcription_options,
 };
 use crate::audio::{
     AudioMixer, AudioPacket, CaptureEvent, CaptureHandle, CaptureSource, OpusOggWriter,
@@ -1364,6 +1364,34 @@ fn save_settings(
 }
 
 #[tauri::command]
+fn list_hotword_lists(
+    state: State<AppState>,
+) -> std::result::Result<Vec<HotwordListSummary>, String> {
+    command_result(state.storage.list_hotword_lists())
+}
+
+#[tauri::command]
+fn get_hotword_list(
+    state: State<AppState>,
+    id: String,
+) -> std::result::Result<HotwordListDocument, String> {
+    command_result(state.storage.get_hotword_list(&id))
+}
+
+#[tauri::command]
+fn save_hotword_list(
+    state: State<AppState>,
+    request: SaveHotwordListRequest,
+) -> std::result::Result<SaveHotwordListResult, String> {
+    command_result(state.storage.save_hotword_list(&request))
+}
+
+#[tauri::command]
+fn delete_hotword_list(state: State<AppState>, id: String) -> std::result::Result<(), String> {
+    command_result(state.storage.delete_hotword_list(&id))
+}
+
+#[tauri::command]
 fn get_recording_snapshot(state: State<AppState>) -> RecordingSnapshot {
     state.recorder.snapshot()
 }
@@ -1934,6 +1962,21 @@ async fn list_asr_models(
 }
 
 #[tauri::command]
+async fn get_transcription_options(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> std::result::Result<TranscriptionOptions, String> {
+    let storage = Arc::clone(&state.storage);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let credentials = storage.find_asr_provider(&provider_id)?;
+        resolve_transcription_options(&credentials)
+    })
+    .await
+    .map_err(|error| format!("读取转写设置异常结束：{error}"))?;
+    command_result(result)
+}
+
+#[tauri::command]
 fn list_llm_providers(state: State<AppState>) -> std::result::Result<Vec<LlmProvider>, String> {
     command_result(state.storage.list_llm_providers())
 }
@@ -2236,6 +2279,7 @@ fn start_transcription(
     recording_id: String,
     provider_id: Option<String>,
     speaker_count: Option<u32>,
+    hotword_list_id: Option<String>,
 ) -> std::result::Result<TranscriptionSummary, String> {
     command_result((|| {
         let provider_id = match provider_id.filter(|value| !value.trim().is_empty()) {
@@ -2246,9 +2290,13 @@ fn start_transcription(
                 .active_asr_provider_id
                 .context("请先在设置中选择默认语音转写服务")?,
         };
-        state
-            .asr
-            .start(app, &recording_id, &provider_id, speaker_count)
+        state.asr.start(
+            app,
+            &recording_id,
+            &provider_id,
+            speaker_count,
+            hotword_list_id.as_deref(),
+        )
     })())
 }
 
@@ -2985,6 +3033,10 @@ pub fn run_app() {
             list_audio_devices,
             get_settings,
             save_settings,
+            list_hotword_lists,
+            get_hotword_list,
+            save_hotword_list,
+            delete_hotword_list,
             get_recording_snapshot,
             get_capture_prompt,
             respond_capture_prompt,
@@ -3014,6 +3066,7 @@ pub fn run_app() {
             set_active_asr_provider,
             test_asr_provider,
             list_asr_models,
+            get_transcription_options,
             list_llm_providers,
             save_llm_provider,
             delete_llm_provider,
@@ -3124,6 +3177,8 @@ mod transcript_export_tests {
             error_message: None,
             updated_at: "2026-08-02T00:00:00Z".into(),
             completed_at: Some("2026-08-02T00:00:00Z".into()),
+            hotword_list_name: None,
+            hotword_count: 0,
         }
     }
 

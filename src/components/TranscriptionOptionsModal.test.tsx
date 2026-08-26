@@ -93,4 +93,78 @@ describe("TranscriptionOptionsModal", () => {
     expect(screen.getByText(/上传至千问云转写/)).toBeInTheDocument();
     expect(screen.getByText(/最长 120 分钟/)).toBeInTheDocument();
   });
+
+  it("selects one compatible hotword list and discloses cloud transfer", () => {
+    const onConfirm = vi.fn();
+    render(
+      <TranscriptionOptionsModal
+        recordingTitle="客户会议"
+        retranscription={false}
+        providerName="阿里云千问"
+        speakerCountMin={2}
+        speakerCountMax={100}
+        cloudUpload
+        maxDurationMinutes={120}
+        hotwordLists={[
+          {
+            id: "products",
+            name: "产品词",
+            entryCount: 3,
+            weightedEntryCount: 1,
+            superHotwordCount: 1,
+          },
+          {
+            id: "empty",
+            name: "空列表",
+            entryCount: 0,
+            weightedEntryCount: 0,
+            superHotwordCount: 0,
+          },
+        ]}
+        hotwordsSupported
+        hotwordMode="inline"
+        hotwordWeightsSupported
+        hotwordDefaultWeight={4}
+        onOpenHotwordLibrary={vi.fn()}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "products" } });
+    expect(screen.getByText(/3 个热词及完整录音将发送至阿里云千问/)).toBeInTheDocument();
+    expect(screen.getByText(/1 个超级热词/)).toBeInTheDocument();
+    expect(screen.getByText(/2 个未指定权重的热词使用默认权重 4/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "开始转写" }));
+    expect(onConfirm).toHaveBeenCalledWith(null, "products");
+    expect(screen.getByRole("option", { name: /空列表/ })).toBeDisabled();
+  });
+
+  it("explains that Nota Server ignores custom weights", () => {
+    render(
+      <TranscriptionOptionsModal
+        recordingTitle="客户会议"
+        retranscription={false}
+        providerName="Nota Server"
+        speakerCountMin={1}
+        speakerCountMax={64}
+        cloudUpload={false}
+        maxDurationMinutes={null}
+        hotwordLists={[{
+          id: "products",
+          name: "产品词",
+          entryCount: 2,
+          weightedEntryCount: 1,
+          superHotwordCount: 1,
+        }]}
+        hotwordsSupported
+        hotwordMode="decoder_bias"
+        hotwordWeightsSupported={false}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "products" } });
+    expect(screen.getByText(/不支持自定义权重，将忽略权重/)).toBeInTheDocument();
+  });
 });

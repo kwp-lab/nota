@@ -13,6 +13,9 @@
 
 Nota writes a small local event log so maintainers can reconstruct meaningful
 user actions and backend state transitions without collecting meeting content.
+Hotword text is meeting content for this boundary: diagnostics may record a
+list id and entry count, but must never record entries, snapshots, or request
+bodies.
 Logging is always local: Nota does not upload, synchronize, or expose these
 files to a remote service. The Settings page may open the log directory but
 does not read or render the files.

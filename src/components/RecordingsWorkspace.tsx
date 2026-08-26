@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AsrProviderKind,
+  HotwordListSummary,
   AudioImportBatchSnapshot,
   LlmProvider,
   ParticipantProfile,
@@ -32,6 +33,7 @@ import type {
   TranscriptionStatus,
   TranscriptionSummary,
   TranscriptionVersionSummary,
+  TranscriptionOptions,
 } from "../types";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import { AppTooltip } from "./AppTooltip";
@@ -56,6 +58,8 @@ interface RecordingsWorkspaceProps {
   hasProvider: boolean;
   activeProviderKind: AsrProviderKind | null;
   activeProviderName?: string | null;
+  activeProviderId?: string | null;
+  hotwordLists?: HotwordListSummary[];
   hasVoiceprintProvider: boolean;
   llmProviders: LlmProvider[];
   activeLlmProviderId: string | null;
@@ -67,7 +71,9 @@ interface RecordingsWorkspaceProps {
   onDismissAudioImport: () => void;
   onPreparePlayback: (id: string) => Promise<string>;
   onPlaybackError: (message: string) => void;
-  onStartTranscription: (id: string, speakerCount: number | null) => void;
+  onStartTranscription: (id: string, speakerCount: number | null, hotwordListId: string | null) => void;
+  onGetTranscriptionOptions?: (providerId: string) => Promise<TranscriptionOptions>;
+  onOpenHotwordLibrary?: () => void;
   onResumeTranscription: (id: string) => void;
   onCancelTranscription: (id: string) => void;
   onSelectTranscriptionVersion: (id: string, generation: number) => Promise<void>;
@@ -261,8 +267,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     recordingId: string;
     recordingTitle: string;
     retranscription: boolean;
-    providerKind: "funAsr" | "dashScope";
-    providerName: string;
+    options: TranscriptionOptions;
   } | null>(null);
   const [detailTab, setDetailTab] = useState<"transcript" | "ai">("transcript");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -516,19 +521,74 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
       );
       return;
     }
-    if (props.activeProviderKind === "funAsr" || props.activeProviderKind === "dashScope") {
-      setTranscriptionOptions({
-        recordingId: item.id,
-        recordingTitle: item.title,
-        retranscription,
-        providerKind: props.activeProviderKind,
-        providerName: props.activeProviderName
-          ?? (props.activeProviderKind === "dashScope" ? "千问云服务" : "FunASR"),
-      });
-      return;
+    if (!props.onGetTranscriptionOptions) {
+      if (props.activeProviderKind === "openAiCompatible") {
+        (props.onStartTranscription as (id: string, count: number | null) => void)(item.id, null);
+        return;
+      }
+      if (props.activeProviderKind === "funAsr" || props.activeProviderKind === "dashScope") {
+        setTranscriptionOptions({
+          recordingId: item.id,
+          recordingTitle: item.title,
+          retranscription,
+          options: {
+            providerId: "active",
+            providerName: props.activeProviderName ?? "当前转写服务",
+            providerKind: props.activeProviderKind,
+            modelId: "",
+            speakerCountMin: props.activeProviderKind === "dashScope" ? 2 : 1,
+            speakerCountMax: props.activeProviderKind === "dashScope" ? 100 : 64,
+            cloudUpload: props.activeProviderKind === "dashScope",
+            maxReliableAudioSeconds: props.activeProviderKind === "dashScope" ? 7200 : null,
+            hotwords: {
+              supported: false,
+              mode: "unsupported",
+              maxEntries: 0,
+              maxEntryChars: 0,
+              weightsSupported: false,
+              defaultWeight: null,
+              allowedWeights: [],
+              superHotwordWeight: null,
+              maxSuperHotwords: null,
+            },
+          },
+        });
+        return;
+      }
     }
-    if (props.activeProviderKind === "openAiCompatible") {
-      props.onStartTranscription(item.id, null);
+    if (props.activeProviderKind) {
+      const fallback: TranscriptionOptions = {
+        providerId: props.activeProviderId ?? "active",
+        providerName: props.activeProviderName ?? "当前转写服务",
+        providerKind: props.activeProviderKind,
+        modelId: "",
+        speakerCountMin: props.activeProviderKind === "openAiCompatible" ? null : props.activeProviderKind === "dashScope" ? 2 : 1,
+        speakerCountMax: props.activeProviderKind === "openAiCompatible" ? null : props.activeProviderKind === "dashScope" ? 100 : 64,
+        cloudUpload: props.activeProviderKind === "dashScope",
+        maxReliableAudioSeconds: props.activeProviderKind === "dashScope" ? 7200 : null,
+        hotwords: {
+          supported: false,
+          mode: "unsupported",
+          maxEntries: 0,
+          maxEntryChars: 0,
+          weightsSupported: false,
+          defaultWeight: null,
+          allowedWeights: [],
+          superHotwordWeight: null,
+          maxSuperHotwords: null,
+        },
+      };
+      const request = props.onGetTranscriptionOptions
+        ? props.onGetTranscriptionOptions(props.activeProviderId ?? "")
+        : Promise.resolve(fallback);
+      void request
+        .then((options) => setTranscriptionOptions({
+          recordingId: item.id,
+          recordingTitle: item.title,
+          retranscription,
+          options,
+        }))
+        .catch((error) => props.onPlaybackError(String(error)));
       return;
     }
     props.onPlaybackError("请先在设置中选择可用的语音转写服务");
@@ -939,7 +999,9 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       >
                         {props.transcriptionVersions.map((version) => (
                           <option key={version.generation} value={version.generation}>
-                            {`第 ${version.generation} 次 · ${version.providerName} · ${formatVersionDate(version.completedAt)}`}
+                            {`第 ${version.generation} 次 · ${version.providerName} · ${version.hotwordListName
+                              ? `${version.hotwordListName}（${version.hotwordCount ?? 0} 个词） · `
+                              : "未使用热词 · "}${formatVersionDate(version.completedAt)}`}
                           </option>
                         ))}
                       </select>
@@ -1193,16 +1255,32 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         <TranscriptionOptionsModal
           recordingTitle={transcriptionOptions.recordingTitle}
           retranscription={transcriptionOptions.retranscription}
-          providerName={transcriptionOptions.providerName}
-          speakerCountMin={transcriptionOptions.providerKind === "dashScope" ? 2 : 1}
-          speakerCountMax={transcriptionOptions.providerKind === "dashScope" ? 100 : 64}
-          cloudUpload={transcriptionOptions.providerKind === "dashScope"}
-          maxDurationMinutes={transcriptionOptions.providerKind === "dashScope" ? 120 : null}
+          providerName={transcriptionOptions.options.providerName}
+          speakerCountMin={transcriptionOptions.options.speakerCountMin}
+          speakerCountMax={transcriptionOptions.options.speakerCountMax}
+          cloudUpload={transcriptionOptions.options.cloudUpload}
+          maxDurationMinutes={transcriptionOptions.options.maxReliableAudioSeconds
+            ? transcriptionOptions.options.maxReliableAudioSeconds / 60
+            : null}
+          hotwordLists={props.hotwordLists}
+          hotwordsSupported={transcriptionOptions.options.hotwords.supported}
+          hotwordMode={transcriptionOptions.options.hotwords.mode}
+          hotwordMaxEntries={transcriptionOptions.options.hotwords.maxEntries}
+          hotwordWeightsSupported={transcriptionOptions.options.hotwords.weightsSupported}
+          hotwordDefaultWeight={transcriptionOptions.options.hotwords.defaultWeight}
+          onOpenHotwordLibrary={props.onOpenHotwordLibrary ?? (() => undefined)}
           onCancel={() => setTranscriptionOptions(null)}
-          onConfirm={(speakerCount) => {
+          onConfirm={(speakerCount, hotwordListId) => {
             const recordingId = transcriptionOptions.recordingId;
             setTranscriptionOptions(null);
-            props.onStartTranscription(recordingId, speakerCount);
+            if (props.hotwordLists === undefined) {
+              (props.onStartTranscription as (id: string, count: number | null) => void)(
+                recordingId,
+                speakerCount,
+              );
+            } else {
+              props.onStartTranscription(recordingId, speakerCount, hotwordListId);
+            }
           }}
         />
       )}

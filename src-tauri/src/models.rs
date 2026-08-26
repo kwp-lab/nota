@@ -281,6 +281,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub auto_transcribe: bool,
     #[serde(default)]
+    pub auto_transcribe_hotword_list_id: Option<String>,
+    #[serde(default)]
     pub active_llm_provider_id: Option<String>,
 }
 
@@ -375,6 +377,14 @@ pub enum AsrProviderKind {
     DashScope,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AsrHotwordMode {
+    Unsupported,
+    Inline,
+    ModelDependent,
+}
+
 impl AsrProviderKind {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -403,6 +413,7 @@ impl AsrProviderKind {
                 model_discovery: true,
                 cloud_upload: false,
                 max_reliable_audio_seconds: None,
+                hotword_mode: AsrHotwordMode::ModelDependent,
             },
             Self::OpenAiCompatible => AsrProviderCapabilities {
                 whole_meeting: false,
@@ -415,6 +426,7 @@ impl AsrProviderKind {
                 model_discovery: true,
                 cloud_upload: false,
                 max_reliable_audio_seconds: None,
+                hotword_mode: AsrHotwordMode::Unsupported,
             },
             Self::DashScope => AsrProviderCapabilities {
                 whole_meeting: true,
@@ -425,6 +437,7 @@ impl AsrProviderKind {
                 model_discovery: false,
                 cloud_upload: true,
                 max_reliable_audio_seconds: Some(2 * 60 * 60),
+                hotword_mode: AsrHotwordMode::Inline,
             },
         }
     }
@@ -441,6 +454,26 @@ pub struct AsrProviderCapabilities {
     pub model_discovery: bool,
     pub cloud_upload: bool,
     pub max_reliable_audio_seconds: Option<u64>,
+    pub hotword_mode: AsrHotwordMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelHotwordCapabilities {
+    pub supported: bool,
+    pub mode: String,
+    pub max_entries: u32,
+    pub max_entry_chars: u32,
+    #[serde(default)]
+    pub weights_supported: bool,
+    #[serde(default)]
+    pub default_weight: Option<u16>,
+    #[serde(default)]
+    pub allowed_weights: Vec<u16>,
+    #[serde(default)]
+    pub super_hotword_weight: Option<u16>,
+    #[serde(default)]
+    pub max_super_hotwords: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -502,6 +535,82 @@ pub struct AsrModel {
     pub id: String,
     pub owned_by: Option<String>,
     pub ready: Option<bool>,
+    #[serde(default)]
+    pub hotwords: Option<ModelHotwordCapabilities>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotwordListSummary {
+    pub id: String,
+    pub name: String,
+    pub entry_count: u32,
+    pub weighted_entry_count: u32,
+    pub super_hotword_count: u32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotwordEntry {
+    pub text: String,
+    pub weight: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum HotwordNormalizationCode {
+    FullWidthColon,
+    InvalidWeight,
+    ZeroWeight,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotwordNormalization {
+    pub line: u32,
+    pub code: HotwordNormalizationCode,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotwordListDocument {
+    pub id: String,
+    pub name: String,
+    pub entries: Vec<HotwordEntry>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveHotwordListRequest {
+    pub id: Option<String>,
+    pub name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveHotwordListResult {
+    pub document: HotwordListDocument,
+    pub normalizations: Vec<HotwordNormalization>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionOptions {
+    pub provider_id: String,
+    pub provider_name: String,
+    pub provider_kind: AsrProviderKind,
+    pub model_id: String,
+    pub speaker_count_min: Option<u32>,
+    pub speaker_count_max: Option<u32>,
+    pub cloud_upload: bool,
+    pub max_reliable_audio_seconds: Option<u64>,
+    pub hotwords: ModelHotwordCapabilities,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -669,6 +778,8 @@ pub struct TranscriptionSummary {
     pub progress_current: u64,
     pub progress_total: u64,
     pub progress_unit: Option<TranscriptionProgressUnit>,
+    pub hotword_list_name: Option<String>,
+    pub hotword_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -684,6 +795,8 @@ pub struct TranscriptionVersionSummary {
     pub created_at: String,
     pub completed_at: String,
     pub is_current: bool,
+    pub hotword_list_name: Option<String>,
+    pub hotword_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -713,6 +826,7 @@ pub struct TranscriptionExecution {
     pub idempotency_key: String,
     pub speaker_count: Option<u32>,
     pub provider_state_json: String,
+    pub hotwords: Vec<HotwordEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -739,6 +853,8 @@ pub struct TranscriptDocument {
     pub error_message: Option<String>,
     pub updated_at: String,
     pub completed_at: Option<String>,
+    pub hotword_list_name: Option<String>,
+    pub hotword_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

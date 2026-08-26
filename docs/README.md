@@ -1,7 +1,7 @@
 # Nota Engineering Documentation
 
 - Status: Accepted
-- Last updated: 2026-08-12
+- Last updated: 2026-08-25
 - Owners: Nota maintainers
 
 This directory is the durable engineering context for Nota. It explains the
@@ -23,22 +23,26 @@ use this index to find the specification that owns the behavior being changed.
 4. [`dashscope-asr-provider.md`](dashscope-asr-provider.md) — direct cloud
    file transcription, durable task recovery, provider capabilities, and the
    checklist for adding another third-party ASR provider.
-5. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
+5. [`hotword-library.md`](hotword-library.md) — local reusable lists,
+   generation snapshots, Provider validation, and privacy boundaries.
+6. [`hotword-provider-ab-report.md`](hotword-provider-ab-report.md) — manual
+   cross-Provider A/B results for real hotword transcription effects.
+7. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
    templates, versions, providers, and relinking.
-6. [`design-system.md`](design-system.md) — product visual language, design
+8. [`design-system.md`](design-system.md) — product visual language, design
    tokens, typography, color, spacing, and component styling rules.
-7. [`diagnostic-logging.md`](diagnostic-logging.md) — local event format,
+9. [`diagnostic-logging.md`](diagnostic-logging.md) — local event format,
    privacy boundary, correlation, and rotation.
-8. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
+10. [`data-lifecycle.md`](data-lifecycle.md) — local and remote persistence,
    migrations, retention, and deletion ordering.
-9. [`testing.md`](testing.md) — automated checks and hardware acceptance
+11. [`testing.md`](testing.md) — automated checks and hardware acceptance
    scenarios.
-10. [`decisions/README.md`](decisions/README.md) — architectural decision
+12. [`decisions/README.md`](decisions/README.md) — architectural decision
    index, lifecycle, and template.
-11. [`speaker-identification.md`](speaker-identification.md) — local
+13. [`speaker-identification.md`](speaker-identification.md) — local
    voiceprint enrollment, matching, confirmation, and lifecycle rules.
-12. [`releasing.md`](releasing.md) — version, tag, package, and release process.
-13. [`open-source-compliance.md`](open-source-compliance.md) — dependency
+14. [`releasing.md`](releasing.md) — version, tag, package, and release process.
+15. [`open-source-compliance.md`](open-source-compliance.md) — dependency
    license policy, generated notices, SBOM, and source-delivery rules.
 
 ## Sources of Truth
@@ -69,6 +73,7 @@ uses that contract and what it promises locally.
 | SQLite fields, migration, retention, or deletion ordering | `data-lifecycle.md` |
 | Audio import formats, normalization, task state, or recovery | `audio-import.md` |
 | New test requirement or supported environment | `testing.md` |
+| Hotword storage, selection, or Provider mapping | `hotword-library.md` |
 | Diagnostic event, field, privacy, or rotation behavior | `diagnostic-logging.md` |
 | Visual token, shared component styling, or durable interaction treatment | `design-system.md` |
 | Long-lived architectural choice or reversed decision | New ADR |

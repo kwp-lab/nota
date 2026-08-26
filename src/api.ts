@@ -27,18 +27,23 @@ import type {
   LlmProvider,
   LlmProviderProbeRequest,
   CapturePrompt,
+  HotwordListDocument,
+  HotwordListSummary,
   ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
   StartRecordingRequest,
   SaveAsrProviderRequest,
   SaveAiTemplateRequest,
+  SaveHotwordListRequest,
+  SaveHotwordListResult,
   SaveLlmProviderRequest,
   TranscriptDocument,
   SpeakerIdentificationAssignment,
   SpeakerIdentificationSession,
   TranscriptionEvent,
   TranscriptionSummary,
+  TranscriptionOptions,
   TranscriptionVersionSummary,
 } from "./types";
 
@@ -49,6 +54,12 @@ export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
+  listHotwordLists: () => invoke<HotwordListSummary[]>("list_hotword_lists"),
+  getHotwordList: (id: string) =>
+    invoke<HotwordListDocument>("get_hotword_list", { id }),
+  saveHotwordList: (request: SaveHotwordListRequest) =>
+    invoke<SaveHotwordListResult>("save_hotword_list", { request }),
+  deleteHotwordList: (id: string) => invoke<void>("delete_hotword_list", { id }),
   getSnapshot: () => invoke<RecordingSnapshot>("get_recording_snapshot"),
   getCapturePrompt: () => invoke<CapturePrompt | null>("get_capture_prompt"),
   respondCapturePrompt: (sessionId: string, stopAndSave: boolean) =>
@@ -104,6 +115,8 @@ export const api = {
     invoke<AsrConnectionTest>("test_asr_provider", { request }),
   listAsrModels: (request: AsrProviderProbeRequest) =>
     invoke<AsrModel[]>("list_asr_models", { request }),
+  getTranscriptionOptions: (providerId: string) =>
+    invoke<TranscriptionOptions>("get_transcription_options", { providerId }),
   listLlmProviders: () => invoke<LlmProvider[]>("list_llm_providers"),
   saveLlmProvider: (request: SaveLlmProviderRequest) =>
     invoke<LlmProvider>("save_llm_provider", { request }),
@@ -162,11 +175,13 @@ export const api = {
     recordingId: string,
     providerId?: string | null,
     speakerCount: number | null = null,
+    hotwordListId: string | null = null,
   ) =>
     invoke<TranscriptionSummary>("start_transcription", {
       recordingId,
       providerId: providerId ?? null,
       speakerCount,
+      hotwordListId,
     }),
   cancelTranscription: (recordingId: string) =>
     invoke<TranscriptionSummary>("cancel_transcription", { recordingId }),

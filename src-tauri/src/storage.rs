@@ -1,13 +1,15 @@
 use crate::models::{
     AecMode, AiDocument, AiDocumentVersion, AiFileState, AiGenerationDetails, AiGenerationMode,
     AiGenerationStatus, AiMeetingProfile, AiTemplate, AiWorkspace, AppSettings, AsrApiKeyUpdate,
-    AsrProvider, AsrProviderCredentials, AsrProviderKind, AsrProviderProbeRequest, LlmProvider,
-    LlmProviderCredentials, LlmProviderKind, LlmProviderProbeRequest, ParticipantProfile,
-    RecordingItem, RecordingOrigin, RecordingSpeakerAssignment, SaveAiTemplateRequest,
-    SaveAsrProviderRequest, SaveLlmProviderRequest, SpeakerIdentificationAssignment,
-    StoredTranscriptionChunk, TranscriptDocument, TranscriptSegment, TranscriptionExecution,
-    TranscriptionProgressPhase, TranscriptionProgressUnit, TranscriptionProtocol,
-    TranscriptionStatus, TranscriptionSummary, TranscriptionVersionSummary, VoiceprintSample,
+    AsrProvider, AsrProviderCredentials, AsrProviderKind, AsrProviderProbeRequest, HotwordEntry,
+    HotwordListDocument, HotwordListSummary, HotwordNormalization, HotwordNormalizationCode,
+    LlmProvider, LlmProviderCredentials, LlmProviderKind, LlmProviderProbeRequest,
+    ParticipantProfile, RecordingItem, RecordingOrigin, RecordingSpeakerAssignment,
+    SaveAiTemplateRequest, SaveAsrProviderRequest, SaveHotwordListRequest, SaveHotwordListResult,
+    SaveLlmProviderRequest, SpeakerIdentificationAssignment, StoredTranscriptionChunk,
+    TranscriptDocument, TranscriptSegment, TranscriptionExecution, TranscriptionProgressPhase,
+    TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
+    TranscriptionVersionSummary, VoiceprintSample,
 };
 use crate::paths::AppPaths;
 use anyhow::{Context, Result, bail};
@@ -295,6 +297,19 @@ impl Storage {
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS hotword_lists (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS hotword_entries (
+              list_id TEXT NOT NULL REFERENCES hotword_lists(id) ON DELETE CASCADE,
+              position INTEGER NOT NULL,
+              text TEXT NOT NULL,
+              weight INTEGER CHECK(weight IS NULL OR weight IN (1, 2, 3, 4, 5, 50)),
+              PRIMARY KEY(list_id, position)
+            );
             CREATE TABLE IF NOT EXISTS transcriptions (
               recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
               generation INTEGER NOT NULL DEFAULT 1,
@@ -316,6 +331,9 @@ impl Storage {
               protocol TEXT NOT NULL DEFAULT 'legacy_chunks',
               remote_job_id TEXT,
               provider_state_json TEXT NOT NULL DEFAULT '{}',
+              hotword_list_id TEXT,
+              hotword_list_name TEXT,
+              hotword_snapshot_json TEXT NOT NULL DEFAULT '[]',
               idempotency_key TEXT NOT NULL DEFAULT '',
               progress_phase TEXT,
               progress_current INTEGER NOT NULL DEFAULT 0,
@@ -456,6 +474,7 @@ impl Storage {
         ensure_transcription_job_columns(&connection)?;
         ensure_transcription_speaker_count_constraint(&connection)?;
         ensure_transcription_history_schema(&connection)?;
+        ensure_hotword_schema(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -513,6 +532,9 @@ impl Storage {
             .setting_value(&connection, "auto_transcribe")?
             .map(|value| value == "true")
             .unwrap_or(false);
+        let auto_transcribe_hotword_list_id = self
+            .setting_value(&connection, "auto_transcribe_hotword_list_id")?
+            .filter(|value| !value.trim().is_empty());
         let active_llm_provider_id = self
             .setting_value(&connection, "active_llm_provider_id")?
             .filter(|value| !value.trim().is_empty());
@@ -528,6 +550,7 @@ impl Storage {
             active_asr_provider_id,
             voiceprint_provider_id,
             auto_transcribe,
+            auto_transcribe_hotword_list_id,
             active_llm_provider_id,
         })
     }
@@ -577,6 +600,13 @@ impl Storage {
             ),
             ("auto_transcribe", settings.auto_transcribe.to_string()),
             (
+                "auto_transcribe_hotword_list_id",
+                settings
+                    .auto_transcribe_hotword_list_id
+                    .clone()
+                    .unwrap_or_default(),
+            ),
+            (
                 "active_llm_provider_id",
                 settings.active_llm_provider_id.clone().unwrap_or_default(),
             ),
@@ -590,6 +620,139 @@ impl Storage {
                 params![key, value],
             )?;
         }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn list_hotword_lists(&self) -> Result<Vec<HotwordListSummary>> {
+        let connection = self.connection.lock();
+        let mut statement = connection.prepare(
+            "SELECT l.id, l.name, COUNT(e.position),
+                    SUM(CASE WHEN e.weight IS NOT NULL THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN e.weight = 50 THEN 1 ELSE 0 END),
+                    l.created_at, l.updated_at
+             FROM hotword_lists l
+             LEFT JOIN hotword_entries e ON e.list_id = l.id
+             GROUP BY l.id
+             ORDER BY l.updated_at DESC, l.name COLLATE NOCASE",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(HotwordListSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entry_count: row.get::<_, i64>(2)?.max(0).min(u32::MAX as i64) as u32,
+                weighted_entry_count: row.get::<_, i64>(3)?.max(0).min(u32::MAX as i64) as u32,
+                super_hotword_count: row.get::<_, i64>(4)?.max(0).min(u32::MAX as i64) as u32,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("无法读取热词库")
+    }
+
+    pub fn get_hotword_list(&self, id: &str) -> Result<HotwordListDocument> {
+        let connection = self.connection.lock();
+        let (name, created_at, updated_at) = connection
+            .query_row(
+                "SELECT name, created_at, updated_at FROM hotword_lists WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?
+            .context("找不到该热词列表")?;
+        let mut statement = connection.prepare(
+            "SELECT text, weight FROM hotword_entries WHERE list_id = ?1 ORDER BY position",
+        )?;
+        let entries = statement
+            .query_map([id], |row| {
+                Ok(HotwordEntry {
+                    text: row.get(0)?,
+                    weight: row.get(1)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(HotwordListDocument {
+            id: id.to_owned(),
+            name,
+            entries,
+            created_at,
+            updated_at,
+        })
+    }
+
+    pub fn save_hotword_list(
+        &self,
+        request: &SaveHotwordListRequest,
+    ) -> Result<SaveHotwordListResult> {
+        let name = request.name.trim();
+        if name.is_empty() {
+            bail!("热词列表名称不能为空");
+        }
+        if name.chars().count() > 80 {
+            bail!("热词列表名称不能超过 80 个字符");
+        }
+        let parsed = parse_hotword_content(&request.content)?;
+        let id = request
+            .id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let now = Utc::now().to_rfc3339();
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        let conflicting = transaction
+            .query_row(
+                "SELECT id FROM hotword_lists WHERE name = ?1 COLLATE NOCASE AND id != ?2",
+                params![name, id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if conflicting.is_some() {
+            bail!("已存在同名热词列表");
+        }
+        let created_at = transaction
+            .query_row(
+                "SELECT created_at FROM hotword_lists WHERE id = ?1",
+                [&id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| now.clone());
+        transaction.execute(
+            "INSERT INTO hotword_lists(id, name, created_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at",
+            params![id, name, created_at, now],
+        )?;
+        transaction.execute("DELETE FROM hotword_entries WHERE list_id = ?1", [&id])?;
+        for (position, entry) in parsed.entries.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO hotword_entries(list_id, position, text, weight) VALUES(?1, ?2, ?3, ?4)",
+                params![id, position as i64, entry.text, entry.weight],
+            )?;
+        }
+        transaction.commit()?;
+        drop(connection);
+        Ok(SaveHotwordListResult {
+            document: self.get_hotword_list(&id)?,
+            normalizations: parsed.normalizations,
+        })
+    }
+
+    pub fn delete_hotword_list(&self, id: &str) -> Result<()> {
+        let mut connection = self.connection.lock();
+        let transaction = connection.transaction()?;
+        let deleted = transaction.execute("DELETE FROM hotword_lists WHERE id = ?1", [id])?;
+        if deleted == 0 {
+            bail!("找不到该热词列表");
+        }
+        transaction.execute(
+            "UPDATE settings SET value = ''
+             WHERE key = 'auto_transcribe_hotword_list_id' AND value = ?1",
+            [id],
+        )?;
         transaction.commit()?;
         Ok(())
     }
@@ -769,7 +932,8 @@ impl Storage {
                      t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
                      t.error_message, t.text, t.protocol, t.progress_phase,
                      t.progress_current, t.progress_total, t.progress_unit,
-                     t.speaker_count, t.provider_kind, r.origin, r.source_file_name,
+                     t.speaker_count, t.provider_kind, t.hotword_list_name,
+                     t.hotword_snapshot_json, r.origin, r.source_file_name,
                      r.source_format, r.imported_at
              FROM recordings r
              LEFT JOIN transcriptions t ON t.recording_id = r.id
@@ -794,7 +958,8 @@ impl Storage {
                          t.status, t.completed_chunks, t.total_chunks, t.provider_name, t.model_id,
                          t.error_message, t.text, t.protocol, t.progress_phase,
                          t.progress_current, t.progress_total, t.progress_unit,
-                         t.speaker_count, t.provider_kind, r.origin, r.source_file_name,
+                         t.speaker_count, t.provider_kind, t.hotword_list_name,
+                         t.hotword_snapshot_json, r.origin, r.source_file_name,
                          r.source_format, r.imported_at
                  FROM recordings r
                  LEFT JOIN transcriptions t ON t.recording_id = r.id
@@ -1689,11 +1854,22 @@ impl Storage {
         root.join(format!("{title} [{short_id}]"))
     }
 
+    #[cfg(test)]
     pub fn begin_transcription(
         &self,
         recording_id: &str,
         provider: &AsrProvider,
         speaker_count: Option<u32>,
+    ) -> Result<u32> {
+        self.begin_transcription_with_hotwords(recording_id, provider, speaker_count, None)
+    }
+
+    pub fn begin_transcription_with_hotwords(
+        &self,
+        recording_id: &str,
+        provider: &AsrProvider,
+        speaker_count: Option<u32>,
+        hotword_list: Option<&HotwordListDocument>,
     ) -> Result<u32> {
         let capabilities = provider.kind.capabilities();
         if let Some(count) = speaker_count {
@@ -1757,9 +1933,10 @@ impl Storage {
               completed_chunks, total_chunks, text, segments_json, language,
               error_message, created_at, updated_at, completed_at, protocol,
               remote_job_id, idempotency_key, progress_phase, progress_current,
-              progress_total, progress_unit, speaker_count, provider_kind, provider_state_json)
+              progress_total, progress_unit, speaker_count, provider_kind, provider_state_json,
+              hotword_list_id, hotword_list_name, hotword_snapshot_json)
              VALUES(?1, ?2, ?3, ?4, ?5, 'queued', 0, 0, '', '[]', NULL, NULL, ?6, ?6, NULL,
-                    ?7, NULL, ?8, ?9, 0, 0, ?10, ?11, ?12, '{}')",
+                    ?7, NULL, ?8, ?9, 0, 0, ?10, ?11, ?12, '{}', ?13, ?14, ?15)",
             params![
                 recording_id,
                 generation,
@@ -1781,6 +1958,13 @@ impl Storage {
                 },
                 speaker_count,
                 provider.kind.as_str(),
+                hotword_list.map(|list| list.id.as_str()),
+                hotword_list.map(|list| list.name.as_str()),
+                serialize_hotword_snapshot(
+                    hotword_list
+                        .map(|list| list.entries.as_slice())
+                        .unwrap_or_default()
+                )?,
             ],
         )?;
         transaction.execute(
@@ -1983,7 +2167,7 @@ impl Storage {
                 "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
                         error_message, text, protocol, progress_phase,
                         progress_current, progress_total, progress_unit, speaker_count,
-                        provider_kind
+                        provider_kind, hotword_list_name, hotword_snapshot_json
                  FROM transcriptions WHERE recording_id = ?1
                  ORDER BY generation DESC LIMIT 1",
                 [recording_id],
@@ -2003,7 +2187,7 @@ impl Storage {
                 "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
                         error_message, text, protocol, progress_phase,
                         progress_current, progress_total, progress_unit, speaker_count,
-                        provider_kind
+                        provider_kind, hotword_list_name, hotword_snapshot_json
                  FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
                 params![recording_id, generation],
                 transcription_summary_from_row,
@@ -2069,7 +2253,7 @@ impl Storage {
             .lock()
             .query_row(
                 "SELECT protocol, remote_job_id, idempotency_key, speaker_count,
-                        provider_kind, provider_state_json
+                        provider_kind, provider_state_json, hotword_snapshot_json
                  FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
                 params![recording_id, generation],
                 |row| {
@@ -2080,6 +2264,7 @@ impl Storage {
                         speaker_count: row.get(3)?,
                         provider_kind: AsrProviderKind::from_str(&row.get::<_, String>(4)?),
                         provider_state_json: row.get(5)?,
+                        hotwords: parse_hotword_snapshot(&row.get::<_, String>(6)?),
                     })
                 },
             )
@@ -2170,7 +2355,8 @@ impl Storage {
             "SELECT t.generation, t.provider_name, t.provider_kind, t.model_id,
                     t.speaker_count, t.protocol, t.created_at,
                     COALESCE(t.completed_at, t.updated_at),
-                    t.generation = r.current_transcription_generation
+                    t.generation = r.current_transcription_generation,
+                    t.hotword_list_name, t.hotword_snapshot_json
              FROM transcriptions t
              JOIN recordings r ON r.id = t.recording_id
              WHERE t.recording_id = ?1 AND t.status = 'completed'
@@ -2189,6 +2375,10 @@ impl Storage {
                 created_at: row.get(6)?,
                 completed_at: row.get(7)?,
                 is_current: row.get::<_, i64>(8)? != 0,
+                hotword_list_name: row.get(9)?,
+                hotword_count: parse_hotword_snapshot(&row.get::<_, String>(10)?)
+                    .len()
+                    .min(u32::MAX as usize) as u32,
             })
         })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -2236,7 +2426,8 @@ impl Storage {
             .query_row(
                 "SELECT status, provider_name, model_id, language, text, segments_json,
                         completed_chunks, total_chunks, error_message, updated_at,
-                        provider_kind, protocol, completed_at, speaker_count
+                        provider_kind, protocol, completed_at, speaker_count,
+                        hotword_list_name, hotword_snapshot_json
                  FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
                 params![recording_id, generation],
                 |row| {
@@ -2265,6 +2456,10 @@ impl Storage {
                         )
                         .capabilities()
                         .voiceprint_analysis,
+                        hotword_list_name: row.get(14)?,
+                        hotword_count: parse_hotword_snapshot(&row.get::<_, String>(15)?)
+                            .len()
+                            .min(u32::MAX as usize) as u32,
                     })
                 },
             )
@@ -2662,6 +2857,13 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
             progress_unit,
             provider_kind,
             voiceprint_analysis_supported: provider_kind.capabilities().voiceprint_analysis,
+            hotword_list_name: row.get(21)?,
+            hotword_count: parse_hotword_snapshot(
+                &row.get::<_, Option<String>>(22)?
+                    .unwrap_or_else(|| "[]".into()),
+            )
+            .len()
+            .min(u32::MAX as usize) as u32,
         })
     } else {
         None
@@ -2675,12 +2877,12 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
         size_bytes: row.get::<_, i64>(5)?.max(0) as u64,
         recovered: row.get::<_, i32>(6)? != 0,
         origin: RecordingOrigin::from_str(
-            &row.get::<_, Option<String>>(21)?
+            &row.get::<_, Option<String>>(23)?
                 .unwrap_or_else(|| "captured".into()),
         ),
-        source_file_name: row.get(22)?,
-        source_format: row.get(23)?,
-        imported_at: row.get(24)?,
+        source_file_name: row.get(24)?,
+        source_format: row.get(25)?,
+        imported_at: row.get(26)?,
         transcription,
     })
 }
@@ -2958,6 +3160,10 @@ fn transcription_summary_from_row(
         voiceprint_analysis_supported: AsrProviderKind::from_str(&row.get::<_, String>(13)?)
             .capabilities()
             .voiceprint_analysis,
+        hotword_list_name: row.get(14)?,
+        hotword_count: parse_hotword_snapshot(&row.get::<_, String>(15)?)
+            .len()
+            .min(u32::MAX as usize) as u32,
     })
 }
 
@@ -3092,6 +3298,223 @@ fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
         [],
     )?;
     Ok(())
+}
+
+fn ensure_hotword_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS hotword_lists (
+           id TEXT PRIMARY KEY,
+           name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS hotword_entries (
+           list_id TEXT NOT NULL REFERENCES hotword_lists(id) ON DELETE CASCADE,
+           position INTEGER NOT NULL,
+           text TEXT NOT NULL,
+           weight INTEGER CHECK(weight IS NULL OR weight IN (1, 2, 3, 4, 5, 50)),
+           PRIMARY KEY(list_id, position)
+         );",
+    )?;
+    let entry_columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(hotword_entries)")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    if !entry_columns.contains("weight") {
+        connection.execute(
+            "ALTER TABLE hotword_entries ADD COLUMN weight INTEGER
+             CHECK(weight IS NULL OR weight IN (1, 2, 3, 4, 5, 50))",
+            [],
+        )?;
+    }
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(transcriptions)")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    for (name, sql) in [
+        (
+            "hotword_list_id",
+            "ALTER TABLE transcriptions ADD COLUMN hotword_list_id TEXT",
+        ),
+        (
+            "hotword_list_name",
+            "ALTER TABLE transcriptions ADD COLUMN hotword_list_name TEXT",
+        ),
+        (
+            "hotword_snapshot_json",
+            "ALTER TABLE transcriptions ADD COLUMN hotword_snapshot_json TEXT NOT NULL DEFAULT '[]'",
+        ),
+    ] {
+        if !columns.contains(name) {
+            connection.execute(sql, [])?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+struct ParsedHotwordContent {
+    entries: Vec<HotwordEntry>,
+    normalizations: Vec<HotwordNormalization>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct HotwordSnapshotV2 {
+    version: u8,
+    entries: Vec<HotwordEntry>,
+}
+
+fn serialize_hotword_snapshot(entries: &[HotwordEntry]) -> Result<String> {
+    serde_json::to_string(&HotwordSnapshotV2 {
+        version: 2,
+        entries: entries.to_vec(),
+    })
+    .context("无法保存热词快照")
+}
+
+fn parse_hotword_snapshot(value: &str) -> Vec<HotwordEntry> {
+    if let Ok(snapshot) = serde_json::from_str::<HotwordSnapshotV2>(value)
+        && snapshot.version == 2
+    {
+        return snapshot.entries;
+    }
+    serde_json::from_str::<Vec<String>>(value)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|text| HotwordEntry { text, weight: None })
+        .collect()
+}
+
+fn parse_hotword_content(content: &str) -> Result<ParsedHotwordContent> {
+    if content.len() > 256 * 1024 {
+        bail!("热词内容不能超过 256 KiB");
+    }
+    let mut entries = Vec::new();
+    let mut normalizations = Vec::new();
+    let mut seen = std::collections::HashMap::<String, (Option<u16>, usize)>::new();
+    for (index, line) in content.lines().enumerate() {
+        let value = line.trim();
+        if value.is_empty() {
+            continue;
+        }
+        let line_number = index + 1;
+        let (text_source, weight_source, full_width_colon) = split_hotword_weight(value);
+        let text = unescape_hotword_text(text_source.trim());
+        if text.is_empty() {
+            bail!("第 {line_number} 行的热词不能为空");
+        }
+        if text.chars().count() > 100 {
+            bail!("第 {} 行超过 100 个字符", index + 1);
+        }
+        if full_width_colon {
+            normalizations.push(HotwordNormalization {
+                line: line_number.min(u32::MAX as usize) as u32,
+                code: HotwordNormalizationCode::FullWidthColon,
+                message: format!("第 {line_number} 行的全角冒号已规范为半角冒号"),
+            });
+        }
+        let weight = parse_hotword_weight(weight_source, line_number, &mut normalizations);
+        if let Some((previous_weight, previous_line)) = seen.get(&text) {
+            if *previous_weight != weight {
+                bail!("第 {previous_line} 行和第 {line_number} 行是相同热词，但权重不同");
+            }
+            continue;
+        }
+        seen.insert(text.clone(), (weight, line_number));
+        entries.push(HotwordEntry { text, weight });
+        if entries.len() > 2_000 {
+            bail!("热词列表最多包含 2000 条有效词条");
+        }
+    }
+    if entries
+        .iter()
+        .filter(|entry| entry.weight == Some(50))
+        .count()
+        > 50
+    {
+        bail!("一份热词列表最多包含 50 个权重为 50 的超级热词");
+    }
+    Ok(ParsedHotwordContent {
+        entries,
+        normalizations,
+    })
+}
+
+fn split_hotword_weight(value: &str) -> (&str, Option<&str>, bool) {
+    let mut escaped = false;
+    let mut delimiter = None;
+    for (index, character) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if matches!(character, ':' | '：') {
+            delimiter = Some((index, character.len_utf8(), character == '：'));
+        }
+    }
+    match delimiter {
+        Some((index, width, full_width)) => {
+            (&value[..index], Some(&value[index + width..]), full_width)
+        }
+        None => (value, None, false),
+    }
+}
+
+fn unescape_hotword_text(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut characters = value.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '\\'
+            && let Some(next) = characters.peek().copied()
+            && matches!(next, ':' | '：' | '\\')
+        {
+            result.push(characters.next().unwrap_or(next));
+            continue;
+        }
+        result.push(character);
+    }
+    result
+}
+
+fn parse_hotword_weight(
+    source: Option<&str>,
+    line_number: usize,
+    normalizations: &mut Vec<HotwordNormalization>,
+) -> Option<u16> {
+    let source = source?;
+    let value = source.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if value == "0" {
+        normalizations.push(HotwordNormalization {
+            line: line_number.min(u32::MAX as usize) as u32,
+            code: HotwordNormalizationCode::ZeroWeight,
+            message: format!("第 {line_number} 行的权重 0 已改为使用 Provider 默认权重"),
+        });
+        return None;
+    }
+    if let Ok(weight) = value.parse::<u16>()
+        && matches!(weight, 1..=5 | 50)
+    {
+        return Some(weight);
+    }
+    normalizations.push(HotwordNormalization {
+        line: line_number.min(u32::MAX as usize) as u32,
+        code: HotwordNormalizationCode::InvalidWeight,
+        message: format!("第 {line_number} 行的权重不受支持，已替换为默认权重 4"),
+    });
+    Some(4)
 }
 
 fn ensure_transcription_speaker_count_constraint(connection: &Connection) -> Result<()> {
@@ -3405,6 +3828,249 @@ mod tests {
             model_id: "sensevoice".into(),
             api_key,
         }
+    }
+
+    #[test]
+    fn hotword_crud_and_generation_snapshot_survive_list_deletion() {
+        let (root, storage) = test_storage();
+        let saved_result = storage
+            .save_hotword_list(&SaveHotwordListRequest {
+                id: None,
+                name: "产品周会".into(),
+                content: " Nota \nBusabase：50\n默认词:0\n错误权重:10\nNota\n\n".into(),
+            })
+            .unwrap();
+        let saved = saved_result.document;
+        assert_eq!(
+            saved.entries,
+            vec![
+                HotwordEntry {
+                    text: "Nota".into(),
+                    weight: None,
+                },
+                HotwordEntry {
+                    text: "Busabase".into(),
+                    weight: Some(50),
+                },
+                HotwordEntry {
+                    text: "默认词".into(),
+                    weight: None,
+                },
+                HotwordEntry {
+                    text: "错误权重".into(),
+                    weight: Some(4),
+                },
+            ]
+        );
+        assert_eq!(saved_result.normalizations.len(), 3);
+        let summary = &storage.list_hotword_lists().unwrap()[0];
+        assert_eq!(summary.entry_count, 4);
+        assert_eq!(summary.weighted_entry_count, 2);
+        assert_eq!(summary.super_hotword_count, 1);
+        assert!(
+            storage
+                .save_hotword_list(&SaveHotwordListRequest {
+                    id: None,
+                    name: "产品周会".into(),
+                    content: "另一个词".into(),
+                })
+                .is_err()
+        );
+        let mut settings = storage.settings().unwrap();
+        settings.auto_transcribe_hotword_list_id = Some(saved.id.clone());
+        storage.save_settings(&settings).unwrap();
+
+        let recording_path = storage.paths().default_recordings.join("hotwords.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        storage
+            .insert_recording(&RecordingItem {
+                id: "hotword-meeting".into(),
+                title: "热词会议".into(),
+                path: recording_path.to_string_lossy().into_owned(),
+                created_at: "2026-08-25T00:00:00Z".into(),
+                duration_ms: 1_000,
+                size_bytes: 5,
+                recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Clear))
+            .unwrap();
+        let generation = storage
+            .begin_transcription_with_hotwords("hotword-meeting", &provider, None, Some(&saved))
+            .unwrap();
+        storage.delete_hotword_list(&saved.id).unwrap();
+
+        let execution = storage
+            .transcription_execution_for_generation("hotword-meeting", generation)
+            .unwrap();
+        assert_eq!(execution.hotwords, saved.entries);
+        assert!(storage.list_hotword_lists().unwrap().is_empty());
+        assert!(
+            storage
+                .settings()
+                .unwrap()
+                .auto_transcribe_hotword_list_id
+                .is_none()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hotword_parser_normalizes_weights_full_width_colons_and_literal_colons() {
+        let parsed = parse_hotword_content(
+            "Busabase：50\n默认词:\n零权重:0\n非法权重:10\nHTTP\\:2:5\nBusabase：50",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.entries,
+            vec![
+                HotwordEntry {
+                    text: "Busabase".into(),
+                    weight: Some(50),
+                },
+                HotwordEntry {
+                    text: "默认词".into(),
+                    weight: None,
+                },
+                HotwordEntry {
+                    text: "零权重".into(),
+                    weight: None,
+                },
+                HotwordEntry {
+                    text: "非法权重".into(),
+                    weight: Some(4),
+                },
+                HotwordEntry {
+                    text: "HTTP:2".into(),
+                    weight: Some(5),
+                },
+            ]
+        );
+        assert!(
+            parsed
+                .normalizations
+                .iter()
+                .any(|item| item.code == HotwordNormalizationCode::FullWidthColon)
+        );
+        assert!(
+            parsed
+                .normalizations
+                .iter()
+                .any(|item| item.code == HotwordNormalizationCode::ZeroWeight)
+        );
+        assert!(
+            parsed
+                .normalizations
+                .iter()
+                .any(|item| item.code == HotwordNormalizationCode::InvalidWeight)
+        );
+    }
+
+    #[test]
+    fn hotword_parser_rejects_conflicting_weights_and_too_many_super_hotwords() {
+        let conflict = parse_hotword_content("Busabase:4\nBusabase:50").unwrap_err();
+        assert!(conflict.to_string().contains("权重不同"));
+
+        let content = (0..51)
+            .map(|index| format!("超级热词{index}:50"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let excessive = parse_hotword_content(&content).unwrap_err();
+        assert!(excessive.to_string().contains("最多包含 50 个"));
+    }
+
+    #[test]
+    fn hotword_snapshot_reads_legacy_strings_and_round_trips_version_two() {
+        assert_eq!(
+            parse_hotword_snapshot(r#"["Nota","千问"]"#),
+            vec![
+                HotwordEntry {
+                    text: "Nota".into(),
+                    weight: None,
+                },
+                HotwordEntry {
+                    text: "千问".into(),
+                    weight: None,
+                },
+            ]
+        );
+        let entries = vec![HotwordEntry {
+            text: "Busabase".into(),
+            weight: Some(50),
+        }];
+        let snapshot = serialize_hotword_snapshot(&entries).unwrap();
+        assert!(snapshot.contains(r#""version":2"#));
+        assert_eq!(parse_hotword_snapshot(&snapshot), entries);
+    }
+
+    #[test]
+    fn opening_legacy_hotword_schema_adds_nullable_weight_column() {
+        let root = std::env::temp_dir().join(format!(
+            "nota-hotword-migration-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let nota = root.join("Nota");
+        let recordings = nota.join("Recordings");
+        let recovery = nota.join("Recovery");
+        std::fs::create_dir_all(&recordings).unwrap();
+        std::fs::create_dir_all(&recovery).unwrap();
+        let database = nota.join("nota.db");
+        {
+            let connection = Connection::open(&database).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE hotword_lists (
+                       id TEXT PRIMARY KEY,
+                       name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                       created_at TEXT NOT NULL,
+                       updated_at TEXT NOT NULL
+                     );
+                     CREATE TABLE hotword_entries (
+                       list_id TEXT NOT NULL REFERENCES hotword_lists(id) ON DELETE CASCADE,
+                       position INTEGER NOT NULL,
+                       text TEXT NOT NULL,
+                       PRIMARY KEY(list_id, position)
+                     );
+                     INSERT INTO hotword_lists VALUES('legacy', '旧词库', 'now', 'now');
+                     INSERT INTO hotword_entries VALUES('legacy', 0, 'Nota');",
+                )
+                .unwrap();
+        }
+        let storage = Storage::open(AppPaths {
+            recovery,
+            logs: nota.join("Logs"),
+            default_ai_documents: nota.join("AI Documents"),
+            default_recordings: recordings,
+            legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
+            database,
+        })
+        .unwrap();
+        assert_eq!(
+            storage.get_hotword_list("legacy").unwrap().entries,
+            vec![HotwordEntry {
+                text: "Nota".into(),
+                weight: None,
+            }]
+        );
+        let columns = {
+            let connection = storage.connection.lock();
+            let mut statement = connection
+                .prepare("PRAGMA table_info(hotword_entries)")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+        };
+        assert!(columns.contains(&"weight".to_owned()));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn probe_request(id: Option<String>, api_key: AsrApiKeyUpdate) -> AsrProviderProbeRequest {
@@ -4216,6 +4882,7 @@ mod tests {
         let settings = storage.settings().unwrap();
         assert_eq!(settings.active_asr_provider_id, None);
         assert!(!settings.auto_transcribe);
+        assert_eq!(settings.auto_transcribe_hotword_list_id, None);
         assert!(storage.list_asr_providers().unwrap().is_empty());
         let table_count: i64 = storage
             .connection
@@ -4223,12 +4890,25 @@ mod tests {
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master
                  WHERE type = 'table' AND name IN
-                   ('asr_providers', 'transcriptions', 'transcription_chunks')",
+                   ('asr_providers', 'transcriptions', 'transcription_chunks',
+                    'hotword_lists', 'hotword_entries')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(table_count, 3);
+        assert_eq!(table_count, 5);
+        let transcription_columns = {
+            let connection = storage.connection.lock();
+            let mut statement = connection
+                .prepare("PRAGMA table_info(transcriptions)")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .collect::<std::collections::HashSet<_>>()
+        };
+        assert!(transcription_columns.contains("hotword_snapshot_json"));
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }
