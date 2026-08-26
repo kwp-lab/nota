@@ -21,6 +21,8 @@
 | Settings and recording index | Local SQLite | Application lifetime |
 | ASR provider API key | Local SQLite, Rust access only | Until replaced, cleared, or provider deletion |
 | Local transcript generations and segments | Local SQLite | Until recording deletion |
+| Reusable hotword lists | Local SQLite | Until the user deletes the list |
+| Generation hotword snapshot | Local SQLite, backend-only full text | Until the associated recording is permanently deleted |
 | Participant names and confirmed meeting assignments | Local SQLite, Rust access only | Until participant, assignment, or recording deletion |
 | CAM++ voiceprint embeddings | Local SQLite BLOB, Rust access only | Until sample or participant deletion |
 | Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
@@ -304,6 +306,13 @@ recording is reclassified or re-encoded.
 Rust and TypeScript serialization names are part of the Tauri IPC contract.
 Changing a field requires updating both sides and adding migration or default
 behavior for persisted rows.
+
+Hotword migration adds nullable `hotword_entries.weight` with a database check
+allowing only `1–5` and `50`; existing rows remain null and therefore use the
+selected Provider's default behavior. New transcription generations store a
+version-2 structured hotword snapshot. Readers continue to accept legacy JSON
+string arrays and interpret them as null-weight entries, so interrupted and
+historical generations remain recoverable.
 
 ### Removed recording-notice feature
 

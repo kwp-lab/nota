@@ -1,7 +1,8 @@
 use crate::logging::{self, Field, FieldKey};
 use crate::models::{
     AsrConnectionLevel, AsrConnectionTest, AsrModel, AsrProviderCredentials, AsrProviderKind,
-    StoredTranscriptionChunk, TranscriptSegment, TranscriptionEvent, TranscriptionProgressPhase,
+    HotwordEntry, HotwordListDocument, ModelHotwordCapabilities, StoredTranscriptionChunk,
+    TranscriptSegment, TranscriptionEvent, TranscriptionOptions, TranscriptionProgressPhase,
     TranscriptionProgressUnit, TranscriptionProtocol, TranscriptionStatus, TranscriptionSummary,
 };
 use crate::storage::Storage;
@@ -140,6 +141,7 @@ impl AsrManager {
         recording_id: &str,
         provider_id: &str,
         speaker_count: Option<u32>,
+        hotword_list_id: Option<&str>,
     ) -> Result<TranscriptionSummary> {
         self.reserve(recording_id)?;
         let result = (|| {
@@ -148,6 +150,17 @@ impl AsrManager {
                 bail!("录音文件不存在或已被移动");
             }
             let credentials = self.storage.find_asr_provider(provider_id)?;
+            let hotword_list = hotword_list_id
+                .filter(|value| !value.trim().is_empty())
+                .map(|id| self.storage.get_hotword_list(id))
+                .transpose()?;
+            if hotword_list
+                .as_ref()
+                .is_some_and(|list| list.entries.is_empty())
+            {
+                bail!("空热词列表不能用于转写");
+            }
+            validate_hotwords_for_provider(&credentials, hotword_list.as_ref())?;
             if let Some(count) = speaker_count {
                 let capabilities = credentials.provider.kind.capabilities();
                 let (Some(min), Some(max)) = (
@@ -175,10 +188,11 @@ impl AsrManager {
                 );
             }
             remove_temporary_chunks(&self.storage.paths().recovery, recording_id)?;
-            let generation = self.storage.begin_transcription(
+            let generation = self.storage.begin_transcription_with_hotwords(
                 recording_id,
                 &credentials.provider,
                 speaker_count,
+                hotword_list.as_ref(),
             )?;
             logging::info(
                 "asr",
@@ -670,6 +684,8 @@ fn process_job(
 #[derive(Debug, Clone, Deserialize)]
 struct BatchCapabilities {
     batch_transcription_version: String,
+    #[serde(default)]
+    hotword_request_version: Option<String>,
     upload_chunk_bytes: u64,
     max_upload_bytes: u64,
     max_audio_seconds: u64,
@@ -727,6 +743,7 @@ struct CreateBatchJobRequest {
     response_format: &'static str,
     diarization: bool,
     speaker_count: Option<u32>,
+    hotwords: Vec<String>,
 }
 
 fn process_batch_job(
@@ -761,6 +778,11 @@ fn process_batch_job(
     let chunk_bytes = capabilities.upload_chunk_bytes.clamp(1, 16 * 1024 * 1024) as usize;
     let execution =
         storage.transcription_execution_for_generation(&job.recording_id, job.generation)?;
+    if !execution.hotwords.is_empty()
+        && capabilities.hotword_request_version.as_deref() != Some("1")
+    {
+        bail!("当前 Nota ASR Server 版本不支持热词请求，请先升级 Server");
+    }
     let had_remote_job = execution.remote_job_id.is_some();
     ensure_batch_not_cancelled(
         cancellation,
@@ -778,6 +800,7 @@ fn process_batch_job(
                     actual_size,
                     &execution.idempotency_key,
                     execution.speaker_count,
+                    &execution.hotwords,
                 )?;
                 storage.set_remote_transcription_job(
                     &job.recording_id,
@@ -794,6 +817,7 @@ fn process_batch_job(
                 actual_size,
                 &execution.idempotency_key,
                 execution.speaker_count,
+                &execution.hotwords,
             )?;
             storage.set_remote_transcription_job(
                 &job.recording_id,
@@ -948,6 +972,7 @@ fn process_dashscope_job(
 
     let execution =
         storage.transcription_execution_for_generation(&job.recording_id, job.generation)?;
+    validate_dashscope_hotwords(&execution.hotwords)?;
     let mut checkpoint = dashscope::Checkpoint::from_json(&execution.provider_state_json)?;
     if execution.remote_job_id.is_none() && checkpoint.stage == dashscope::Stage::Submitting {
         bail!(
@@ -1041,6 +1066,7 @@ fn process_dashscope_job(
             credentials,
             oss_url,
             execution.speaker_count,
+            &execution.hotwords,
         )?;
         checkpoint.stage = dashscope::Stage::Submitted;
         save_dashscope_checkpoint(storage, job, Some(&submitted_id), &checkpoint)?;
@@ -1438,6 +1464,7 @@ fn create_batch_job(
     size_bytes: u64,
     idempotency_key: &str,
     speaker_count: Option<u32>,
+    hotwords: &[HotwordEntry],
 ) -> Result<BatchJobStatus> {
     let file_name = recording_path
         .file_name()
@@ -1453,6 +1480,7 @@ fn create_batch_job(
         response_format: "verbose_json",
         diarization: true,
         speaker_count,
+        hotwords: nota_server_hotwords(hotwords),
     };
     let client = http_client()?;
     let mut request = client
@@ -1471,6 +1499,10 @@ fn create_batch_job(
         "创建整场会议转写任务",
         credentials,
     )
+}
+
+fn nota_server_hotwords(hotwords: &[HotwordEntry]) -> Vec<String> {
+    hotwords.iter().map(|entry| entry.text.clone()).collect()
 }
 
 fn get_batch_job(
@@ -1856,6 +1888,145 @@ pub fn list_models(credentials: &AsrProviderCredentials) -> Result<Vec<AsrModel>
     parse_models(&body)
 }
 
+pub fn transcription_options(credentials: &AsrProviderCredentials) -> Result<TranscriptionOptions> {
+    let provider = &credentials.provider;
+    let capabilities = provider.kind.capabilities();
+    let hotwords = match provider.kind {
+        AsrProviderKind::DashScope => ModelHotwordCapabilities {
+            supported: true,
+            mode: "inline".into(),
+            max_entries: 2_000,
+            max_entry_chars: 100,
+            weights_supported: true,
+            default_weight: Some(4),
+            allowed_weights: vec![1, 2, 3, 4, 5, 50],
+            super_hotword_weight: Some(50),
+            max_super_hotwords: Some(50),
+        },
+        AsrProviderKind::OpenAiCompatible => ModelHotwordCapabilities {
+            supported: false,
+            mode: "unsupported".into(),
+            max_entries: 0,
+            max_entry_chars: 0,
+            weights_supported: false,
+            default_weight: None,
+            allowed_weights: Vec::new(),
+            super_hotword_weight: None,
+            max_super_hotwords: None,
+        },
+        AsrProviderKind::FunAsr => {
+            let batch = fetch_batch_capabilities(credentials)?;
+            if batch.hotword_request_version.as_deref() != Some("1") {
+                ModelHotwordCapabilities {
+                    supported: false,
+                    mode: "serverUpgradeRequired".into(),
+                    max_entries: 0,
+                    max_entry_chars: 0,
+                    weights_supported: false,
+                    default_weight: None,
+                    allowed_weights: Vec::new(),
+                    super_hotword_weight: None,
+                    max_super_hotwords: None,
+                }
+            } else {
+                list_models(credentials)?
+                    .into_iter()
+                    .find(|model| model.id == provider.model_id)
+                    .and_then(|model| model.hotwords)
+                    .unwrap_or(ModelHotwordCapabilities {
+                        supported: false,
+                        mode: "unsupported".into(),
+                        max_entries: 0,
+                        max_entry_chars: 0,
+                        weights_supported: false,
+                        default_weight: None,
+                        allowed_weights: Vec::new(),
+                        super_hotword_weight: None,
+                        max_super_hotwords: None,
+                    })
+            }
+        }
+    };
+    Ok(TranscriptionOptions {
+        provider_id: provider.id.clone(),
+        provider_name: provider.name.clone(),
+        provider_kind: provider.kind,
+        model_id: provider.model_id.clone(),
+        speaker_count_min: capabilities.speaker_count_min,
+        speaker_count_max: capabilities.speaker_count_max,
+        cloud_upload: capabilities.cloud_upload,
+        max_reliable_audio_seconds: capabilities.max_reliable_audio_seconds,
+        hotwords,
+    })
+}
+
+fn validate_hotwords_for_provider(
+    credentials: &AsrProviderCredentials,
+    list: Option<&HotwordListDocument>,
+) -> Result<()> {
+    let Some(list) = list else {
+        return Ok(());
+    };
+    match credentials.provider.kind {
+        AsrProviderKind::OpenAiCompatible => {
+            bail!("当前转写 Provider 不支持热词，请选择不使用热词")
+        }
+        AsrProviderKind::DashScope => validate_dashscope_hotwords(&list.entries),
+        AsrProviderKind::FunAsr => {
+            let capabilities = fetch_batch_capabilities(credentials)?;
+            if capabilities.hotword_request_version.as_deref() != Some("1") {
+                bail!("当前 Nota ASR Server 版本不支持热词请求，请先升级 Server");
+            }
+            let model = list_models(credentials)?
+                .into_iter()
+                .find(|model| model.id == credentials.provider.model_id)
+                .context("当前 Server 没有返回所选模型的能力")?;
+            let hotwords = model.hotwords.context("当前模型未声明热词能力")?;
+            if !hotwords.supported {
+                bail!("当前模型不支持热词");
+            }
+            if list.entries.len() > hotwords.max_entries as usize {
+                bail!("当前模型最多支持 {} 条热词", hotwords.max_entries);
+            }
+            if list
+                .entries
+                .iter()
+                .any(|entry| entry.text.chars().count() > hotwords.max_entry_chars as usize)
+            {
+                bail!("热词超过当前模型允许的单条字符数");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_dashscope_hotwords(hotwords: &[HotwordEntry]) -> Result<()> {
+    if hotwords.len() > 2_000 {
+        bail!("DashScope 最多支持 2000 条即时热词");
+    }
+    let mut super_hotwords = 0usize;
+    for (index, hotword) in hotwords.iter().enumerate() {
+        let weight = hotword.weight.unwrap_or(4);
+        if !matches!(weight, 1..=5 | 50) {
+            bail!("第 {} 条热词的权重不受 DashScope 支持", index + 1);
+        }
+        if weight == 50 {
+            super_hotwords += 1;
+        }
+        if !hotword.text.is_ascii() {
+            if hotword.text.chars().count() > 15 {
+                bail!("第 {} 条热词超过 DashScope 的 15 字符限制", index + 1);
+            }
+        } else if hotword.text.split_whitespace().count() > 7 {
+            bail!("第 {} 条英文热词超过 DashScope 的 7 个片段限制", index + 1);
+        }
+    }
+    if super_hotwords > 50 {
+        bail!("DashScope 最多支持 50 个超级热词");
+    }
+    Ok(())
+}
+
 pub fn test_connection(credentials: &AsrProviderCredentials) -> Result<AsrConnectionTest> {
     if credentials.provider.kind == AsrProviderKind::DashScope {
         return dashscope::DashScopeAdapter::test_connection(credentials);
@@ -2039,6 +2210,9 @@ fn parse_models(body: &str) -> Result<Vec<AsrModel>> {
                     .and_then(Value::as_str)
                     .map(ToOwned::to_owned),
                 ready: item.get("ready").and_then(Value::as_bool),
+                hotwords: item
+                    .pointer("/capabilities/hotwords")
+                    .and_then(|value| serde_json::from_value(value.clone()).ok()),
             })
         })
         .collect())
@@ -2422,6 +2596,41 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     use std::thread::JoinHandle;
 
+    #[test]
+    fn nota_server_hotwords_ignore_structured_weights() {
+        assert_eq!(
+            nota_server_hotwords(&[
+                HotwordEntry {
+                    text: "Busabase".into(),
+                    weight: Some(50),
+                },
+                HotwordEntry {
+                    text: "Nota".into(),
+                    weight: None,
+                },
+            ]),
+            vec!["Busabase", "Nota"]
+        );
+    }
+
+    #[test]
+    fn dashscope_rejects_invalid_or_excessive_super_hotword_weights() {
+        assert!(
+            validate_dashscope_hotwords(&[HotwordEntry {
+                text: "Busabase".into(),
+                weight: Some(10),
+            }])
+            .is_err()
+        );
+        let entries = (0..51)
+            .map(|index| HotwordEntry {
+                text: format!("word{index}"),
+                weight: Some(50),
+            })
+            .collect::<Vec<_>>();
+        assert!(validate_dashscope_hotwords(&entries).is_err());
+    }
+
     fn credentials(base_url: String, api_key: &str) -> AsrProviderCredentials {
         AsrProviderCredentials {
             provider: AsrProvider {
@@ -2663,6 +2872,7 @@ mod tests {
             3,
             "stable-idempotency-key",
             Some(3),
+            &[],
         )
         .unwrap();
         server.join().unwrap();

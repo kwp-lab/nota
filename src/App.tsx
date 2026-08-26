@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Folder,
   Fingerprint,
+  BookMarked,
   Headphones,
   Library,
   Mic,
@@ -28,6 +29,7 @@ import { AppTooltip } from "./components/AppTooltip";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
 import { VoiceprintsWorkspace } from "./components/VoiceprintsWorkspace";
+import { HotwordLibraryWorkspace } from "./components/HotwordLibraryWorkspace";
 import {
   enqueueToast,
   ToastRegion,
@@ -47,10 +49,12 @@ import type {
   LevelEvent,
   LlmProvider,
   LlmProviderProbeRequest,
+  HotwordListSummary,
   ParticipantProfile,
   RecordingItem,
   RecordingSnapshot,
   TranscriptDocument,
+  TranscriptionOptions,
   TranscriptionVersionSummary,
 } from "./types";
 
@@ -113,7 +117,7 @@ const microphoneSelectionFromValue = (value: string): DeviceSelection | null => 
 
 type CaptureMode = "process" | "system";
 type StartRequestMode = CaptureMode | "current";
-type AppPage = "recorder" | "recordings" | "voiceprints" | "settings";
+type AppPage = "recorder" | "recordings" | "hotwords" | "voiceprints" | "settings";
 type RecordingDeleteRequest = { id: string; permanent: boolean };
 
 export default function App() {
@@ -132,6 +136,9 @@ export default function App() {
   const [audioImport, setAudioImport] = useState<AudioImportBatchSnapshot | null>(null);
   const [recoverable, setRecoverable] = useState<RecordingItem[]>([]);
   const [providers, setProviders] = useState<AsrProvider[]>([]);
+  const [hotwordLists, setHotwordLists] = useState<HotwordListSummary[]>([]);
+  const [hotwordLibraryDirty, setHotwordLibraryDirty] = useState(false);
+  const [activeTranscriptionOptions, setActiveTranscriptionOptions] = useState<TranscriptionOptions | null>(null);
   const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([]);
   const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
@@ -158,6 +165,9 @@ export default function App() {
   const settingsDirty = useMemo(
     () => JSON.stringify(draftSettings) !== JSON.stringify(settings),
     [draftSettings, settings],
+  );
+  const autoHotwordList = hotwordLists.find(
+    (list) => list.id === settings.autoTranscribeHotwordListId,
   );
 
   const showToast = useCallback(
@@ -286,6 +296,26 @@ export default function App() {
     return next;
   }, []);
 
+  const refreshHotwordLists = useCallback(async () => {
+    const [next, savedSettings] = await Promise.all([
+      api.listHotwordLists(),
+      api.getSettings(),
+    ]);
+    setHotwordLists(next);
+    setSettings(savedSettings);
+    setDraftSettings(savedSettings);
+  }, []);
+
+  useEffect(() => {
+    if (!settings.activeAsrProviderId || !settings.autoTranscribeHotwordListId) {
+      setActiveTranscriptionOptions(null);
+      return;
+    }
+    void api.getTranscriptionOptions(settings.activeAsrProviderId)
+      .then(setActiveTranscriptionOptions)
+      .catch(() => setActiveTranscriptionOptions(null));
+  }, [settings.activeAsrProviderId, settings.autoTranscribeHotwordListId]);
+
   const refreshLlmProviders = useCallback(async () => {
     const next = await api.listLlmProviders();
     setLlmProviders(next);
@@ -362,8 +392,9 @@ export default function App() {
       api.listLlmProviders(),
       api.listParticipants(),
       api.getAudioImportSnapshot(),
+      api.listHotwordLists?.() ?? Promise.resolve([]),
     ])
-      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedLlmProviders, savedParticipants, savedImport]) => {
+      .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedLlmProviders, savedParticipants, savedImport, savedHotwordLists]) => {
         if (!mounted) return;
         applyCaptureTargets(targetList);
         setDevices(deviceList);
@@ -381,6 +412,7 @@ export default function App() {
         setLlmProviders(savedLlmProviders);
         setParticipants(savedParticipants);
         setAudioImport(savedImport);
+        setHotwordLists(savedHotwordLists);
         if (savedImport && savedImport.status !== "running") {
           lastHandledImportRef.current = `${savedImport.id}:${savedImport.status}`;
         }
@@ -446,8 +478,25 @@ export default function App() {
     void refreshLibrary()
       .then(async () => {
         if (settings.autoTranscribe && settings.activeAsrProviderId) {
-          await api.startTranscription(recordingId, settings.activeAsrProviderId, null);
-          showToast("success", "录音已保存，并已加入语音转写队列。");
+          try {
+            if (typeof api.listHotwordLists !== "function") {
+              await api.startTranscription(recordingId, settings.activeAsrProviderId, null);
+            } else {
+              await api.startTranscription(
+                recordingId,
+                settings.activeAsrProviderId,
+                null,
+                settings.autoTranscribeHotwordListId ?? null,
+              );
+            }
+            showToast("success", "录音已保存，并已加入语音转写队列。");
+          } catch (error) {
+            showToast(
+              "warning",
+              `录音已保存，但自动转写未启动：${String(error)}`,
+              { durationMs: 8_000 },
+            );
+          }
         } else {
           showToast(
             "success",
@@ -460,6 +509,7 @@ export default function App() {
     refreshLibrary,
     settings.activeAsrProviderId,
     settings.autoTranscribe,
+    settings.autoTranscribeHotwordListId,
     snapshot.sessionId,
     snapshot.state,
     showError,
@@ -688,6 +738,11 @@ export default function App() {
     if (page === "settings" && settingsDirty) {
       setDraftSettings(settings);
     }
+    if (
+      page === "hotwords" &&
+      hotwordLibraryDirty &&
+      !confirm("热词列表尚未保存。放弃这些更改并离开热词库吗？")
+    ) return;
     if (nextPage === "settings") {
       setDraftSettings(settings);
     }
@@ -814,12 +869,14 @@ export default function App() {
   const startTranscription = async (
     recordingId: string,
     speakerCount: number | null,
+    hotwordListId: string | null,
   ) => {
     try {
       const summary = await api.startTranscription(
         recordingId,
         settings.activeAsrProviderId,
         speakerCount,
+        hotwordListId,
       );
       updateTranscriptionSummary(recordingId, summary);
     } catch (error) {
@@ -966,6 +1023,13 @@ export default function App() {
           {recoverable.length > 0 && <b>{recoverable.length}</b>}
         </button>
         <button
+          className={`sidebar-item ${page === "hotwords" ? "active" : ""}`}
+          onClick={() => navigateTo("hotwords")}
+        >
+          <BookMarked size={20} />
+          <span>热词库</span>
+        </button>
+        <button
           className={`sidebar-item ${page === "voiceprints" ? "active" : ""}`}
           onClick={() => navigateTo("voiceprints")}
         >
@@ -990,6 +1054,8 @@ export default function App() {
                 ? "录音"
                 : page === "recordings"
                   ? "录音记录"
+                  : page === "hotwords"
+                    ? "热词库"
                   : page === "voiceprints"
                     ? "声纹管理"
                     : "设置"}
@@ -999,6 +1065,8 @@ export default function App() {
                 ? "捕捉会议声音与麦克风"
                 : page === "recordings"
                   ? "播放录音并查看文字转写"
+                  : page === "hotwords"
+                    ? "为不同会议场景管理本地热词列表"
                   : page === "voiceprints"
                     ? "管理本地参会人姓名与声纹样本"
                     : "管理录音偏好与语音转写服务"}
@@ -1201,6 +1269,54 @@ export default function App() {
             </div>
           )}
 
+          {settings.autoTranscribe && (
+            <div className="auto-hotword-setting">
+              <label>
+                <span>自动转写热词</span>
+                <select
+                  value={settings.autoTranscribeHotwordListId ?? ""}
+                  onChange={(event) => {
+                    const next = {
+                      ...settings,
+                      autoTranscribeHotwordListId: event.target.value || null,
+                    };
+                    setSettings(next);
+                    setDraftSettings(next);
+                    void api.saveSettings(next).catch(showError);
+                  }}
+                >
+                  <option value="">不使用热词</option>
+                  {hotwordLists.map((list) => (
+                    <option key={list.id} value={list.id} disabled={list.entryCount === 0}>
+                      {list.name}（{list.entryCount} 个词）{list.entryCount === 0 ? " · 空列表" : ""}
+                      {list.superHotwordCount > 0 ? ` · ${list.superHotwordCount} 个超级热词` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {settings.autoTranscribeHotwordListId && activeTranscriptionOptions && !activeTranscriptionOptions.hotwords.supported && (
+                <span className="field-error">
+                  {activeTranscriptionOptions.hotwords.mode === "serverUpgradeRequired"
+                    ? "当前 Nota ASR Server 需要升级后才能使用热词；录音会保存，但自动转写不会启动。"
+                    : "当前 Provider 或模型不支持热词；录音会保存，但自动转写不会启动。"}
+                </span>
+              )}
+              {autoHotwordList && activeTranscriptionOptions?.hotwords.supported
+                && !activeTranscriptionOptions.hotwords.weightsSupported
+                && autoHotwordList.weightedEntryCount > 0 && (
+                <span>
+                  当前 Provider 不支持自定义权重；自动转写时会忽略权重，并使用全部 {autoHotwordList.entryCount} 个普通热词。
+                </span>
+              )}
+              {autoHotwordList && activeTranscriptionOptions?.hotwords.weightsSupported
+                && autoHotwordList.superHotwordCount > 0 && (
+                <span>
+                  自动转写将使用 {autoHotwordList.superHotwordCount} 个超级热词；权重过高可能增加相近发音的误识别。
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="recorder-footer">
             <AppTooltip content={settings.outputDirectory || "使用默认录音目录"} side="top" align="start">
               <button className="folder-choice" onClick={chooseOutput}>
@@ -1264,6 +1380,8 @@ export default function App() {
           activeProviderName={providers.find(
             (provider) => provider.id === settings.activeAsrProviderId,
           )?.name ?? null}
+          activeProviderId={settings.activeAsrProviderId}
+          hotwordLists={hotwordLists}
           hasVoiceprintProvider={providers.some(
             (provider) => provider.id === settings.voiceprintProviderId
               && provider.kind === "funAsr",
@@ -1278,9 +1396,11 @@ export default function App() {
           onDismissAudioImport={() => setAudioImport(null)}
           onPreparePlayback={(id) => api.prepareRecordingPlayback(id)}
           onPlaybackError={(message) => showToast("error", message)}
-          onStartTranscription={(id, speakerCount) =>
-            void startTranscription(id, speakerCount)
+          onStartTranscription={(id, speakerCount, hotwordListId) =>
+            void startTranscription(id, speakerCount, hotwordListId)
           }
+          onGetTranscriptionOptions={(providerId) => api.getTranscriptionOptions(providerId)}
+          onOpenHotwordLibrary={() => navigateTo("hotwords")}
           onResumeTranscription={(id) => void resumeTranscription(id)}
           onCancelTranscription={(id) => void cancelTranscription(id)}
           onSelectTranscriptionVersion={async (id, generation) => {
@@ -1347,6 +1467,15 @@ export default function App() {
           }}
           onAiMessage={handleAiMessage}
         />
+        )}
+
+        {page === "hotwords" && (
+          <HotwordLibraryWorkspace
+            lists={hotwordLists}
+            onRefresh={refreshHotwordLists}
+            onDirtyChange={setHotwordLibraryDirty}
+            onMessage={handleAiMessage}
+          />
         )}
 
         {page === "voiceprints" && (

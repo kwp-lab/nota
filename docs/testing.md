@@ -24,6 +24,18 @@ This local command is the required routine quality gate. Cloud CI is layered
 by changed path so ordinary contributions receive relevant feedback without
 paying for an unnecessary full Windows build:
 
+Hotword changes additionally require SQLite CRUD/migration and immutable
+snapshot tests, Provider limit tests, DashScope vocabulary serialization,
+Nota Server capability compatibility, and a privacy review confirming that
+hotword bodies never enter logs or errors. Automated tests must not create
+real cloud tasks.
+
+Weighted-hotword changes must additionally cover ASCII/full-width delimiters,
+zero and invalid normalization, escaped literal colons, conflicting duplicate
+weights, the 50-super-hotword cap, legacy nullable-column migration, legacy
+snapshot reads, DashScope default/super serialization, and Nota Server weight
+removal.
+
 - frontend source and configuration changes run design-token validation,
   frontend tests, and a web-only production build on Linux;
 - Rust and Tauri changes run formatting, locked tests, and Clippy on Windows;
@@ -153,8 +165,10 @@ Automated client coverage must include:
 - recording-detail switching between FunASR and DashScope transcript versions,
   including generation-specific text, speaker count, manual assignments, and
   voiceprint availability;
-- no real DashScope request in routine automated tests. Manual acceptance uses
-  ignored `examples/dashscope-filetrans/sample.ogg` and a local `.env` only;
+- no real DashScope request in routine automated tests. The opt-in
+  `examples/dashscope-filetrans/verify_hotword_effect.py` probe performs a
+  paid A/B transcription only when invoked manually; its ignored sample and
+  local `.env` stay outside version control;
 - selected-application capture failure using a 15-second continuous grace,
   transient-recovery reset, automatic prompt dismissal after successful
   recovery, one alert per uninterrupted failure, session-scoped stale-action

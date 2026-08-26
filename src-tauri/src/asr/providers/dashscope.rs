@@ -1,5 +1,7 @@
 use super::ProviderTranscript;
-use crate::models::{AsrConnectionLevel, AsrConnectionTest, AsrModel, AsrProviderCredentials};
+use crate::models::{
+    AsrConnectionLevel, AsrConnectionTest, AsrModel, AsrProviderCredentials, HotwordEntry,
+};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use reqwest::StatusCode;
@@ -50,8 +52,9 @@ impl DashScopeAdapter {
         credentials: &AsrProviderCredentials,
         oss_url: &str,
         speaker_count: Option<u32>,
+        hotwords: &[HotwordEntry],
     ) -> Result<String> {
-        submit_task(credentials, oss_url, speaker_count)
+        submit_task(credentials, oss_url, speaker_count, hotwords)
     }
 
     pub(super) fn get_task(
@@ -229,6 +232,17 @@ pub(super) fn models() -> Vec<AsrModel> {
         id: MODEL.into(),
         owned_by: Some("Alibaba Cloud".into()),
         ready: Some(true),
+        hotwords: Some(crate::models::ModelHotwordCapabilities {
+            supported: true,
+            mode: "inline".into(),
+            max_entries: 2_000,
+            max_entry_chars: 100,
+            weights_supported: true,
+            default_weight: Some(4),
+            allowed_weights: vec![1, 2, 3, 4, 5, 50],
+            super_hotword_weight: Some(50),
+            max_super_hotwords: Some(50),
+        }),
     }]
 }
 
@@ -309,12 +323,13 @@ pub(super) fn submit_task(
     credentials: &AsrProviderCredentials,
     oss_url: &str,
     speaker_count: Option<u32>,
+    hotwords: &[HotwordEntry],
 ) -> Result<String> {
     validate_credentials(credentials)?;
     if !oss_url.starts_with("oss://") {
         bail!("DashScope 临时对象地址无效");
     }
-    let response = build_submit_request(&client()?, credentials, oss_url, speaker_count)
+    let response = build_submit_request(&client()?, credentials, oss_url, speaker_count, hotwords)
         .send()
         .map_err(|_| {
             anyhow::anyhow!("DashScope 任务提交结果未知；为避免重复计费，Nota 不会自动重试")
@@ -337,6 +352,7 @@ fn build_submit_request(
     credentials: &AsrProviderCredentials,
     oss_url: &str,
     speaker_count: Option<u32>,
+    hotwords: &[HotwordEntry],
 ) -> reqwest::blocking::RequestBuilder {
     let mut parameters = json!({
         "channel_id": [0],
@@ -344,6 +360,13 @@ fn build_submit_request(
     });
     if let Some(count) = speaker_count {
         parameters["speaker_count"] = json!(count);
+    }
+    if !hotwords.is_empty() {
+        let vocabulary = hotwords
+            .iter()
+            .map(|entry| (entry.text.clone(), json!(entry.weight.unwrap_or(4))))
+            .collect::<serde_json::Map<String, Value>>();
+        parameters["vocabulary"] = Value::Object(vocabulary);
     }
     client
         .post(format!("{API_ROOT}/services/audio/asr/transcription"))
@@ -696,6 +719,7 @@ mod tests {
             &credentials(),
             "oss://temporary/audio.ogg",
             Some(4),
+            &[],
         )
         .build()
         .unwrap();
@@ -710,6 +734,32 @@ mod tests {
         assert_eq!(body["input"]["file_urls"][0], "oss://temporary/audio.ogg");
         assert_eq!(body["parameters"]["diarization_enabled"], true);
         assert_eq!(body["parameters"]["speaker_count"], 4);
+    }
+
+    #[test]
+    fn submission_uses_default_and_super_hotword_weights() {
+        let request = build_submit_request(
+            &client().unwrap(),
+            &credentials(),
+            "oss://temporary/audio.ogg",
+            None,
+            &[
+                HotwordEntry {
+                    text: "Nota".into(),
+                    weight: None,
+                },
+                HotwordEntry {
+                    text: "Busabase".into(),
+                    weight: Some(50),
+                },
+            ],
+        )
+        .build()
+        .unwrap();
+        let body: Value =
+            serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
+        assert_eq!(body["parameters"]["vocabulary"]["Nota"], 4);
+        assert_eq!(body["parameters"]["vocabulary"]["Busabase"], 50);
     }
 
     #[test]

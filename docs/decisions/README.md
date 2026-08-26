@@ -23,6 +23,7 @@ rejected alternatives, and consequences.
 | [0009](0009-generated-release-license-compliance.md) | Accepted | Generate release legal artifacts and reciprocal-license source archives from locked dependencies |
 | [0010](0010-direct-dashscope-file-transcription.md) | Accepted | Connect directly to DashScope from the Nota client |
 | [0011](0011-versioned-transcription-generations.md) | Accepted | Preserve completed transcription generations and select one current version |
+| [0012](0012-local-cross-provider-hotword-library.md) | Accepted | Keep reusable hotword lists local and snapshot one list per transcription generation |
 
 ## Lifecycle
 

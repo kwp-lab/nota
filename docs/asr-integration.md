@@ -33,6 +33,11 @@ fixes the China endpoint and `qwen-audio-3.0-asr-flash-filetrans`, always
 enables diarization, accepts automatic or `2–100` speaker count, and rejects
 audio longer than two hours before network access.
 
+Reusable hotword lifecycle and Provider-specific limits are defined in
+[`hotword-library.md`](hotword-library.md). Batch jobs include the selected
+generation snapshot only when the Server declares `hotword_request_version`
+`"1"`; unsupported models are rejected before upload.
+
 The durable protocol is model-independent: SenseVoice, Paraformer, and
 Fun-ASR-Nano may be selected by provider model id while retaining the same
 client-visible transcript types. Model-specific VAD, punctuation, and speaker

@@ -1,6 +1,6 @@
 [package]
 name = "nota"
-version = "0.7.0"
+version = "0.8.0"
 description = "A private, local-first Windows meeting recorder"
 authors = ["Nota Contributors"]
 license = "MIT"

@@ -146,6 +146,7 @@ export interface AppSettings {
   activeAsrProviderId: string | null;
   voiceprintProviderId: string | null;
   autoTranscribe: boolean;
+  autoTranscribeHotwordListId?: string | null;
   activeLlmProviderId: string | null;
 }
 
@@ -160,6 +161,19 @@ export interface AsrProviderCapabilities {
   modelDiscovery: boolean;
   cloudUpload: boolean;
   maxReliableAudioSeconds: number | null;
+  hotwordMode?: "unsupported" | "inline" | "modelDependent";
+}
+
+export interface ModelHotwordCapabilities {
+  supported: boolean;
+  mode: string;
+  maxEntries: number;
+  maxEntryChars: number;
+  weightsSupported: boolean;
+  defaultWeight: number | null;
+  allowedWeights: number[];
+  superHotwordWeight: number | null;
+  maxSuperHotwords: number | null;
 }
 
 export interface AsrProvider {
@@ -200,6 +214,59 @@ export interface AsrModel {
   id: string;
   ownedBy: string | null;
   ready: boolean | null;
+  hotwords?: ModelHotwordCapabilities | null;
+}
+
+export interface HotwordListSummary {
+  id: string;
+  name: string;
+  entryCount: number;
+  weightedEntryCount: number;
+  superHotwordCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HotwordEntry {
+  text: string;
+  weight: number | null;
+}
+
+export interface HotwordListDocument {
+  id: string;
+  name: string;
+  entries: HotwordEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveHotwordListRequest {
+  id: string | null;
+  name: string;
+  content: string;
+}
+
+export interface HotwordNormalization {
+  line: number;
+  code: "fullWidthColon" | "invalidWeight" | "zeroWeight";
+  message: string;
+}
+
+export interface SaveHotwordListResult {
+  document: HotwordListDocument;
+  normalizations: HotwordNormalization[];
+}
+
+export interface TranscriptionOptions {
+  providerId: string;
+  providerName: string;
+  providerKind: AsrProviderKind;
+  modelId: string;
+  speakerCountMin: number | null;
+  speakerCountMax: number | null;
+  cloudUpload: boolean;
+  maxReliableAudioSeconds: number | null;
+  hotwords: ModelHotwordCapabilities;
 }
 
 export interface AsrConnectionTest {
@@ -296,6 +363,8 @@ export interface TranscriptionSummary {
   progressCurrent: number;
   progressTotal: number;
   progressUnit: TranscriptionProgressUnit | null;
+  hotwordListName?: string | null;
+  hotwordCount?: number;
 }
 
 export interface TranscriptionVersionSummary {
@@ -309,6 +378,8 @@ export interface TranscriptionVersionSummary {
   createdAt: string;
   completedAt: string;
   isCurrent: boolean;
+  hotwordListName?: string | null;
+  hotwordCount?: number;
 }
 
 export interface TranscriptSegment {
@@ -338,6 +409,8 @@ export interface TranscriptDocument {
   errorMessage: string | null;
   updatedAt: string;
   completedAt: string | null;
+  hotwordListName?: string | null;
+  hotwordCount?: number;
 }
 
 export interface RecordingSpeakerAssignment {
