@@ -60,7 +60,8 @@ Nota gives Windows one focused recording workflow:
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
 | **Import phone recordings** | Import MP3, M4A, WAV, or FLAC offline, normalize it to a Nota-managed Ogg copy, and use the same playback, transcription, speaker, and AI workflows. |
-| **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use a LAN FunASR server or another OpenAI-compatible provider. |
+| **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use Nota ASR Server, Alibaba Cloud DashScope, or another OpenAI-compatible provider. |
+| **Reusable hotword library** | Keep multiple local lists for names, product terms, and specialist vocabulary; choose one per transcription, snapshot it with that result, and use weighted DashScope super hotwords when needed. |
 | **Shareable AI documents** | Turn a completed transcript into versioned Markdown summaries or action lists with a user-configured OpenAI or OpenAI-compatible LLM. |
 | **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
 | **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
@@ -92,15 +93,24 @@ flowchart LR
     E --> G["Mix and<br>-1 dBFS limiter"]
     F --> G
     G --> H["48 kHz mono<br>Ogg Opus"]
-    H -. "FunASR" .-> I["Resumable original<br>Ogg meeting job"]
+    H -. "Nota ASR Server" .-> I["Resumable original<br>Ogg meeting job"]
+    H -. "DashScope" .-> L["Temporary whole-file<br>cloud task"]
     H -. "OpenAI-compatible" .-> K["16 kHz WAV chunks"]
+    V["Selected local<br>hotword snapshot"] -.-> I
+    V -.-> L
     I -.-> J["Configured<br>ASR provider"]
+    L -.-> J
     K -.-> J
 ```
 
 Nota uses Windows Core Audio directly. Selected-application mode uses Windows process-loopback capture with the target process tree; system mode uses endpoint loopback for a selected output device. Microphone audio is captured independently, aligned with QPC timestamps, resampled to correct clock drift, processed locally, and mixed before Opus encoding.
 
-There is no FFmpeg runtime or virtual sound card. Transcription is a separate, optional workflow. For FunASR, Nota resumably uploads the original Ogg recording as one durable meeting job so speaker labels are reconciled across the whole meeting. Other OpenAI-compatible providers retain the temporary 16 kHz mono WAV chunk workflow; temporary chunks are removed after upload.
+There is no FFmpeg runtime or virtual sound card. Transcription is a separate,
+optional workflow. Nota ASR Server receives the original Ogg as one resumable,
+durable meeting job so speaker labels are reconciled across the whole meeting.
+DashScope uses a temporary whole-file upload and an asynchronous cloud task.
+OpenAI-compatible providers retain the temporary 16 kHz mono WAV chunk
+workflow; temporary chunks are removed after upload.
 
 ## Get Nota
 
@@ -134,11 +144,35 @@ audio.
 Open **Settings → Speech transcription**, add one or more providers, and choose a default:
 
 - **FunASR** for a server on your own computer or LAN;
+- **Alibaba Cloud DashScope** for asynchronous whole-recording transcription
+  with `qwen-audio-3.0-asr-flash-filetrans`;
 - **OpenAI-compatible** for any service implementing the compatible audio-transcription endpoint.
 
-Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. When manually starting or restarting a FunASR transcript, you can keep automatic speaker detection or specify a known count from 1 to 64; automatic transcription always uses automatic detection. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
+Use an API root ending in `/v1`, for example `http://192.168.1.20:8000/v1`, then enter the model ID or load it from `/v1/models`. FunASR requires Nota ASR Server batch protocol v1: the original Ogg is uploaded resumably, server processing can resume by audio window, and final speaker labels share one whole-meeting scope. When manually starting or restarting a FunASR transcript, you can keep automatic speaker detection or specify a known count from 1 to 64; automatic transcription always uses automatic detection. DashScope temporarily uploads the original Ogg, distinguishes anonymous speakers, and can resume polling its asynchronous task after Nota restarts, but that generation does not support Nota voiceprint analysis. Other OpenAI-compatible providers continue to use resumable 10-minute WAV chunks with a 2-second overlap. The original 48 kHz Ogg Opus recording is never replaced.
 
 Completed transcripts can be copied or exported as UTF-8 TXT. When the provider returns speaker labels, both outputs use one `speaker_N：transcribed text` line per segment, replacing `speaker_N` with a locally confirmed participant name when available; otherwise Nota preserves the provider's plain transcript.
+
+### Local hotword library
+
+Open **Hotword library** from the primary navigation to maintain reusable lists
+for participant names, product names, acronyms, and specialist terminology.
+Enter one term or short phrase per line, then choose zero or one list when
+starting a transcription or configure a separate list for automatic
+transcription. Nota stores an immutable snapshot with each transcription
+generation, so later list edits or deletion do not rewrite historical results.
+
+An optional suffix sets a DashScope weight: `Busabase:50` creates a super
+hotword. ASCII and full-width colons are accepted; missing, empty, or `0`
+weights use the default. DashScope accepts weights `1–5` and `50`, while Nota
+ASR Server sends only the term text to supported Paraformer SeACo and
+Fun-ASR-Nano models. Unsupported providers block hotword submission instead of
+silently discarding the list.
+
+Lists remain in local SQLite. Only the selected generation snapshot is sent
+with an explicit or enabled automatic transcription, and hotword text is
+excluded from technical logs. See the
+[hotword library specification](docs/hotword-library.md) for exact validation,
+compatibility, and lifecycle rules.
 
 ### Optional AI meeting documents
 
@@ -207,7 +241,7 @@ The default output directory is `Documents\Nota\Recordings`. Settings, the recor
 - One mixed output file; no separate microphone/system tracks
 - No video, translation, transcript editing, real-time streaming transcription, autonomous agents, or cross-meeting AI retrieval
 - Speaker identification requires provider-supplied diarization labels and a compatible Nota ASR Server; suggestions remain probabilistic until the user confirms them
-- Transcription requires a user-configured FunASR or OpenAI-compatible service
+- Transcription requires a user-configured Nota ASR Server, DashScope, or OpenAI-compatible service
 - First-phase import supports MP3, M4A (AAC-LC/ALAC), WAV, and FLAC, not HE-AAC, DRM audio, or video containers
 - Echo-cancellation quality depends on the microphone, speakers, room, and device mode
 - The preview is not code-signed
