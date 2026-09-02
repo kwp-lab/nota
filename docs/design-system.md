@@ -1,7 +1,7 @@
 # Nota Visual Design System
 
 - Status: Accepted
-- Last updated: 2026-08-11
+- Last updated: 2026-08-27
 - Owners: Nota maintainers
 
 This specification is the source of truth for Nota's in-product visual
@@ -154,6 +154,37 @@ page-specific CSS.
 - Portalled UI such as tooltips, menus, dialogs, and popovers must use tokens
   and must appear above scroll containers without being clipped.
 - Keyboard focus must be visible. Hover-only behavior is not sufficient.
+
+### Settings Center
+
+Settings is a full-height workspace inside the application shell. The global
+application sidebar remains visible, while the normal page header and footer
+are removed so the settings hierarchy owns the available height.
+
+- The settings category navigation is a persistent `200 px` grid track. It
+  never collapses or hides, including on Provider and template management
+  routes. A selected management route highlights its parent category.
+- Ordinary preference pages use one readable column of stacked
+  `SettingsCard` rows. A card contains one icon, a primary label, optional
+  supporting text, and one trailing control or navigation affordance. It must
+  not become a second nested navigation system.
+- Provider and template management pages use three conceptual columns: the
+  persistent category navigation, a `260 px` resource list, and a scrollable
+  detail editor. ASR and LLM editors share this shell and its feedback/action
+  treatments, but keep type-specific fields and validation.
+- Explicit-save editors keep their actions in a stable detail footer. Built-in
+  templates use the same detail region in a read-only state; custom templates
+  may be edited, saved, or archived.
+- At the `980 px` minimum application width, the category and resource tracks
+  reduce to approximately `168 px` and `220 px`. Multi-column forms become one
+  column. The category navigation remains visible and no settings route may
+  introduce horizontal page overflow.
+- The category list, resource list, and detail region own independent vertical
+  scrolling where needed. Chinese long text may wrap in descriptions, while
+  paths and compact resource metadata use tokenized truncation treatments.
+
+Settings uses existing semantic surface, border, status, spacing, and focus
+roles. The workspace geometry does not introduce a new visual token role.
 
 ## Change and Review Checklist
 

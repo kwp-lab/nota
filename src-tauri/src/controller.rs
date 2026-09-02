@@ -1345,6 +1345,12 @@ fn get_settings(state: State<AppState>) -> std::result::Result<AppSettings, Stri
     command_result(state.storage.settings())
 }
 
+fn shortcut_settings_changed(previous: &AppSettings, next: &AppSettings) -> bool {
+    previous.shortcuts_enabled != next.shortcuts_enabled
+        || previous.toggle_shortcut != next.toggle_shortcut
+        || previous.stop_shortcut != next.stop_shortcut
+}
+
 #[tauri::command]
 fn save_settings(
     app: AppHandle,
@@ -1353,11 +1359,17 @@ fn save_settings(
 ) -> std::result::Result<(), String> {
     command_result((|| {
         let previous = state.storage.settings()?;
-        if let Err(error) = register_shortcuts(&app, &settings) {
+        let shortcuts_changed = shortcut_settings_changed(&previous, &settings);
+        if shortcuts_changed && let Err(error) = register_shortcuts(&app, &settings) {
             let _ = register_shortcuts(&app, &previous);
             bail!("快捷键注册失败，可能与其他应用冲突：{error}");
         }
-        state.storage.save_settings(&settings)?;
+        if let Err(error) = state.storage.save_settings(&settings) {
+            if shortcuts_changed {
+                let _ = register_shortcuts(&app, &previous);
+            }
+            return Err(error);
+        }
         logging::info("settings", "saved", &[]);
         Ok(())
     })())
@@ -3150,6 +3162,57 @@ pub fn run_app() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    fn settings() -> AppSettings {
+        AppSettings {
+            output_directory: "C:\\Recordings".into(),
+            ai_documents_directory: "C:\\Documents".into(),
+            aec_mode: AecMode::Auto,
+            microphone_enabled: true,
+            first_run_complete: true,
+            shortcuts_enabled: true,
+            toggle_shortcut: "Ctrl+Alt+F9".into(),
+            stop_shortcut: "Ctrl+Alt+F10".into(),
+            active_asr_provider_id: None,
+            voiceprint_provider_id: None,
+            auto_transcribe: false,
+            auto_transcribe_hotword_list_id: None,
+            active_llm_provider_id: None,
+        }
+    }
+
+    #[test]
+    fn unrelated_settings_do_not_require_shortcut_registration() {
+        let previous = settings();
+        let mut next = previous.clone();
+        next.output_directory = "D:\\Meetings".into();
+        next.aec_mode = AecMode::On;
+        next.auto_transcribe = true;
+
+        assert!(!shortcut_settings_changed(&previous, &next));
+    }
+
+    #[test]
+    fn every_shortcut_field_requires_registration() {
+        let previous = settings();
+
+        let mut disabled = previous.clone();
+        disabled.shortcuts_enabled = false;
+        assert!(shortcut_settings_changed(&previous, &disabled));
+
+        let mut toggle = previous.clone();
+        toggle.toggle_shortcut = "Ctrl+Alt+F7".into();
+        assert!(shortcut_settings_changed(&previous, &toggle));
+
+        let mut stop = previous.clone();
+        stop.stop_shortcut = "Ctrl+Alt+F8".into();
+        assert!(shortcut_settings_changed(&previous, &stop));
+    }
 }
 
 #[cfg(test)]

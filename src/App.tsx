@@ -27,7 +27,10 @@ import {
 import { LevelMeter } from "./components/LevelMeter";
 import { AppTooltip } from "./components/AppTooltip";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
-import { SettingsWorkspace } from "./components/SettingsWorkspace";
+import {
+  SettingsWorkspace,
+  type SettingsRoute,
+} from "./components/settings";
 import { VoiceprintsWorkspace } from "./components/VoiceprintsWorkspace";
 import { HotwordLibraryWorkspace } from "./components/HotwordLibraryWorkspace";
 import {
@@ -40,7 +43,6 @@ import type {
   AecMode,
   AppSettings,
   AsrProvider,
-  AsrProviderProbeRequest,
   AudioDevice,
   AudioImportBatchSnapshot,
   CaptureSelection,
@@ -48,7 +50,6 @@ import type {
   DeviceSelection,
   LevelEvent,
   LlmProvider,
-  LlmProviderProbeRequest,
   HotwordListSummary,
   ParticipantProfile,
   RecordingItem,
@@ -152,7 +153,8 @@ export default function App() {
   const [recordingDeleteBusy, setRecordingDeleteBusy] = useState(false);
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const [appVersion, setAppVersion] = useState("…");
-  const [draftSettings, setDraftSettings] = useState(defaultSettings);
+  const [settingsRoute, setSettingsRoute] = useState<SettingsRoute>("recording");
+  const [settingsEditorDirty, setSettingsEditorDirty] = useState(false);
   const targetIdRef = useRef("");
   const targetPreferenceRef = useRef<CaptureTargetPreference | null>(null);
   const refreshTargetsPromiseRef = useRef<Promise<CaptureTarget[]> | null>(null);
@@ -162,10 +164,6 @@ export default function App() {
   const selectedRecordingIdRef = useRef<string | null>(null);
   const nextToastIdRef = useRef(1);
   const seenFaultKeysRef = useRef(new Set<string>());
-  const settingsDirty = useMemo(
-    () => JSON.stringify(draftSettings) !== JSON.stringify(settings),
-    [draftSettings, settings],
-  );
   const autoHotwordList = hotwordLists.find(
     (list) => list.id === settings.autoTranscribeHotwordListId,
   );
@@ -290,12 +288,6 @@ export default function App() {
       .catch(showError);
   }, [refreshLibrary, showError, showToast]);
 
-  const refreshProviders = useCallback(async () => {
-    const next = await api.listAsrProviders();
-    setProviders(next);
-    return next;
-  }, []);
-
   const refreshHotwordLists = useCallback(async () => {
     const [next, savedSettings] = await Promise.all([
       api.listHotwordLists(),
@@ -303,7 +295,6 @@ export default function App() {
     ]);
     setHotwordLists(next);
     setSettings(savedSettings);
-    setDraftSettings(savedSettings);
   }, []);
 
   useEffect(() => {
@@ -315,12 +306,6 @@ export default function App() {
       .then(setActiveTranscriptionOptions)
       .catch(() => setActiveTranscriptionOptions(null));
   }, [settings.activeAsrProviderId, settings.autoTranscribeHotwordListId]);
-
-  const refreshLlmProviders = useCallback(async () => {
-    const next = await api.listLlmProviders();
-    setLlmProviders(next);
-    return next;
-  }, []);
 
   const refreshParticipants = useCallback(async () => {
     setParticipantsLoading(true);
@@ -399,8 +384,8 @@ export default function App() {
         applyCaptureTargets(targetList);
         setDevices(deviceList);
         setSettings(savedSettings);
-        setDraftSettings(savedSettings);
         if (!savedSettings.firstRunComplete) {
+          setSettingsRoute("setup");
           setPage("settings");
         }
         if (current.state === "completed") {
@@ -698,149 +683,22 @@ export default function App() {
     }
   };
 
-  const chooseDraftOutput = async () => {
-    try {
-      const selected = await open({ directory: true, multiple: false });
-      if (typeof selected === "string") {
-        setDraftSettings((current) => ({
-          ...current,
-          outputDirectory: selected,
-        }));
-      }
-    } catch (error) {
-      showError(error);
-    }
-  };
-
-  const chooseDraftAiDocuments = async () => {
-    try {
-      const selected = await open({ directory: true, multiple: false });
-      if (typeof selected === "string") {
-        setDraftSettings((current) => ({
-          ...current,
-          aiDocumentsDirectory: selected,
-        }));
-      }
-    } catch (error) {
-      showError(error);
-    }
-  };
-
   const navigateTo = (nextPage: AppPage) => {
     if (nextPage === page) return;
     if (
       page === "settings" &&
-      settingsDirty &&
-      !confirm("设置尚未保存。放弃这些更改并离开设置页吗？")
+      settingsEditorDirty &&
+      !confirm("当前编辑内容尚未保存。放弃这些更改并离开设置页吗？")
     ) {
       return;
     }
-    if (page === "settings" && settingsDirty) {
-      setDraftSettings(settings);
-    }
+    if (page === "settings") setSettingsEditorDirty(false);
     if (
       page === "hotwords" &&
       hotwordLibraryDirty &&
       !confirm("热词列表尚未保存。放弃这些更改并离开热词库吗？")
     ) return;
-    if (nextPage === "settings") {
-      setDraftSettings(settings);
-    }
     setPage(nextPage);
-  };
-
-  const saveDraftSettings = async () => {
-    const next = {
-      ...draftSettings,
-      firstRunComplete: true,
-      toggleShortcut: draftSettings.toggleShortcut.trim(),
-      stopShortcut: draftSettings.stopShortcut.trim(),
-    };
-    const previousProviderId = settings.activeAsrProviderId;
-    const nextProvider = providers.find(
-      (provider) => provider.id === next.activeAsrProviderId,
-    );
-    try {
-      await api.saveSettings(next);
-      setSettings(next);
-      setDraftSettings(next);
-      showToast("success", "设置已保存");
-      if (nextProvider?.kind === "dashScope" && previousProviderId !== nextProvider.id) {
-        showToast(
-          "info",
-          "已切换到千问云转写：新任务会上传完整录音，支持匿名说话人分离，但不支持 Nota 声纹分析。",
-        );
-      }
-    } catch (error) {
-      showError(error);
-    }
-  };
-
-  const skipFirstRun = async () => {
-    const next = {
-      ...settings,
-      firstRunComplete: true,
-    };
-    try {
-      await api.saveSettings(next);
-      setSettings(next);
-      setDraftSettings(next);
-      setPage("recorder");
-      showToast("info", "已跳过首次设置，可以随时从侧边栏返回。");
-    } catch (error) {
-      showError(error);
-    }
-  };
-
-  const saveProvider = async (request: Parameters<typeof api.saveAsrProvider>[0]) => {
-    const saved = await api.saveAsrProvider(request);
-    const [nextSettings] = await Promise.all([api.getSettings(), refreshProviders()]);
-    setSettings(nextSettings);
-    setDraftSettings((current) => ({
-      ...current,
-      voiceprintProviderId: nextSettings.voiceprintProviderId,
-    }));
-    return saved;
-  };
-
-  const deleteProvider = async (id: string) => {
-    await api.deleteAsrProvider(id);
-    const [nextSettings] = await Promise.all([api.getSettings(), refreshProviders()]);
-    setSettings(nextSettings);
-    setDraftSettings((current) => ({
-      ...current,
-      activeAsrProviderId:
-        current.activeAsrProviderId === id
-          ? nextSettings.activeAsrProviderId
-          : current.activeAsrProviderId,
-      voiceprintProviderId:
-        current.voiceprintProviderId === id
-          ? nextSettings.voiceprintProviderId
-          : current.voiceprintProviderId,
-      autoTranscribe:
-        current.activeAsrProviderId === id
-          ? nextSettings.autoTranscribe
-          : current.autoTranscribe,
-    }));
-  };
-
-  const saveLlmProvider = async (request: Parameters<typeof api.saveLlmProvider>[0]) => {
-    const saved = await api.saveLlmProvider(request);
-    await refreshLlmProviders();
-    return saved;
-  };
-
-  const deleteLlmProvider = async (id: string) => {
-    await api.deleteLlmProvider(id);
-    const [nextSettings] = await Promise.all([api.getSettings(), refreshLlmProviders()]);
-    setSettings(nextSettings);
-    setDraftSettings((current) => ({
-      ...current,
-      activeLlmProviderId:
-        current.activeLlmProviderId === id
-          ? nextSettings.activeLlmProviderId
-          : current.activeLlmProviderId,
-    }));
   };
 
   const setVoiceprintProvider = async (id: string | null) => {
@@ -848,7 +706,6 @@ export default function App() {
     try {
       await api.saveSettings(next);
       setSettings(next);
-      setDraftSettings((current) => ({ ...current, voiceprintProviderId: id }));
       showToast("success", id ? "声纹提取服务已更新" : "已清除声纹提取服务");
     } catch (error) {
       showError(error);
@@ -1000,6 +857,26 @@ export default function App() {
   const recordingDeleteTarget = recordingDeleteRequest
     ? recordings.find((item) => item.id === recordingDeleteRequest.id) ?? null
     : null;
+  const settingsModel = useMemo(() => ({
+    settings,
+    asrProviders: providers,
+    llmProviders,
+    microphoneCount: micDevices.length,
+    appVersion,
+    recordingActive: isActive(snapshot.state),
+  }), [appVersion, llmProviders, micDevices.length, providers, settings, snapshot.state]);
+  const settingsActions = useMemo(() => ({
+    onSettingsChange: setSettings,
+    onAsrProvidersChange: setProviders,
+    onLlmProvidersChange: setLlmProviders,
+    onFirstRunComplete: () => {
+      setSettingsRoute("recording");
+      setPage("recorder");
+    },
+    onEditorDirtyChange: setSettingsEditorDirty,
+    onToast: showToast,
+    onError: showError,
+  }), [showError, showToast]);
 
   return (
     <div className="app-shell">
@@ -1046,8 +923,8 @@ export default function App() {
         </button>
       </aside>
 
-      <div className="app-content">
-        <header className="topbar">
+      <div className={`app-content ${page === "settings" ? "settings-mode" : ""}`}>
+        {page !== "settings" && <header className="topbar">
           <div>
             <strong>
               {page === "recorder"
@@ -1073,7 +950,7 @@ export default function App() {
             </span>
           </div>
           <span className="local-pill">本地优先</span>
-        </header>
+        </header>}
 
       <main className={`page-content page-${page}`}>
         {page === "recorder" && (
@@ -1281,7 +1158,6 @@ export default function App() {
                       autoTranscribeHotwordListId: event.target.value || null,
                     };
                     setSettings(next);
-                    setDraftSettings(next);
                     void api.saveSettings(next).catch(showError);
                   }}
                 >
@@ -1515,42 +1391,10 @@ export default function App() {
 
         {page === "settings" && (
           <SettingsWorkspace
-            firstRun={!settings.firstRunComplete}
-            dirty={settingsDirty}
-            recordingActive={isActive(snapshot.state)}
-            settings={draftSettings}
-            providers={providers}
-            llmProviders={llmProviders}
-            microphoneCount={micDevices.length}
-            appVersion={appVersion}
-            onChange={setDraftSettings}
-            onChooseOutput={() => void chooseDraftOutput()}
-            onChooseAiDocuments={() => void chooseDraftAiDocuments()}
-            onOpenMicrophoneSettings={() =>
-              void api.openMicrophoneSettings().catch(showError)
-            }
-            onOpenLogDirectory={() =>
-              void api.openLogDirectory().catch(showError)
-            }
-            onSaveProvider={saveProvider}
-            onDeleteProvider={deleteProvider}
-            onSaveLlmProvider={saveLlmProvider}
-            onDeleteLlmProvider={deleteLlmProvider}
-            onTestLlmProvider={(request: LlmProviderProbeRequest) =>
-              api.testLlmProvider(request)
-            }
-            onListLlmModels={(request: LlmProviderProbeRequest) =>
-              api.listLlmModels(request)
-            }
-            onTestProvider={(request: AsrProviderProbeRequest) =>
-              api.testAsrProvider(request)
-            }
-            onListModels={(request: AsrProviderProbeRequest) =>
-              api.listAsrModels(request)
-            }
-            onDiscardChanges={() => setDraftSettings(settings)}
-            onSave={() => void saveDraftSettings()}
-            onSkipFirstRun={() => void skipFirstRun()}
+            route={settingsRoute}
+            onRouteChange={setSettingsRoute}
+            model={settingsModel}
+            actions={settingsActions}
           />
         )}
       </main>
@@ -1617,10 +1461,10 @@ export default function App() {
         </div>
       )}
 
-      <footer className="app-footer">
+      {page !== "settings" && <footer className="app-footer">
         <span><span className="privacy-dot" />本地录音；仅在转写或手动生成 AI 文档时连接所选服务</span>
         <span>Ctrl + Alt + F9 开始/暂停 · F10 停止</span>
-      </footer>
+      </footer>}
       </div>
 
     </div>

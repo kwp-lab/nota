@@ -564,7 +564,8 @@ describe("Nota UI states", () => {
   it("shows the application version in settings", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
-    expect(await screen.findByText("关于此应用")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "关于" }));
+    expect(await screen.findByRole("heading", { name: "关于" })).toBeInTheDocument();
     expect(screen.getByText("v0.2.0")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "设置" })).not.toBeInTheDocument();
   });
@@ -585,7 +586,8 @@ describe("Nota UI states", () => {
     ];
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
-    fireEvent.click(await screen.findByRole("button", { name: /LAN FunASR/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "语音转写" }));
+    fireEvent.click(await screen.findByRole("button", { name: /管理转写服务/ }));
     const key = screen.getByLabelText("API Key");
     expect(key).toHaveAttribute("type", "password");
     expect(key).toHaveValue("••••••••");
@@ -795,39 +797,28 @@ describe("Nota UI states", () => {
     expect(vi.mocked(api.revealTranscriptExport)).toHaveBeenCalledWith(exportPath);
   });
 
-  it("uses the settings workspace, saves explicitly, and guards dirty navigation", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  it("uses the full-screen settings workspace and auto-saves ordinary preferences", async () => {
+    const confirm = vi.spyOn(window, "confirm");
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
     const aec = await screen.findByRole("combobox", { name: "回声消除" });
     fireEvent.change(aec, { target: { value: "off" } });
-    expect(screen.getByText("有未保存的更改")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "录音" }));
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "录音" }));
-    expect(confirm).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "回声消除" }), {
-      target: { value: "off" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
     await waitFor(() =>
       expect(vi.mocked(api.saveSettings)).toHaveBeenCalledWith(
         expect.objectContaining({ aecMode: "off", firstRunComplete: true }),
       ),
     );
-    expect(await screen.findByText("所有普通设置均已保存")).toBeInTheDocument();
+    expect(screen.queryByText("保存设置")).not.toBeInTheDocument();
+    expect(screen.queryByText("本地优先")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "录音" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await screen.findByText("准备好记录会议")).toBeInTheDocument();
   });
 
   it("opens first run as a non-blocking settings page and can skip it", async () => {
     testState.firstRunComplete = false;
     render(<App />);
-    expect(await screen.findByText("欢迎使用 Nota")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "开始使用 Nota" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "录音" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "稍后设置" }));
@@ -844,7 +835,7 @@ describe("Nota UI states", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
     expect(
-      await screen.findByText(/当前录音不会被设置页操作中断/),
+      await screen.findByText(/当前录音不会被设置操作中断/),
     ).toBeInTheDocument();
   });
 

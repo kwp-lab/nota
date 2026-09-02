@@ -2539,7 +2539,7 @@ impl OggPcm16Reader {
             decoded.drain(..skip);
             self.pre_skip -= skip;
         }
-        for source in decoded.chunks_exact(3) {
+        for source in decoded.as_chunks::<3>().0 {
             let value = ((source[0] + source[1] + source[2]) / 3.0).clamp(-1.0, 1.0);
             self.pending
                 .push_back((value * if value < 0.0 { 32_768.0 } else { 32_767.0 }).round() as i16);

@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-22
+- Last updated: 2026-08-27
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -75,6 +75,52 @@ flowchart LR
 | AI document manager | Prompt assembly, LLM requests, cancellation, version lifecycle, atomic Markdown creation, and relinking | Automatic generation, transcript mutation, or in-place overwrite of generated files |
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
 | Configured LLM provider | Explicitly requested text generation | Local Markdown, SQLite, or recording ownership |
+
+### Settings Ownership and Persistence
+
+`App.tsx` owns the canonical settings and Provider summaries shared with the
+rest of the application, the current settings route for this application
+session, and the one global leave guard for complex editors. The settings
+workspace owns category navigation and page composition. Individual pages
+receive one aggregated model/actions interface rather than a collection of IPC
+callbacks.
+
+`useSettingsController` is the single frontend owner of settings IPC, directory
+selection, Provider/template refresh, ordinary-preference autosave, local
+feedback, and complex-editor dirty state. ASR Provider, LLM Provider, and AI
+template managers use the controller but own their type-specific drafts and
+validation. They save explicitly and must confirm before discarding a changed
+draft. Ordinary preference pages never contribute to the global leave guard.
+
+Ordinary settings use optimistic rendering and a serialized, latest-snapshot
+queue. The controller sends only one settings write at a time, coalesces newer
+intent behind the in-flight write, and rolls back to the last confirmed
+snapshot if persistence fails. Default ASR/LLM changes remain specialized IPC
+commands so backend validation and automatic-transcription rules stay
+authoritative. Shortcut text is a local paired draft and is submitted on blur
+or Enter. The Rust controller re-registers global shortcuts only when either
+shortcut field changed and restores the previous registration if persistence
+fails.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Confirmed
+    Confirmed --> Queued: user changes an ordinary preference
+    Queued --> Saving: no settings write is in flight
+    Saving --> Queued: newer target snapshot replaces queued target
+    Saving --> Confirmed: backend accepts the latest saved snapshot
+    Saving --> RolledBack: backend rejects registration or persistence
+    RolledBack --> Confirmed: restore the last confirmed snapshot
+    Confirmed --> DraftEditor: open Provider or template editor
+    DraftEditor --> Confirmed: explicit save or discard confirmed
+    DraftEditor --> DraftEditor: navigation blocked until user decides
+```
+
+The first-run checklist is a route inside this same workspace. Only its
+**Finish** and **Set up later** actions may set `firstRunComplete`; unrelated
+autosaves must preserve that field. After first run, the last settings route is
+remembered only for the current process and defaults to recording settings on
+the next launch.
 
 ## Non-Negotiable Invariants
 
