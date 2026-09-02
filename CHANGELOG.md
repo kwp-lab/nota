@@ -7,8 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-02
+
 ### Changed
 
+- Rebuilt Settings as a full-height categorized workspace with automatic
+  saving for ordinary preferences, dedicated Provider and AI-template
+  list/detail managers, and a non-blocking first-run checklist.
 - Hotword lists now accept optional `:weight` suffixes with full-width-colon
   compatibility, save-time normalization, structured generation snapshots,
   DashScope weights `1–5` and super-hotword `50`, and explicit disclosure when
@@ -353,7 +358,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/kwp-lab/nota/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kwp-lab/nota/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kwp-lab/nota/compare/069d067d016282ae7a9ca24a360fcc64a7b4155b...v0.7.0
 [0.6.0]: https://github.com/kwp-lab/nota/compare/9dca2a84e556bf813f98beb0bab82ab5c5eb6295...069d067d016282ae7a9ca24a360fcc64a7b4155b

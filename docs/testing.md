@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-22
+- Last updated: 2026-08-27
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
@@ -80,6 +80,7 @@ required devices or environment variables in the test name and ignore message.
 | Area | Primary tests |
 |---|---|
 | React behavior and typed rendering | `src/*.test.tsx`, `src/components/*.test.tsx` |
+| Settings navigation, autosave, Provider/template editors, and first run | `src/components/settings/*.test.tsx` and `src/App.test.tsx` |
 | IPC serialization | `src-tauri/src/models.rs` tests |
 | SQLite schema and migrations | `src-tauri/src/storage.rs` tests |
 | ASR parsing, capability checks, request construction, chunk merging | `src-tauri/src/asr.rs` tests |
@@ -192,6 +193,38 @@ Server-side automated coverage must include:
 - duration, upload-size, disk-space, and retention limits;
 - exact `verbose_json 1.0` result compatibility.
 
+## Settings Center Regression Matrix
+
+Automated coverage for Settings must include:
+
+- category navigation, parent-category highlighting on management routes,
+  management-page back navigation, session-only route restoration, and
+  first-run routing precedence;
+- full-height settings mode retaining the application sidebar while omitting
+  the normal global header/footer, including the active-recording notice;
+- serialized ordinary-settings autosave, newest-snapshot coalescing, success
+  feedback, persistence rollback, directory-picker cancellation, specialized
+  default Provider commands, and no leave prompt for confirmed ordinary
+  settings;
+- paired shortcut draft submission on blur or Enter, whitespace trimming,
+  conflict feedback without replacing the effective pair, disabled shortcuts,
+  and no shortcut re-registration for unrelated settings writes;
+- ASR and LLM Provider API-key keep/replace/clear, unsaved-draft connection
+  testing, model discovery and manual fallback, explicit save/delete, default
+  cleanup and first-valid default selection;
+- DashScope fixed fields, no model discovery, and temporary upload disclosure;
+- built-in template read-only behavior and copying, custom-template create,
+  save, revision update, archive, load failures, and dirty-editor navigation
+  protection;
+- the first-run checklist allowing non-blocking category and Provider
+  navigation, Provider round trips, and only **Finish** or **Set up later**
+  persisting completion for the next startup.
+
+Manual visual acceptance covers `1280×800` and `980×640`, Windows `125%`
+scaling, Chinese long text, keyboard navigation and focus, plus disabled,
+loading, empty-list, and error states. The category navigation must remain
+visible and the workspace must not scroll horizontally.
+
 ## Diagnostic Logging Regression Matrix
 
 Automated coverage for local diagnostics must include:
@@ -199,8 +232,8 @@ Automated coverage for local diagnostics must include:
 - UTC RFC3339 timestamps, one-line records, JSON escaping, and bounded text;
 - the typed field allowlist rejecting sensitive field names;
 - one active log plus two archives after rotation;
-- Settings rendering and the open-directory command path without changing
-  settings dirty state;
+- Settings rendering and the open-directory command path without enqueueing an
+  unrelated settings save or changing complex-editor dirty state;
 - lifecycle metadata for recording, import, ASR, and LLM work, including
   correlation IDs, coarse phases, HTTP status, elapsed time, estimates, and
   actual token usage where available;
