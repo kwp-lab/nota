@@ -5,6 +5,7 @@ import { AppTooltipProvider } from "./components/AppTooltip";
 import { CapturePromptWindow } from "./components/CapturePromptWindow";
 import "./design-tokens.css";
 import "./styles.css";
+import "./recording-detail.css";
 
 const rootView = new URLSearchParams(window.location.search).get("view");
 

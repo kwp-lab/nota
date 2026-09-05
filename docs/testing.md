@@ -122,8 +122,8 @@ Automated client coverage must include:
 
 - recording-list context menus exposing **Open containing folder** only for
   list items while preserving the three-action detail overflow menu;
-- one sticky recording-detail control region containing the audio player and
-  transcription actions, with the transcript body outside that region;
+- compact recording-detail controls above an independently scrolling transcript,
+  with a stable native audio player below the body;
 - transcript segment timestamps rendered as zero-padded `HH:MM:SS`, including
   meetings longer than one hour;
 - valid batch protocol v1 capability parsing;
@@ -267,7 +267,7 @@ Automated coverage for AI documents must include:
 - credential-free request JSON matching the submitted body, successful raw
   response JSON and normalized usage persistence, nullable-column migration
   for historical databases, and on-demand IPC reads;
-- keyboard-operable Document/Generation details and Request/Response tabs,
+- a keyboard-operable Generation details drawer and Request/Response tabs,
   collapsible syntax-highlighted JSON, copy actions, long-value wrapping, and
   explicit unavailable states for historical versions;
 - recording deletion preserving Markdown by default and deleting exact linked
@@ -373,6 +373,48 @@ scenarios on Windows 11:
 Real-model and hardware acceptance results should record software versions,
 model id, device type, audio duration, and pass/fail observations. They must not
 include the recording or transcript in ordinary logs or committed artifacts.
+
+## Recording Detail Layout Acceptance
+
+### Application Icon Acceptance
+
+- Confirm the sidebar microphone artwork matches the installed Start menu and
+  window icon. It must not render a replacement Lucide action glyph.
+- Check the Windows tray on light/dark taskbars at 100%, 125%, 150% and 200%
+  scaling: idle uses the app mark only; preparing/recording/finalizing add a red
+  lower-right badge. Pause uses amber; capture reminders/errors use warning
+  amber. Check tooltip/menu distinctions and pending-decision priority.
+- Finish recording and confirm the unmodified idle icon returns. Tray show,
+  pause/resume, stop/save and capture-prompt re-entry must still work.
+- Pixel tests verify the badge leaves the rest of the icon unchanged and that
+  idle states exactly match the embedded asset. Browser/pixel tests do not
+  replace this Windows system-tray check.
+
+### Layout and Dialogs
+
+- Verify the full-height recording workspace at 1280×800, 980×640 and Windows
+  125% scaling: persistent app navigation, independent list/body scrolling,
+  bottom playback controls, and no horizontal page overflow.
+- Check focus mode, keyboard tab switching, overflow actions, drawer Escape and
+  focus restoration. Tab/focus changes must not replace audio or reset playback
+  and the current record's reading positions. Recording-active warnings and the
+  return-to-recorder action remain available.
+- Compare create, regenerate and revise dialogs with the pre-layout baseline:
+  all fields, settings/request tabs, Provider/model linkage, token estimates,
+  budget errors and submit/cancel states must remain unchanged. Assert complete
+  generation payloads, including the revise source-version ID.
+- Regress generation progress/cancel, missing/externally modified Markdown,
+  file relinking, stale responses, and on-demand request/response inspection.
+  Retain all existing playback, speaker, export and transcription tests.
+- Verify generation dialogs and the details drawer close on backdrop clicks,
+  but not inside clicks, cancelled pointers, secondary buttons, or text-selection
+  drags ending outside. Submission blocks close/cancel/backdrop dismissal. Check
+  drawer focus restoration and JSON keyboard expansion after the Lucide icon
+  adaptation. At both viewport sizes, scroll the complete form and confirm
+  header/footer remain visible and scrollbars never cover the shell's corners.
+- Visual fixtures must be synthetic and must not call real model services.
+  Browser viewport checks do not replace real Windows/WebView2 scaling and
+  audio-device acceptance.
 
 ## Documentation Verification
 

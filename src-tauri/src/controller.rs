@@ -2927,30 +2927,59 @@ fn tray_controls(state: RecordingState) -> TrayControls {
 }
 
 fn status_icon(state: RecordingState, capture_prompt_pending: bool) -> Image<'static> {
-    let color = if capture_prompt_pending {
-        [218, 145, 45, 255]
-    } else {
-        match state {
-            RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
-                [202, 69, 69, 255]
-            }
-            RecordingState::Paused => [198, 145, 62, 255],
-            RecordingState::Interrupted | RecordingState::Error => [164, 61, 61, 255],
-            _ => [58, 128, 116, 255],
-        }
+    // Compile-time decoding reuses the installer's icon family without a runtime
+    // image decoder or filesystem access. Keep the full-resolution app mark intact.
+    let base = tauri::include_image!("icons/32x32.png");
+    let Some(color) = tray_badge_color(state, capture_prompt_pending) else {
+        return base;
     };
-    let mut pixels = vec![0u8; 16 * 16 * 4];
-    for y in 1..15 {
-        for x in 1..15 {
-            let dx = x as i32 - 7;
-            let dy = y as i32 - 7;
-            if dx * dx + dy * dy <= 42 {
-                let offset = (y * 16 + x) * 4;
-                pixels[offset..offset + 4].copy_from_slice(&color);
+    let (width, height) = (base.width(), base.height());
+    let mut pixels = base.rgba().to_vec();
+    let radius = width.min(height) as f32 * 0.1875;
+    let center_x = width as f32 - radius - 1.0;
+    let center_y = height as f32 - radius - 1.0;
+    // A light separator keeps the small badge readable over the app mark and
+    // both taskbar themes. Source-over coverage anti-aliases the circle edges.
+    for (radius, color) in [(radius, [255, 255, 255]), (radius * 0.75, color)] {
+        for y in 0..height {
+            for x in 0..width {
+                let distance = ((x as f32 + 0.5 - center_x).powi(2)
+                    + (y as f32 + 0.5 - center_y).powi(2))
+                .sqrt();
+                let coverage = (radius + 0.5 - distance).clamp(0.0, 1.0);
+                if coverage == 0.0 {
+                    continue;
+                }
+                let offset = ((y * width + x) * 4) as usize;
+                let base_alpha = pixels[offset + 3] as f32 / 255.0;
+                let alpha = coverage + base_alpha * (1.0 - coverage);
+                for channel in 0..3 {
+                    pixels[offset + channel] = ((color[channel] as f32 * coverage
+                        + pixels[offset + channel] as f32 * base_alpha * (1.0 - coverage))
+                        / alpha)
+                        .round() as u8;
+                }
+                pixels[offset + 3] = (alpha * 255.0).round() as u8;
             }
         }
     }
-    Image::new_owned(pixels, 16, 16)
+    Image::new_owned(pixels, width, height)
+}
+
+fn tray_badge_color(state: RecordingState, capture_prompt_pending: bool) -> Option<[u8; 3]> {
+    // Native counterparts of --color-status-{recording,paused,warning-accent}
+    // in design-tokens.css. Pending capture decisions retain highest priority.
+    if capture_prompt_pending {
+        return Some([217, 154, 66]);
+    }
+    match state {
+        RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
+            Some([200, 79, 69])
+        }
+        RecordingState::Paused => Some([189, 139, 53]),
+        RecordingState::Interrupted | RecordingState::Error => Some([217, 154, 66]),
+        RecordingState::Idle | RecordingState::Completed | RecordingState::Recovering => None,
+    }
 }
 
 pub fn run_app() {
@@ -3315,6 +3344,90 @@ mod transcript_export_tests {
 #[cfg(test)]
 mod tray_tests {
     use super::*;
+
+    #[test]
+    fn idle_tray_uses_unmodified_packaged_app_icon() {
+        let base = tauri::include_image!("icons/32x32.png");
+        for state in [
+            RecordingState::Idle,
+            RecordingState::Completed,
+            RecordingState::Recovering,
+        ] {
+            let icon = status_icon(state, false);
+            assert_eq!((icon.width(), icon.height()), (32, 32));
+            assert_eq!(icon.rgba(), base.rgba());
+        }
+    }
+
+    #[test]
+    fn recording_badge_changes_only_the_bottom_right_corner() {
+        let base = tauri::include_image!("icons/32x32.png");
+        let recording = status_icon(RecordingState::Recording, false);
+        let mut changed = 0;
+        for (index, (before, after)) in base
+            .rgba()
+            .chunks_exact(4)
+            .zip(recording.rgba().chunks_exact(4))
+            .enumerate()
+        {
+            if before != after {
+                let (x, y) = (index % 32, index / 32);
+                assert!(x >= 18 && y >= 18, "badge must not replace the app mark");
+                changed += 1;
+            }
+        }
+        assert!(changed > 0 && changed < 32 * 32 / 4);
+        let center = (25 * 32 + 25) * 4;
+        assert_eq!(&recording.rgba()[center..center + 4], &[200, 79, 69, 255]);
+        assert!(
+            recording
+                .rgba()
+                .chunks_exact(4)
+                .any(|pixel| pixel == [255, 255, 255, 255])
+        );
+        assert!(
+            recording
+                .rgba()
+                .chunks_exact(4)
+                .any(|pixel| pixel[3] > 0 && pixel[3] < 255)
+        );
+        // Every new state is composed from the base, never from a previous badge.
+        assert_eq!(status_icon(RecordingState::Idle, false).rgba(), base.rgba());
+    }
+
+    #[test]
+    fn tray_badges_preserve_busy_pause_and_capture_warning_states() {
+        for state in [
+            RecordingState::Preparing,
+            RecordingState::Recording,
+            RecordingState::Finalizing,
+        ] {
+            assert_eq!(tray_badge_color(state, false), Some([200, 79, 69]));
+        }
+        assert_eq!(
+            tray_badge_color(RecordingState::Paused, false),
+            Some([189, 139, 53])
+        );
+        for state in [RecordingState::Interrupted, RecordingState::Error] {
+            assert_eq!(tray_badge_color(state, false), Some([217, 154, 66]));
+        }
+        for state in [
+            RecordingState::Idle,
+            RecordingState::Preparing,
+            RecordingState::Recording,
+            RecordingState::Paused,
+            RecordingState::Finalizing,
+            RecordingState::Completed,
+            RecordingState::Interrupted,
+            RecordingState::Error,
+            RecordingState::Recovering,
+        ] {
+            assert_eq!(tray_badge_color(state, true), Some([217, 154, 66]));
+            let icon = status_icon(state, true);
+            let center = (25 * 32 + 25) * 4;
+            assert_eq!(&icon.rgba()[center..center + 4], &[217, 154, 66, 255]);
+        }
+    }
 
     #[test]
     fn capture_prompt_height_is_bounded_and_rejects_invalid_values() {

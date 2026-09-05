@@ -110,8 +110,8 @@ contain credentials, prompt bodies, transcript content, or model output.
   Provider-controlled JSON verbatim but Nota never adds runtime credentials to
   it. Both snapshots are loaded by React only when the user opens **Generation
   details**.
-- The document preview has top-level **Document** and **Generation details**
-  tabs. Generation details shows normalized usage plus separate request and
+- The document preview keeps the body visible and opens **Generation details**
+  in a right-hand drawer. Generation details shows normalized usage plus separate request and
   response JSON trees. Historical versions created before snapshot persistence
   explicitly report that their original JSON is unavailable.
 

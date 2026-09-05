@@ -9,11 +9,17 @@ import type {
   TranscriptionVersionSummary,
 } from "../types";
 import "../styles.css";
+import "../recording-detail.css";
 import { RecordingsWorkspace } from "./RecordingsWorkspace";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
+
+vi.mock("../api", () => ({ api: {
+  getAiWorkspace: vi.fn(async () => ({ profile: {}, documents: [], templates: [] })),
+  onAiStatus: vi.fn(async () => () => {}),
+} }));
 
 const completed: RecordingItem = {
   id: "completed",
@@ -202,6 +208,60 @@ afterEach(() => {
 });
 
 describe("RecordingsWorkspace", () => {
+  it("places the recording-list toggle before the title and names its next action", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+    const toggle = screen.getByRole("button", { name: "折叠录音列表" });
+    const title = screen.getByRole("heading", { name: "产品周会" });
+    const header = title.closest("header")!;
+    expect(header.firstElementChild).toBe(toggle);
+    expect(toggle.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAttribute("aria-controls", "recording-history-panel");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "展开录音列表" })).toBe(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("recording-history-panel")).toHaveAttribute("hidden");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAccessibleName("折叠录音列表");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById("recording-history-panel")).not.toHaveAttribute("hidden");
+  });
+  it("preserves audio and transcript scroll while switching tabs and focus mode", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalledTimes(1));
+    const audio = document.querySelector("audio")!;
+    audio.currentTime = 12;
+    const body = document.querySelector(".transcript-body")!;
+    body.scrollTop = 180;
+    const history = document.querySelector(".history-list")!;
+    history.scrollTop = 200;
+    fireEvent.click(screen.getByRole("button", { name: "折叠录音列表" }));
+    expect(document.querySelector(".history-pane")).toHaveAttribute("hidden");
+    fireEvent.click(screen.getByRole("tab", { name: "AI 文档" }));
+    await screen.findByRole("button", { name: "生成新文档" });
+    fireEvent.click(screen.getByRole("tab", { name: "文字转写" }));
+    expect(document.querySelector("audio")).toBe(audio);
+    expect(audio.currentTime).toBe(12);
+    expect(body.scrollTop).toBe(180);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.querySelector(".history-pane")).not.toHaveAttribute("hidden");
+    expect(history.scrollTop).toBe(200);
+    expect(screen.getByRole("button", { name: "折叠录音列表" })).toHaveFocus();
+    expect(actions.onPreparePlayback).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the overflow disclosure before leaving focus mode", async () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "折叠录音列表" }));
+    const more = screen.getByLabelText("更多转写操作");
+    fireEvent.click(more);
+    fireEvent.keyDown(more, { key: "Escape" });
+    expect(more.closest("details")).not.toHaveAttribute("open");
+    expect(document.querySelector(".library-workspace")).toHaveClass("is-focused");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".library-workspace")).not.toHaveClass("is-focused"));
+  });
   it("switches between completed transcription generations", () => {
     const versions: TranscriptionVersionSummary[] = [{
       generation: 2,
@@ -278,13 +338,16 @@ describe("RecordingsWorkspace", () => {
     expect(screen.getByRole("button", { name: "01:02:03" })).toBeInTheDocument();
   });
 
-  it("keeps the player and transcription toolbar in one sticky control region", async () => {
+  it("keeps the player below the independently scrolling reading region", async () => {
     const actions = renderWorkspace();
     await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
 
-    const sticky = document.querySelector(".record-detail-sticky-controls");
+    const sticky = document.querySelector(".record-detail-controls");
     expect(sticky).not.toBeNull();
-    expect(sticky?.querySelector("audio")).not.toBeNull();
+    expect(sticky?.querySelector("audio")).toBeNull();
+    const player = document.querySelector(".unified-player")!;
+    expect(player.querySelector("audio")).not.toBeNull();
+    expect(document.querySelector(".record-transcript-content")!.compareDocumentPosition(player) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sticky?.querySelector(".transcript-toolbar")).not.toBeNull();
     expect(sticky?.querySelector(".transcript-body")).toBeNull();
   });

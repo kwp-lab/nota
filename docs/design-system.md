@@ -126,6 +126,17 @@ Lucide remains Nota's product icon set. Use 14 px icons in compact controls,
 buttons need an accessible name and an `AppTooltip`; visible text buttons do
 not need a duplicate tooltip.
 
+Application identity is not a Lucide action icon. The sidebar imports the
+packaged `src-tauri/icons/128x128.png` directly, with no replacement glyph,
+extra background or clipped silhouette. Installer, window and tray icons use
+the same packaged microphone artwork; the tray embeds `icons/32x32.png`.
+Idle/completed/recovering tray states show the unmodified app mark. Recording,
+preparing and finalizing add a lower-right recording-red badge; paused adds
+a paused-amber badge. Interrupted/error states and pending capture decisions
+show a warning-amber badge, with pending decisions taking priority. Badges have
+an anti-aliased light separator and use native equivalents of the existing
+status color tokens. Existing tooltip/menu text supplies the precise state.
+
 | Control | Standard |
 |---|---|
 | Compact icon button | 28 px minimum visual target, 14 px icon |
@@ -185,6 +196,39 @@ are removed so the settings hierarchy owns the available height.
 
 Settings uses existing semantic surface, border, status, spacing, and focus
 roles. The workspace geometry does not introduce a new visual token role.
+
+### Recording Detail Workspace
+
+The recording library uses the full application height with the main sidebar
+retained and the redundant global header/footer removed. The record list is a
+280 px track (240 px at widths up to 1100 px). The icon button before the detail
+title toggles only that track, with matching tooltip and accessible labels
+“折叠录音列表” / “展开录音列表”. It exposes the list's expanded state and remains
+available when the list is hidden.
+The compact title, detail tabs, contextual toolbar, reading region, and native
+audio player follow DOM order. The list and reading region scroll independently;
+the outer detail pane must not scroll. Playback remains mounted across tabs.
+
+AI documents use shared select styling for document/version selection instead
+of a permanent nested document sidebar. AI revision and copying stay directly
+available; low-frequency file and generation actions use a keyboard-accessible
+disclosure. Generation details open in a right-hand native dialog drawer with
+focus containment and restoration. Generation configuration dialogs retain
+their original fields and controls. Their rounded outer shell clips overflow;
+only the active form/request panel scrolls, leaving the title, tabs and footer
+visible. Scrollbars stay inside the shell padding, clear of its rounded corners.
+Close controls use Lucide `X`; JSON tree disclosure slots use the bundled Lucide
+chevron SVG as a semantic-color CSS mask without replacing tree keyboard behavior.
+Both generation overlays dismiss on primary clicks that start and end on their
+backdrop. Inside clicks and text-selection drags must not dismiss them; generation
+submission disables close, cancel and backdrop dismissal together.
+
+At 1280×800 and 980×640, normal completed-document content targets at least
+70% and 60% of workspace height respectively. Necessary warnings may reduce
+that area. Controls must not wrap into multiple toolbar rows, and long titles,
+models, and paths must not cause page-level horizontal overflow. Use existing
+semantic tokens; do not shrink body type to achieve density. The playback
+footer retains the local-recording/network-use reminder.
 
 ## Change and Review Checklist
 

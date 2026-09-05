@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import appIconUrl from "../src-tauri/icons/128x128.png";
 import { api } from "./api";
 import type {
   AudioImportBatchSnapshot,
@@ -292,6 +293,27 @@ const snapshot = (state: RecordingSnapshot["state"]): RecordingSnapshot => ({
 });
 
 describe("Nota UI states", () => {
+  it("uses the packaged application icon for the sidebar brand", async () => {
+    render(<App />);
+    const logo = await screen.findByRole("img", { name: "Nota" });
+    expect(logo).toHaveAttribute("src", appIconUrl);
+    expect(logo.parentElement).toHaveClass("sidebar-brand");
+    expect(logo.parentElement?.querySelector("svg")).toBeNull();
+  });
+
+  it("gives recordings the full-height shell and retains the active-recording return action", async () => {
+    testState.snapshot = snapshot("recording");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "录音记录" }));
+    await screen.findByText("录音仍在进行");
+    expect(document.querySelector(".app-content")).toHaveClass("recordings-mode");
+    expect(document.querySelector(".topbar")).toBeNull();
+    expect(document.querySelector(".app-footer")).toBeNull();
+    expect(document.querySelector(".app-sidebar")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "返回录音控制" }));
+    expect(document.querySelector(".topbar")).not.toBeNull();
+    expect(document.querySelector(".app-footer")).not.toBeNull();
+  });
   beforeEach(() => {
     testState.snapshot = snapshot("idle");
     testState.devicesError = false;

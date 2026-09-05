@@ -76,6 +76,39 @@ flowchart LR
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
 | Configured LLM provider | Explicitly requested text generation | Local Markdown, SQLite, or recording ownership |
 
+### Recording Detail Presentation
+
+`RecordingsWorkspace` owns selected-record presentation, native audio playback,
+transcription actions, focus mode, and the existing speaker/transcription
+dialogs. `AiDocumentsPanel` remains the sole owner of AI workspace reads,
+generation drafts, request estimates, version events, file actions, and all
+three generation-dialog modes. Its toolbar, Markdown reader, and generation
+details drawer are presentation components, not additional IPC owners.
+
+The AI panel mounts on first visit and remains mounted while its tab is hidden.
+The audio element, record list, and transcript scroller also retain their DOM
+identity across tab/focus changes. Markdown reading positions are keyed by
+version in transient component state; they are not stored in SQLite or settings.
+Leaving the workspace clears this presentation state. Recording changes retain
+the existing AI reset behavior and asynchronous identity guards.
+
+```mermaid
+flowchart LR
+    A[App: workspace shell] --> B[RecordingsWorkspace: audio and detail tabs]
+    B --> C[AiDocumentsPanel: selected document and version]
+    C --> D[Toolbar: user intent callbacks]
+    C --> E[Reader: Markdown and transient scroll positions]
+    D --> F[Open generation details drawer]
+    F --> G[Read persisted details for selected version]
+    G --> H[Apply only if request and version are current]
+    D --> I[Existing create / regenerate / revise dialog]
+    I --> J[Existing preview, validation and explicit generation IPC]
+```
+
+Opening tabs, reading documents, and inspecting persisted details do not invoke
+LLM generation. No new backend commands, schemas, credentials, or network paths
+are introduced by the workspace layout.
+
 ### Settings Ownership and Persistence
 
 `App.tsx` owns the canonical settings and Provider summaries shared with the
@@ -252,6 +285,26 @@ height from Rust; Rust then resizes and re-anchors it at the monitor's lower
 right corner. Content beyond the upper bound remains scrollable, so DPI,
 accessibility text scaling, long target titles, and error details cannot hide
 the decision buttons.
+
+## Application Identity and Tray Rendering
+
+The frontend sidebar imports the packaged app-icon PNG as a build asset, and
+Rust embeds the 32 px variant with `tauri::include_image!`. Neither path needs
+runtime filesystem access, IPC image payloads, or an extra image dependency.
+The tray compositor always starts from the original app mark, adding only a
+lower-right anti-aliased badge when the state needs one. Returning to idle
+restores the original pixels; badges never accumulate across transitions.
+Recording preparation/finalization, pause and capture-warning distinctions
+remain visible. Existing state deduplication, main-thread tray updates, menus,
+tooltips and recording control ownership are unchanged.
+
+```mermaid
+flowchart LR
+    S["Recording state + pending capture decision"] --> B["Choose no badge / recording / paused / warning"]
+    I["Packaged 32 px application icon"] --> C["Compose corner badge from original pixels"]
+    B --> C
+    C --> T["Update tray icon on main thread"]
+```
 
 ## Live Microphone Switching
 

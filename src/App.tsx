@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import appIconUrl from "../src-tauri/icons/128x128.png";
 import {
   AlertTriangle,
   ChevronDown,
@@ -882,7 +883,7 @@ export default function App() {
     <div className="app-shell">
       <ToastRegion toasts={toasts} onDismiss={dismissToast} />
       <aside className="app-sidebar">
-        <div className="sidebar-brand" aria-label="Nota"><Radio size={20} /></div>
+        <div className="sidebar-brand"><img src={appIconUrl} alt="Nota" width={42} height={42} /></div>
         <button
           className={`sidebar-item ${page === "recorder" ? "active" : ""}`}
           onClick={() => navigateTo("recorder")}
@@ -923,15 +924,13 @@ export default function App() {
         </button>
       </aside>
 
-      <div className={`app-content ${page === "settings" ? "settings-mode" : ""}`}>
-        {page !== "settings" && <header className="topbar">
+      <div className={`app-content ${page === "settings" ? "settings-mode" : page === "recordings" ? "recordings-mode" : ""}`}>
+        {page !== "settings" && page !== "recordings" && <header className="topbar">
           <div>
             <strong>
               {page === "recorder"
                 ? "录音"
-                : page === "recordings"
-                  ? "录音记录"
-                  : page === "hotwords"
+                : page === "hotwords"
                     ? "热词库"
                   : page === "voiceprints"
                     ? "声纹管理"
@@ -940,9 +939,7 @@ export default function App() {
             <span>
               {page === "recorder"
                 ? "捕捉会议声音与麦克风"
-                : page === "recordings"
-                  ? "播放录音并查看文字转写"
-                  : page === "hotwords"
+                : page === "hotwords"
                     ? "为不同会议场景管理本地热词列表"
                   : page === "voiceprints"
                     ? "管理本地参会人姓名与声纹样本"
@@ -1461,7 +1458,7 @@ export default function App() {
         </div>
       )}
 
-      {page !== "settings" && <footer className="app-footer">
+      {page !== "settings" && page !== "recordings" && <footer className="app-footer">
         <span><span className="privacy-dot" />本地录音；仅在转写或手动生成 AI 文档时连接所选服务</span>
         <span>Ctrl + Alt + F9 开始/暂停 · F10 停止</span>
       </footer>}

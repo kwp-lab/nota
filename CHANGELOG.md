@@ -7,6 +7,26 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Reorganized recording details into a full-height reading workspace with a
+  compact contextual toolbar, document/version selectors, bottom audio player,
+  a collapsible recording list controlled from the left of the detail title,
+  and an on-demand generation-details drawer. Existing
+  generation, regeneration, AI revision and transcription dialogs retain their
+  fields and behavior.
+
+### Fixed
+
+- Unified the sidebar and tray with Nota's packaged application icon. Idle
+  shows the app mark; recording adds a lower-right red badge, while pause and
+  capture warnings retain distinct status badges and existing tray controls.
+- Unified AI generation close and JSON disclosure icons with Lucide. Generation
+  dialogs and the details drawer now support backdrop dismissal without closing
+  on text-selection drags; generation submission consistently blocks dismissal.
+- Kept AI generation form scrolling inside the rounded dialog shell, with the
+  header and actions visible and no scrollbar covering the corners.
+
 ## [0.9.0] - 2026-09-02
 
 ### Changed
