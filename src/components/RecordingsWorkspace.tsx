@@ -10,6 +10,8 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Pause,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   RotateCcw,
   Search,
@@ -35,6 +37,8 @@ import type {
   TranscriptionVersionSummary,
   TranscriptionOptions,
 } from "../types";
+import { DetailActionPopover } from "./DetailActionPopover";
+import { DetailSelect } from "./DetailSelect";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import { AppTooltip } from "./AppTooltip";
 import {
@@ -269,6 +273,19 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     retranscription: boolean;
     options: TranscriptionOptions;
   } | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [aiVisited, setAiVisited] = useState(false);
+  const focusButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const escape = (event: globalThis.KeyboardEvent) => {
+      // Tooltips may consume Escape; only task overlays take precedence over focus mode.
+      if (event.key !== "Escape" || document.querySelector('dialog[open], [role="dialog"], details[open], [role="menu"]')) return;
+      setFocused(false);
+      focusButtonRef.current?.focus();
+    };
+    if (focused) document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [focused]);
   const [detailTab, setDetailTab] = useState<"transcript" | "ai">("transcript");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -665,8 +682,8 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     : null;
 
   return (
-    <section className="library-workspace">
-      <aside className="history-pane">
+    <section className={`library-workspace ${focused ? "is-focused" : ""}`}>
+      <aside id="recording-history-panel" className="history-pane" hidden={focused}>
         <div className="history-header">
           <div>
             <p className="eyebrow">RECORDINGS</p>
@@ -866,9 +883,20 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         ) : (
           <>
             <header className="record-detail-header">
-              <div>
-                <p className="eyebrow">MEETING RECORD</p>
-                <h2>{selected.title}</h2>
+              <AppTooltip content={focused ? "展开录音列表" : "折叠录音列表"}>
+                <button
+                  ref={focusButtonRef}
+                  className="icon-button record-list-toggle"
+                  aria-label={focused ? "展开录音列表" : "折叠录音列表"}
+                  aria-expanded={!focused}
+                  aria-controls="recording-history-panel"
+                  onClick={() => setFocused(!focused)}
+                >
+                  {focused ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+                </button>
+              </AppTooltip>
+              <div className="record-detail-heading">
+                <h2 title={selected.title}>{selected.title}</h2>
                 <p>
                   {new Date(selected.createdAt).toLocaleString("zh-CN")}
                   {" · "}{formatDuration(selected.durationMs)}{" · "}{formatSize(selected.sizeBytes)}
@@ -879,9 +907,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   )}
                 </p>
                 {selected.origin === "imported" && selected.sourceFileName && (
-                  <small className="import-source-name" title={selected.sourceFileName}>
-                    原文件：{selected.sourceFileName}
-                  </small>
+                  <details className="record-source-details"><summary>原文件信息</summary><p>原文件：{selected.sourceFileName}</p></details>
                 )}
               </div>
               <div className="detail-actions">
@@ -905,49 +931,20 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               </div>
             </header>
 
-            <div className="record-detail-sticky-controls">
-              <div className="unified-player">
-                {audioLoading && <LoaderCircle className="spin player-loader" size={18} />}
-                <audio
-                  ref={audioRef}
-                  src={audioSource || undefined}
-                  controls
-                  preload="metadata"
-                  onPlay={() => setPlaying(true)}
-                  onPause={() => setPlaying(false)}
-                  onEnded={() => {
-                    setPlaying(false);
-                    setActiveSpeakerPreview(null);
-                  }}
-                  onSeeked={() => {
-                    const audio = audioRef.current;
-                    if (!audio || !activeSpeakerPreview) return;
-                    const currentMs = audio.currentTime * 1_000;
-                    if (currentMs < activeSpeakerPreview.startMs
-                      || currentMs >= activeSpeakerPreview.endMs) {
-                      setActiveSpeakerPreview(null);
-                    }
-                  }}
-                  onTimeUpdate={() => {
-                    const audio = audioRef.current;
-                    if (audio && activeSpeakerPreview
-                      && audio.currentTime * 1_000 >= activeSpeakerPreview.endMs) {
-                      setActiveSpeakerPreview(null);
-                      audio.pause();
-                    }
-                  }}
-                  onError={() => {
-                    setActiveSpeakerPreview(null);
-                    if (audioSource) {
-                      props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。");
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="app-tab-bar" role="tablist" aria-label="会议详情">
+            <div className="record-detail-controls">
+              <div className="app-tab-bar" role="tablist" aria-label="会议详情" onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const next = event.key === "Home" ? "transcript" : event.key === "End" ? "ai" : detailTab === "ai" ? "transcript" : "ai";
+                if (next === "ai") setAiVisited(true);
+                setDetailTab(next);
+                document.getElementById(`record-${next}-tab`)?.focus();
+              }}>
                 <button
                   role="tab"
+                  id="record-transcript-tab"
+                  aria-controls="record-transcript-panel"
+                  tabIndex={detailTab === "transcript" ? 0 : -1}
                   aria-selected={detailTab === "transcript"}
                   className={detailTab === "transcript" ? "active" : ""}
                   onClick={() => setDetailTab("transcript")}
@@ -956,9 +953,12 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 </button>
                 <button
                   role="tab"
+                  id="record-ai-tab"
+                  aria-controls="record-ai-panel"
+                  tabIndex={detailTab === "ai" ? 0 : -1}
                   aria-selected={detailTab === "ai"}
                   className={detailTab === "ai" ? "active" : ""}
-                  onClick={() => setDetailTab("ai")}
+                  onClick={() => { setAiVisited(true); setDetailTab("ai"); }}
                 >
                   AI 文档
                 </button>
@@ -988,7 +988,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   {props.transcript && props.transcriptionVersions.length > 1 && (
                     <label className="transcription-version-select">
                       <span>转写版本</span>
-                      <select
+                      <DetailSelect
                         aria-label="转写版本"
                         disabled={props.transcriptLoading}
                         value={props.transcript.generation}
@@ -1004,7 +1004,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                               : "未使用热词 · "}${formatVersionDate(version.completedAt)}`}
                           </option>
                         ))}
-                      </select>
+                      </DetailSelect>
                     </label>
                   )}
                   {isProcessing ? (
@@ -1033,6 +1033,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       <button className="button secondary compact" onClick={() => props.onCopyTranscript(selected.id)}>
                         <Clipboard size={15} />复制全文
                       </button>
+                      <DetailActionPopover label="更多转写操作">
                       <button className="button secondary compact" onClick={() => props.onExportTranscript(selected.id, selected.title)}>
                         <Download size={15} />导出 TXT
                       </button>
@@ -1054,6 +1055,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                         </button>
                       </AppTooltip>
                       <button className="text-button" onClick={() => requestTranscription(selected, true)}>重新转写</button>
+                      </DetailActionPopover>
                     </>
                   ) : (
                     <AppTooltip
@@ -1074,8 +1076,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               )}
             </div>
 
-            {detailTab === "transcript" ? (
-            <>
+            <div id="record-transcript-panel" role="tabpanel" aria-labelledby="record-transcript-tab" className="record-transcript-content" hidden={detailTab !== "transcript"}>
             {isProcessing && (
               <div className="transcription-progress">
                 <LoaderCircle className="spin" size={18} />
@@ -1144,8 +1145,8 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 </div>
               )}
             </div>
-            </>
-            ) : (
+            </div>
+            {(aiVisited || detailTab === "ai") && <div id="record-ai-panel" role="tabpanel" aria-labelledby="record-ai-tab" className="record-ai-content" hidden={detailTab !== "ai"}>
               <AiDocumentsPanel
                 recording={selected}
                 transcript={props.transcript}
@@ -1153,7 +1154,46 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 activeProviderId={props.activeLlmProviderId}
                 onMessage={props.onAiMessage}
               />
-            )}
+            </div>}
+              <div className="unified-player">
+                {audioLoading && <LoaderCircle className="spin player-loader" size={18} />}
+                <audio
+                  ref={audioRef}
+                  src={audioSource || undefined}
+                  controls
+                  preload="metadata"
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => setPlaying(false)}
+                  onEnded={() => {
+                    setPlaying(false);
+                    setActiveSpeakerPreview(null);
+                  }}
+                  onSeeked={() => {
+                    const audio = audioRef.current;
+                    if (!audio || !activeSpeakerPreview) return;
+                    const currentMs = audio.currentTime * 1_000;
+                    if (currentMs < activeSpeakerPreview.startMs
+                      || currentMs >= activeSpeakerPreview.endMs) {
+                      setActiveSpeakerPreview(null);
+                    }
+                  }}
+                  onTimeUpdate={() => {
+                    const audio = audioRef.current;
+                    if (audio && activeSpeakerPreview
+                      && audio.currentTime * 1_000 >= activeSpeakerPreview.endMs) {
+                      setActiveSpeakerPreview(null);
+                      audio.pause();
+                    }
+                  }}
+                  onError={() => {
+                    setActiveSpeakerPreview(null);
+                    if (audioSource) {
+                      props.onPlaybackError("无法播放录音，文件可能已移动或格式不可用。");
+                    }
+                  }}
+                />
+              </div>
+            <div className="record-privacy-note">本地录音；仅在转写或手动生成 AI 文档时连接所选服务</div>
           </>
         )}
       </article>

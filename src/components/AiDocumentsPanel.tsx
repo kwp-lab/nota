@@ -3,24 +3,25 @@ import {
   AlertCircle,
   Clipboard,
   FileText,
-  FolderOpen,
   Link2,
   LoaderCircle,
   Plus,
   RefreshCw,
-  RotateCcw,
   Sparkles,
   Square,
   WandSparkles,
+  X,
 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AiDocumentToolbar } from "./AiDocumentToolbar";
+import { AiDocumentReader } from "./AiDocumentReader";
 import { api, type UnlistenFn } from "../api";
 import { estimateAiRequestInputTokens } from "../ai-token-estimate";
 import { llmProviderReady } from "../llm";
+import { AiGenerationDetailsDrawer } from "./AiGenerationDetailsDrawer";
 import { AppTooltip } from "./AppTooltip";
 import { JsonTreeView } from "./JsonTreeView";
+import { useBackdropDismiss } from "./useBackdropDismiss";
 import type {
   AiDocument,
   AiDocumentContent,
@@ -99,6 +100,8 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const [contentLoading, setContentLoading] = useState(false);
   const [dialog, setDialog] = useState<GenerationDialogState | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const closeGenerationDialog = () => { if (!submitting) setDialog(null); };
+  const generationBackdrop = useBackdropDismiss(closeGenerationDialog);
   const [contentReloadKey, setContentReloadKey] = useState(0);
   const [previewTab, setPreviewTab] = useState<"document" | "details">("document");
   const [generationDetailTab, setGenerationDetailTab] = useState<"request" | "response">("request");
@@ -421,16 +424,6 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     });
   };
 
-  const handlePreviewTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const nextTab = previewTab === "document" ? "details" : "document";
-    setPreviewTab(nextTab);
-    window.requestAnimationFrame(() => {
-      window.document.getElementById(`ai-document-${nextTab}-tab`)?.focus();
-    });
-  };
-
   const handleGenerationDetailTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -539,129 +532,36 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
 
   return (
     <div className="ai-documents-layout">
-      <aside className="ai-document-list">
-        <div className="ai-document-list-header">
-          <div><strong>AI 文档</strong><small>{workspace?.documents.length ?? 0} 个场景</small></div>
-          <AppTooltip
-            content={unusedTemplates.length ? "生成新文档" : "所有模板都已生成"}
-            wrapDisabled={!canCreateDocument}
-          >
-            <button
-              className="icon-button"
-              aria-label="生成新文档"
-              disabled={!canCreateDocument}
-              onClick={() => openDialog("create", null)}
-            >
-              <Plus size={16} />
-            </button>
-          </AppTooltip>
-        </div>
-        {!availableProviders.length && (
-          <div className="ai-inline-warning"><AlertCircle size={15} />请先在设置中添加可用的 LLM Provider；OpenAI 官方服务需要 API Key。</div>
-        )}
-        {workspace?.documents.length ? workspace.documents.map((document) => (
-          <button
-            key={document.id}
-            className={`ai-document-item ${document.id === selectedDocumentId ? "active" : ""}`}
-            onClick={() => setSelectedDocumentId(document.id)}
-          >
-            <FileText size={17} />
-            <span><strong>{document.title}</strong><small>{document.templateName}</small></span>
-          </button>
-        )) : (
-          <div className="ai-document-list-empty">
-            <Sparkles size={20} />
-            <p>选择模板生成第一份 Markdown 文档。</p>
-            <button
-              className="button primary"
-              disabled={!unusedTemplates.length || !availableProviders.length}
-              onClick={() => openDialog("create", null)}
-            >
-              <Plus size={15} />生成文档
-            </button>
-          </div>
-        )}
-      </aside>
-
+      <AiDocumentToolbar
+        model={{
+          documents: workspace?.documents ?? [], versions: versions.map((version) => ({ id: version.id, label: formatVersionLabel(version) })),
+          documentId: selectedDocumentId, versionId: selectedVersionId,
+          canCreate: canCreateDocument, canRegenerate: availableProviders.length > 0, canRevise: canReviseVersion,
+          canRead: selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing",
+          createHint: !availableProviders.length ? "请先配置可用的 LLM Provider" : unusedTemplates.length ? "生成新文档" : "所有模板都已生成",
+        }}
+        actions={{
+          selectDocument: setSelectedDocumentId, selectVersion: setSelectedVersionId,
+          create: () => openDialog("create", null),
+          regenerate: () => { if (selectedDocument) openDialog("regenerate", selectedDocument); },
+          revise: () => { if (selectedDocument) openDialog("revise", selectedDocument, selectedVersion); },
+          details: () => setPreviewTab("details"),
+          refresh: () => setContentReloadKey((current) => current + 1),
+          copy: () => { if (selectedVersion) void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error))); },
+          copyPath: () => { if (selectedVersion) void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error))); },
+          open: () => { if (selectedVersion) void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error))); },
+          reveal: () => { if (selectedVersion) void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error))); },
+        }}
+      />
+      {!availableProviders.length && <div className="ai-inline-warning"><AlertCircle size={15} />请先在设置中添加可用的 LLM Provider；OpenAI 官方服务需要 API Key。</div>}
       <section className="ai-document-preview">
         {!selectedDocument ? (
-          <div className="ai-documents-empty"><WandSparkles size={28} /><p>选择或生成一份 AI 文档。</p></div>
+          <div className="ai-documents-empty">
+            <WandSparkles size={28} /><p>选择模板生成第一份 Markdown 文档。</p>
+            <button className="button primary" disabled={!canCreateDocument} onClick={() => openDialog("create", null)}><Plus size={15} />生成文档</button>
+          </div>
         ) : (
           <>
-            <header className="ai-document-preview-header">
-              <div>
-                <strong>{selectedDocument.title}</strong>
-                <small>{selectedDocument.templateName}</small>
-              </div>
-              <div className="ai-version-controls">
-                <select
-                  aria-label="AI 文档版本"
-                  value={selectedVersionId ?? ""}
-                  onChange={(event) => setSelectedVersionId(event.target.value || null)}
-                >
-                  {versions.map((version) => (
-                    <option key={version.id} value={version.id}>{formatVersionLabel(version)}</option>
-                  ))}
-                </select>
-                <AppTooltip
-                  content="不参考当前版本，使用当前转写创建全新版本；已有版本不会被覆盖"
-                  wrapDisabled={!availableProviders.length}
-                >
-                  <button
-                    className="button secondary compact"
-                    disabled={!availableProviders.length}
-                    onClick={() => openDialog("regenerate", selectedDocument)}
-                  >
-                    <RotateCcw size={14} />重新生成
-                  </button>
-                </AppTooltip>
-                <AppTooltip
-                  content="以当前所选版本为基础创建修改后的新版本；原版本不会被覆盖"
-                  wrapDisabled={!canReviseVersion}
-                >
-                  <button
-                    className="button secondary compact"
-                    disabled={!canReviseVersion}
-                    onClick={() => openDialog("revise", selectedDocument, selectedVersion)}
-                  >
-                    <WandSparkles size={14} />AI修改
-                  </button>
-                </AppTooltip>
-              </div>
-            </header>
-
-            <div
-              className="app-tab-bar ai-document-view-tabs"
-              role="tablist"
-              aria-label="AI 文档内容"
-              onKeyDown={handlePreviewTabKeyDown}
-            >
-              <button
-                id="ai-document-document-tab"
-                type="button"
-                role="tab"
-                aria-selected={previewTab === "document"}
-                aria-controls="ai-document-document-panel"
-                tabIndex={previewTab === "document" ? 0 : -1}
-                className={previewTab === "document" ? "active" : ""}
-                onClick={() => setPreviewTab("document")}
-              >
-                文档
-              </button>
-              <button
-                id="ai-document-details-tab"
-                type="button"
-                role="tab"
-                aria-selected={previewTab === "details"}
-                aria-controls="ai-document-details-panel"
-                tabIndex={previewTab === "details" ? 0 : -1}
-                className={previewTab === "details" ? "active" : ""}
-                onClick={() => setPreviewTab("details")}
-              >
-                生成详情
-              </button>
-            </div>
-
             {selectedVersion?.status === "generating" || selectedVersion?.status === "queued" ? (
               <div className="ai-generation-progress">
                 <LoaderCircle className="spin" />
@@ -690,52 +590,13 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
               <div className="ai-external-edit">文件已在外部修改；预览和“基于此版本修改”都会使用磁盘上的当前内容。</div>
             )}
 
-            {previewTab === "document" ? (
-              <>
-                <div className="ai-preview-toolbar">
-                  <span>
-                    {selectedVersion
-                      ? `${selectedVersion.providerName} · ${selectedVersion.modelId}`
-                      : "尚未生成版本"}
-                  </span>
-                  {selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing" && (
-                    <div>
-                      <AppTooltip content="刷新预览"><button aria-label="刷新预览" onClick={() => setContentReloadKey((current) => current + 1)}><RefreshCw size={14} /></button></AppTooltip>
-                      <AppTooltip content="复制 Markdown"><button aria-label="复制 Markdown" onClick={() => void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error)))}><Clipboard size={14} /></button></AppTooltip>
-                      <AppTooltip content="复制文件路径"><button aria-label="复制文件路径" onClick={() => void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error)))}><Link2 size={14} /></button></AppTooltip>
-                      <AppTooltip content="使用默认应用打开"><button aria-label="使用默认应用打开" onClick={() => void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FileText size={14} /></button></AppTooltip>
-                      <AppTooltip content="在资源管理器中显示"><button aria-label="在资源管理器中显示" onClick={() => void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error)))}><FolderOpen size={14} /></button></AppTooltip>
-                    </div>
-                  )}
-                </div>
-                <div
-                  id="ai-document-document-panel"
-                  className="ai-markdown-body"
-                  role="tabpanel"
-                  aria-labelledby="ai-document-document-tab"
-                >
-                  {contentLoading ? (
-                    <div className="ai-documents-loading"><LoaderCircle className="spin" />读取 Markdown…</div>
-                  ) : content ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        img: ({ alt }) => <span className="ai-remote-image">[图片未自动加载：{alt || "无标题"}]</span>,
-                      }}
-                    >
-                      {content.markdown}
-                    </ReactMarkdown>
-                  ) : (
-                    <div className="ai-documents-empty"><FileText size={24} /><p>选择一个已完成版本查看内容。</p></div>
-                  )}
-                </div>
-              </>
-            ) : (
+            <AiDocumentReader versionId={selectedVersionId} loading={contentLoading} content={content} />
+            {previewTab === "details" && <AiGenerationDetailsDrawer onClose={() => setPreviewTab("document")}>
               <div
                 id="ai-document-details-panel"
                 className="ai-generation-details"
-                role="tabpanel"
-                aria-labelledby="ai-document-details-tab"
+                role="region"
+                aria-label="生成详情内容"
               >
                 {selectedVersion ? (
                   <>
@@ -833,13 +694,13 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                   <div className="ai-generation-detail-state"><FileText size={24} /><p>选择一个版本查看生成详情。</p></div>
                 )}
               </div>
-            )}
+            </AiGenerationDetailsDrawer>}
           </>
         )}
       </section>
 
       {dialog && workspace && (
-        <div className="modal-backdrop" role="presentation">
+        <div className="modal-backdrop" role="presentation" {...generationBackdrop}>
           <section className="ai-generation-dialog" role="dialog" aria-modal="true" aria-label="生成 AI 文档">
             <header>
               <div>
@@ -849,7 +710,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                   每次生成都会创建新的 Markdown 版本，不会覆盖已有版本或文件。
                 </small>
               </div>
-              <AppTooltip content="关闭"><button className="icon-button" aria-label="关闭生成窗口" onClick={() => setDialog(null)}>×</button></AppTooltip>
+              <AppTooltip content="关闭"><button className="icon-button" aria-label="关闭生成窗口" disabled={submitting} onClick={closeGenerationDialog}><X size={16} /></button></AppTooltip>
             </header>
             <div
               className="app-tab-bar ai-generation-tabs"
@@ -973,7 +834,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
               </div>
             )}
             <footer>
-              <button className="button secondary" disabled={submitting} onClick={() => setDialog(null)}>取消</button>
+              <button className="button secondary" disabled={submitting} onClick={closeGenerationDialog}>取消</button>
               <button
                 className="button primary"
                 disabled={

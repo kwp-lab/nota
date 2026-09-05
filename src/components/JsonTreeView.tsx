@@ -1,5 +1,7 @@
 import { JsonView, collapseAllNested } from "react-json-view-lite";
 
+// The library exposes CSS icon slots only. Their masks use the bundled Lucide
+// ChevronRight SVG (rotated for collapse), preserving its native tree behavior.
 const jsonTreeStyles = {
   container: "app-json-tree",
   childFieldsContainer: "app-json-tree-children",
