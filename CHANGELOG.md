@@ -15,6 +15,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Refined the recording library into compact two-line rows with flatter
+  selection, quieter progressive quick-play actions, a narrow scrollbar, and
+  playback controls free of the redundant persistent network-use reminder.
 - Reorganized recording details into a full-height reading workspace with a
   compact contextual toolbar, document/version selectors, bottom audio player,
   a collapsible recording list controlled from the left of the detail title,

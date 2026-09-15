@@ -113,6 +113,21 @@ Automated coverage must include:
   dismissal, focus restoration, and an accessible name for every option;
 - PID rebinding by executable path and no silent switch to another application.
 
+## Recording Library Visual Regression Matrix
+
+Automated coverage and Windows acceptance must include:
+
+- compact two-line rows that keep title, date, duration, and transcription
+  state readable without repeating file size or a leading recording icon;
+- quick playback exposed on row hover, keyboard focus, selection, and active
+  playback, with Space toggling playback while Enter keeps its selection role;
+- flat selected, context-menu, processing, completed, and failed states with
+  visible focus and no card border or elevation;
+- an independently scrolling list with a narrow neutral scrollbar, transparent
+  track, and usable forced-colors behavior;
+- a playback footer with no persistent network-use note, verified at 100%,
+  125%, and 150% Windows scaling and at the 980×640 minimum window size.
+
 ## Audio Import Regression Matrix
 
 Automated coverage must include:

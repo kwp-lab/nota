@@ -1,7 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   AlertCircle,
-  Check,
   Clipboard,
   Download,
   FileAudio,
@@ -706,7 +705,9 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <FileUp size={14} />导入录音
               </button>
             </AppTooltip>
-            <span className="count-pill">{props.items.length}</span>
+            <span className="history-count" aria-label={`${props.items.length} 条录音`}>
+              {props.items.length} 条
+            </span>
           </div>
         </div>
         <label className="history-search">
@@ -825,29 +826,37 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
             filtered.map((item) => (
               <article
                 key={item.id}
-                className={`history-item ${item.id === props.selectedId ? "selected" : ""} ${item.id === actionMenu?.recordingId ? "menu-target" : ""}`}
+                className={`history-item ${item.id === props.selectedId ? "selected" : ""} ${playing && selected?.id === item.id ? "is-playing" : ""} ${item.id === actionMenu?.recordingId ? "menu-target" : ""}`}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   openContextMenu(item, event.clientX, event.clientY);
                 }}
               >
-                <button className="history-select" onClick={() => props.onSelect(item.id)}>
-                  <span className="history-item-icon">
-                    {item.transcription?.status === "completed" ? <Check size={15} /> : <FileAudio size={15} />}
-                  </span>
+                <button
+                  className="history-select"
+                  aria-keyshortcuts="Space"
+                  onClick={() => props.onSelect(item.id)}
+                  onDoubleClick={() => toggleQuickPlayback(item)}
+                  onKeyDown={(event) => {
+                    if (event.key !== " ") return;
+                    event.preventDefault();
+                    toggleQuickPlayback(item);
+                  }}
+                >
                   <span className="history-item-main">
                     <strong>{item.title}</strong>
-                    <small>
+                    <small className="history-item-meta">
                       {new Date(item.createdAt).toLocaleDateString("zh-CN", {
                         month: "short",
                         day: "numeric",
                       })}
-                      {" · "}{formatDuration(item.durationMs)}{" · "}{formatSize(item.sizeBytes)}
+                      {" · "}{formatDuration(item.durationMs)}{" · "}
+                      <span className={`history-transcription-status status-${item.transcription?.status ?? "none"}`}>
+                        <span className="history-status-dot" aria-hidden="true" />
+                        {item.transcription ? transcriptionLabel(item.transcription) : "未转写"}
+                        {item.transcription ? transcriptionProgressSuffix(item.transcription) : ""}
+                      </span>
                     </small>
-                    <span className={`transcription-badge status-${item.transcription?.status ?? "none"}`}>
-                      {item.transcription ? transcriptionLabel(item.transcription) : "未转写"}
-                      {item.transcription ? transcriptionProgressSuffix(item.transcription) : ""}
-                    </span>
                   </span>
                 </button>
                 <AppTooltip content={playing && selected?.id === item.id ? "暂停" : "播放"} side="left">
@@ -1193,7 +1202,6 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   }}
                 />
               </div>
-            <div className="record-privacy-note">本地录音；仅在转写或手动生成 AI 文档时连接所选服务</div>
           </>
         )}
       </article>

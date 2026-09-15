@@ -225,6 +225,18 @@ available when the list is hidden.
 The compact title, detail tabs, contextual toolbar, reading region, and native
 audio player follow DOM order. The list and reading region scroll independently;
 the outer detail pane must not scroll. Playback remains mounted across tabs.
+The recording list uses compact two-line rows rather than individual cards. A
+row contains the recording title followed by date, duration, and transcription
+state on one metadata line; file size remains available in the selected
+recording header instead of being repeated throughout the list. Status uses a
+compact semantic dot plus text, not a pill or a second leading icon. Subtle
+inset dividers establish row rhythm, while the selected row adds a short jade
+selection marker and flat brand surface. The quick-play action appears for
+hover, keyboard focus, selection, or active playback, and Space toggles
+playback for the focused row. Its circular raised surface distinguishes the
+row action from the selection target without returning to a second permanent
+icon column. The list scrollbar uses a narrow neutral thumb on a transparent
+track while retaining a visible high-contrast fallback.
 
 AI documents use shared select styling for document/version selection instead
 of a permanent nested document sidebar. AI revision and copying stay directly
@@ -245,7 +257,8 @@ At 1280×800 and 980×640, normal completed-document content targets at least
 that area. Controls must not wrap into multiple toolbar rows, and long titles,
 models, and paths must not cause page-level horizontal overflow. Use existing
 semantic tokens; do not shrink body type to achieve density. The playback
-footer retains the local-recording/network-use reminder.
+footer contains only playback controls. Network-use disclosure belongs at the
+transcription or AI-generation action boundary, not beneath local playback.
 
 ## Change and Review Checklist
 
