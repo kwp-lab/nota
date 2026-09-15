@@ -1,12 +1,12 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-08-27
+- Last updated: 2026-09-15
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
   `src-tauri/src/importer.rs`, `src-tauri/src/voiceprints.rs`,
-  `src-tauri/src/ai.rs`
+  `src-tauri/src/ai.rs`, `src-tauri/src/pdf_export.rs`
 - Related decisions:
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
   [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md),
@@ -73,6 +73,7 @@ flowchart LR
 | ASR provider adapter | Provider HTTP, upload validation, task/result parsing, and normalization into Nota transcript types | Queue ownership, React state, or SQLite credentials outside the active request |
 | Voiceprint manager | Timestamp candidate planning, bounded Ogg sampling, clean-range response mapping, local matching, and confirmation sessions | Participant-name disclosure to the ASR Server or raw-vector disclosure to React |
 | AI document manager | Prompt assembly, LLM requests, cancellation, version lifecycle, atomic Markdown creation, and relinking | Automatic generation, transcript mutation, or in-place overwrite of generated files |
+| PDF exporter | Destination/version validation and local WebView2 print completion | Markdown parsing, persistent document state, network access, or content logging |
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
 | Configured LLM provider | Explicitly requested text generation | Local Markdown, SQLite, or recording ownership |
 
@@ -81,9 +82,11 @@ flowchart LR
 `RecordingsWorkspace` owns selected-record presentation, native audio playback,
 transcription actions, focus mode, and the existing speaker/transcription
 dialogs. `AiDocumentsPanel` remains the sole owner of AI workspace reads,
-generation drafts, request estimates, version events, file actions, and all
-three generation-dialog modes. Its toolbar, Markdown reader, and generation
-details drawer are presentation components, not additional IPC owners.
+generation drafts, request estimates, version events, file/export actions, and
+all three generation-dialog modes. Its toolbar, Markdown reader, and generation
+details drawer are presentation components, not additional IPC owners. For PDF
+export, the reader owns sanitized HTML and print composition; the Rust command
+owns version/path validation and the native WebView2 completion boundary.
 
 The AI panel mounts on first visit and remains mounted while its tab is hidden.
 The audio element, record list, and transcript scroller also retain their DOM
@@ -103,11 +106,14 @@ flowchart LR
     G --> H[Apply only if request and version are current]
     D --> I[Existing create / regenerate / revise dialog]
     I --> J[Existing preview, validation and explicit generation IPC]
+    E --> K[Temporary print-only DOM clone]
+    K --> L[Rust validates version and PDF destination]
+    L --> M[Local WebView2 writes PDF]
 ```
 
-Opening tabs, reading documents, and inspecting persisted details do not invoke
-LLM generation. No new backend commands, schemas, credentials, or network paths
-are introduced by the workspace layout.
+Opening tabs, reading documents, inspecting persisted details, and exporting a
+PDF do not invoke LLM generation. PDF export adds one local backend command but
+no schema, credential, or network path.
 
 ### Settings Ownership and Persistence
 

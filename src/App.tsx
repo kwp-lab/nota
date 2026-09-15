@@ -38,6 +38,7 @@ import {
   enqueueToast,
   ToastRegion,
   type AppToast,
+  type ToastOptions,
   type ToastTone,
 } from "./components/ToastRegion";
 import type {
@@ -173,11 +174,7 @@ export default function App() {
     (
       tone: ToastTone,
       message: string,
-      options?: {
-        durationMs?: number | null;
-        dedupeKey?: string;
-        action?: AppToast["action"];
-      },
+      options?: ToastOptions,
     ) => {
       const durationMs =
         options?.durationMs === undefined
@@ -206,7 +203,8 @@ export default function App() {
   );
 
   const handleAiMessage = useCallback(
-    (type: "success" | "error", message: string) => showToast(type, message),
+    (type: "success" | "error", message: string, options?: ToastOptions) =>
+      showToast(type, message, options),
     [showToast],
   );
 

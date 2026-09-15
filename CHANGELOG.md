@@ -7,14 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-15
+
 ### Added
 
 - Added local Windows application icons to the recording-source selector, with
   a keyboard-accessible two-line target list and a neutral fallback when an
   application does not expose an icon.
+- Added local PDF export for completed AI document versions, preserving Nota's
+  Markdown typography, tables, code blocks, and syntax highlighting without
+  contacting a network service, with an optional success-toast action that
+  reveals the exported file in Windows Explorer. The first Markdown H1 supplies
+  both the suggested filename and the PDF document title.
 
 ### Changed
 
+- Simplified the AI document toolbar with bounded document/version selectors,
+  icon-only revision and copy actions, generation details in the overflow menu,
+  and one generation dialog for both new templates and new versions of an
+  existing template.
 - Reorganized recording details into a full-height reading workspace with a
   compact contextual toolbar, document/version selectors, bottom audio player,
   a collapsible recording list controlled from the left of the detail title,
@@ -384,7 +395,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/kwp-lab/nota/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kwp-lab/nota/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kwp-lab/nota/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kwp-lab/nota/compare/069d067d016282ae7a9ca24a360fcc64a7b4155b...v0.7.0

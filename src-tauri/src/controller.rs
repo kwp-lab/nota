@@ -19,6 +19,7 @@ use crate::importer::AudioImportManager;
 use crate::logging::{self, Field, FieldKey};
 use crate::models::*;
 use crate::paths::AppPaths;
+use crate::pdf_export::{export_current_webview_pdf, validate_exported_pdf};
 use crate::process_icons::attach_capture_target_icons;
 use crate::state_machine::{RecordingEvent, transition};
 use crate::storage::Storage;
@@ -36,7 +37,7 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, Webview, WebviewUrl,
     WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -2227,7 +2228,7 @@ fn reveal_path_in_explorer(path: &Path) -> Result<()> {
     }
     let result = unsafe { SHOpenFolderAndSelectItems(pidl, None, 0) };
     unsafe { ILFree(Some(pidl)) };
-    result.context("无法在资源管理器中显示 Markdown 文件")
+    result.context("无法在资源管理器中显示文件")
 }
 
 #[tauri::command]
@@ -2288,6 +2289,25 @@ fn copy_ai_document_path(
         let path = ai_version_path(&state.storage, &version_id)?;
         arboard::Clipboard::new()?.set_text(path.to_string_lossy().into_owned())?;
         Ok(())
+    })())
+}
+
+#[tauri::command]
+async fn export_ai_document_pdf(
+    webview: Webview,
+    state: State<'_, AppState>,
+    version_id: String,
+    path: String,
+) -> std::result::Result<(), String> {
+    command_result(read_document_content(&state.storage, &version_id).map(|_| ()))?;
+    command_result(export_current_webview_pdf(webview, &path).await)
+}
+
+#[tauri::command]
+fn reveal_ai_document_pdf(path: String) -> std::result::Result<(), String> {
+    command_result((|| {
+        let path = validate_exported_pdf(&path)?;
+        reveal_path_in_explorer(&path)
     })())
 }
 
@@ -3140,6 +3160,8 @@ pub fn run_app() {
             reveal_ai_document_version,
             copy_ai_document_version,
             copy_ai_document_path,
+            export_ai_document_pdf,
+            reveal_ai_document_pdf,
             start_transcription,
             cancel_transcription,
             resume_transcription,

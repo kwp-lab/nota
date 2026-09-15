@@ -171,6 +171,10 @@ export const api = {
     invoke<void>("copy_ai_document_version", { versionId }),
   copyAiDocumentPath: (versionId: string) =>
     invoke<void>("copy_ai_document_path", { versionId }),
+  exportAiDocumentPdf: (versionId: string, path: string) =>
+    invoke<void>("export_ai_document_pdf", { versionId, path }),
+  revealAiDocumentPdf: (path: string) =>
+    invoke<void>("reveal_ai_document_pdf", { path }),
   startTranscription: (
     recordingId: string,
     providerId?: string | null,
