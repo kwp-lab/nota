@@ -99,6 +99,20 @@ server-restart, window-recovery, diarization, and final response contract
 tests. Client and server tests complement each other; neither repository should
 duplicate the other's internal implementation fixtures.
 
+## Application Capture Target Regression Matrix
+
+Automated coverage must include:
+
+- local PNG icon data crossing Rust/TypeScript IPC without exposing native
+  window handles;
+- application-icon extraction failure degrading to a neutral UI fallback
+  without failing target enumeration or entering the recording-start path;
+- selected-target icons, two-line title/executable options, long-text
+  truncation, and the retained “未运行” preference state;
+- Enter/Space opening, arrow-key navigation, typeahead, Enter selection, Escape
+  dismissal, focus restoration, and an accessible name for every option;
+- PID rebinding by executable path and no silent switch to another application.
+
 ## Audio Import Regression Matrix
 
 Automated coverage must include:
@@ -289,8 +303,11 @@ ordinary technical logs.
 Before a release that changes audio capture or ASR behavior, exercise relevant
 scenarios on Windows 11:
 
-1. Record and play back a normal meeting with application capture and a
-   microphone.
+1. Open the application selector with Zoom, Tencent Meeting, Feishu, Chrome or
+   Edge, and one ordinary Win32 application running. Confirm software icons,
+   the fallback icon, long-title truncation, keyboard selection, app exit and
+   PID restart at 100%, 125%, and 150% display scaling. Then record and play
+   back a normal meeting with application capture and a microphone.
 2. Start a FunASR transcription, interrupt upload, and confirm it resumes from
    the server offset.
 3. Exit Nota while the server is processing, relaunch, resume, and confirm the

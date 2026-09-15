@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added local Windows application icons to the recording-source selector, with
+  a keyboard-accessible two-line target list and a neutral fallback when an
+  application does not expose an icon.
+
 ### Changed
 
 - Reorganized recording details into a full-height reading workspace with a

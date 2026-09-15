@@ -19,6 +19,7 @@ use crate::importer::AudioImportManager;
 use crate::logging::{self, Field, FieldKey};
 use crate::models::*;
 use crate::paths::AppPaths;
+use crate::process_icons::attach_capture_target_icons;
 use crate::state_machine::{RecordingEvent, transition};
 use crate::storage::Storage;
 use crate::voiceprints::VoiceprintManager;
@@ -1331,8 +1332,14 @@ fn stop_in_background(app: &AppHandle, recorder: Arc<RecordingController>) {
 }
 
 #[tauri::command]
-fn list_capture_targets() -> std::result::Result<Vec<CaptureTarget>, String> {
-    command_result(enumerate_capture_targets())
+async fn list_capture_targets() -> std::result::Result<Vec<CaptureTarget>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut targets = command_result(enumerate_capture_targets())?;
+        attach_capture_target_icons(&mut targets);
+        Ok(targets)
+    })
+    .await
+    .map_err(|error| format!("无法刷新应用列表：{error}"))?
 }
 
 #[tauri::command]

@@ -16,6 +16,7 @@ const target = (
   displayName,
   processId: Number(id.split(":")[1]),
   executablePath,
+  iconDataUrl: null,
   browser: false,
   priority: 90,
 });
@@ -31,6 +32,18 @@ describe("capture target reconciliation", () => {
 
   it("keeps the title readable when no executable path is available", () => {
     expect(captureTargetLabel(target("process:42", "", "飞书"))).toBe("飞书");
+  });
+
+  it("keeps the application icon in the in-memory restart preference", () => {
+    const selected = {
+      ...target("process:42", "C:\\Apps\\Meeting.exe"),
+      iconDataUrl: "data:image/png;base64,aWNvbg==",
+    };
+    expect(preferenceForTarget(selected)).toEqual({
+      executablePath: "C:\\Apps\\Meeting.exe",
+      displayName: "Meeting app",
+      iconDataUrl: "data:image/png;base64,aWNvbg==",
+    });
   });
 
   it("follows the same executable when its process id changes", () => {

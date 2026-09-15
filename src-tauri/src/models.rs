@@ -10,6 +10,7 @@ pub struct CaptureTarget {
     pub display_name: String,
     pub process_id: u32,
     pub executable_path: String,
+    pub icon_data_url: Option<String>,
     #[serde(skip)]
     pub window_handle: Option<isize>,
     pub browser: bool,

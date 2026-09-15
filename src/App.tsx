@@ -20,13 +20,13 @@ import {
 } from "lucide-react";
 import { api, type UnlistenFn } from "./api";
 import {
-  captureTargetLabel,
   preferenceForTarget,
   resolveCaptureTarget,
   type CaptureTargetPreference,
 } from "./captureTargets";
 import { LevelMeter } from "./components/LevelMeter";
 import { AppTooltip } from "./components/AppTooltip";
+import { CaptureTargetSelect } from "./components/CaptureTargetSelect";
 import { RecordingsWorkspace } from "./components/RecordingsWorkspace";
 import {
   SettingsWorkspace,
@@ -999,32 +999,21 @@ export default function App() {
 
               <div className="source-grid">
                 <div className="field">
-                  <label htmlFor="recording-source"><Volume2 size={16} />录音来源</label>
+                  <label id="recording-source-label" htmlFor="recording-source"><Volume2 size={16} />录音来源</label>
                   {captureMode === "process" ? (
                     <div className="target-picker">
-                      <div className="select-wrap">
-                        <select
-                          id="recording-source"
-                          value={targetId}
-                          onFocus={() => void refreshTargets().catch(() => undefined)}
-                          onPointerDown={() => void refreshTargets().catch(() => undefined)}
-                          onChange={(event) => selectTarget(event.target.value)}
-                        >
-                          {!targetId && (
-                            <option value="">
-                              {targetPreferenceRef.current
-                                ? `${captureTargetLabel(targetPreferenceRef.current)}（未运行）`
-                                : "请选择要录制的应用"}
-                            </option>
-                          )}
-                        {targets.map((target) => (
-                          <option key={target.id} value={target.id}>
-                            {captureTargetLabel(target)}
-                          </option>
-                        ))}
-                        </select>
-                        <ChevronDown size={16} />
-                      </div>
+                      <CaptureTargetSelect
+                        id="recording-source"
+                        labelId="recording-source-label"
+                        targets={targets}
+                        value={targetId}
+                        unavailableTarget={targetPreferenceRef.current}
+                        refreshing={targetsRefreshing}
+                        onValueChange={selectTarget}
+                        onOpenChange={(open) => {
+                          if (open) void refreshTargets().catch(() => undefined);
+                        }}
+                      />
                       <AppTooltip content={targetsRefreshing ? "正在刷新应用列表" : "刷新应用列表"} wrapDisabled={targetsRefreshing}>
                         <button
                           type="button"

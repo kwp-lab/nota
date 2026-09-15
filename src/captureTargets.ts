@@ -3,15 +3,17 @@ import type { CaptureTarget } from "./types";
 export interface CaptureTargetPreference {
   executablePath: string;
   displayName: string;
+  iconDataUrl: string | null;
 }
+
+export const captureTargetExecutableName = (
+  target: Pick<CaptureTarget, "executablePath">,
+) => target.executablePath.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
 
 export const captureTargetLabel = (
   target: Pick<CaptureTarget, "displayName" | "executablePath">,
 ) => {
-  const executableName = target.executablePath
-    .split(/[\\/]/)
-    .filter(Boolean)
-    .at(-1);
+  const executableName = captureTargetExecutableName(target);
   return executableName
     ? `[${executableName}]: ${target.displayName}`
     : target.displayName;
@@ -25,6 +27,7 @@ export const preferenceForTarget = (
 ): CaptureTargetPreference => ({
   executablePath: target.executablePath,
   displayName: target.displayName,
+  iconDataUrl: target.iconDataUrl,
 });
 
 export const resolveCaptureTarget = (

@@ -51,6 +51,7 @@ const testState = vi.hoisted(() => ({
     displayName: string;
     processId: number;
     executablePath: string;
+    iconDataUrl: string | null;
     browser: boolean;
     priority: number;
   }>,
@@ -333,6 +334,7 @@ describe("Nota UI states", () => {
         displayName: "Zoom",
         processId: 42,
         executablePath: "C:\\Zoom.exe",
+        iconDataUrl: "data:image/png;base64,em9vbQ==",
         browser: false,
         priority: 100,
       },
@@ -914,6 +916,9 @@ describe("Nota UI states", () => {
 
   it("refreshes applications when the window regains focus", async () => {
     render(<App />);
+    const source = await screen.findByRole("combobox", { name: "录音来源" });
+    expect(source).toHaveTextContent("[Zoom.exe]: Zoom");
+    fireEvent.click(source);
     expect(
       await screen.findByRole("option", { name: "[Zoom.exe]: Zoom" }),
     ).toBeInTheDocument();
@@ -924,6 +929,7 @@ describe("Nota UI states", () => {
         displayName: "腾讯会议",
         processId: 77,
         executablePath: "C:\\Program Files\\Tencent\\wemeetapp.exe",
+        iconDataUrl: null,
         browser: false,
         priority: 90,
       },
@@ -941,7 +947,7 @@ describe("Nota UI states", () => {
   it("rebinds the selected application after its process id changes", async () => {
     render(<App />);
     const source = await screen.findByRole("combobox", { name: "录音来源" });
-    expect(source).toHaveValue("process:42");
+    expect(source).toHaveTextContent("[Zoom.exe]: Zoom");
     testState.targets = [
       {
         id: "process:84",
@@ -949,13 +955,14 @@ describe("Nota UI states", () => {
         displayName: "Zoom Meeting",
         processId: 84,
         executablePath: "c:\\zoom.exe",
+        iconDataUrl: "data:image/png;base64,em9vbQ==",
         browser: false,
         priority: 100,
       },
     ];
 
     act(() => window.dispatchEvent(new Event("focus")));
-    await waitFor(() => expect(source).toHaveValue("process:84"));
+    await waitFor(() => expect(source).toHaveTextContent("[zoom.exe]: Zoom Meeting"));
   });
 
 });
