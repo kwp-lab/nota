@@ -1344,6 +1344,7 @@ pub fn list_capture_targets() -> Result<Vec<CaptureTarget>> {
             },
             process_id: pid,
             executable_path,
+            icon_data_url: None,
             window_handle: window_handles.get(&pid).copied(),
             browser,
             priority,
@@ -1608,6 +1609,7 @@ mod tests {
             display_name: "Meeting".into(),
             process_id: 2,
             executable_path: r"C:\Apps\Meeting.exe".into(),
+            icon_data_url: Some("data:image/png;base64,aWNvbg==".into()),
             window_handle: Some(22),
             browser: false,
             priority: 90,
@@ -1615,6 +1617,10 @@ mod tests {
 
         let json = serde_json::to_value(target).expect("capture target should serialize");
         assert!(json.get("windowHandle").is_none());
+        assert_eq!(
+            json.get("iconDataUrl").and_then(|value| value.as_str()),
+            Some("data:image/png;base64,aWNvbg==")
+        );
     }
 
     fn test_tone_wav() -> Vec<u8> {

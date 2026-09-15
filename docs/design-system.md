@@ -166,6 +166,23 @@ page-specific CSS.
   and must appear above scroll containers without being clipped.
 - Keyboard focus must be visible. Hover-only behavior is not sufficient.
 
+### Capture Target Select
+
+The application capture picker uses a Radix select primitive so its custom
+visual treatment retains listbox keyboard navigation, focus management, and
+typeahead behavior. The closed trigger remains one line and shows the selected
+application icon beside the existing executable/title label. The portalled
+list shows the window title as Body text and the executable filename as Caption
+metadata; both must truncate without displacing the icon or selected marker.
+
+Application icons use the existing 20 px icon role with a subtle structural
+border. They are decorative to assistive technology. When Windows cannot
+provide an icon, use the neutral Lucide `AppWindow` fallback rather than an
+empty or broken image. A target that stops running retains its last in-memory
+icon and appends “（未运行）”; this visual state must not select another target.
+The picker must continue to expose a visible focus ring, an accessible label,
+and distinct highlighted, selected, empty, and refreshing states.
+
 ### Settings Center
 
 Settings is a full-height workspace inside the application shell. The global

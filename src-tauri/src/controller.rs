@@ -19,6 +19,7 @@ use crate::importer::AudioImportManager;
 use crate::logging::{self, Field, FieldKey};
 use crate::models::*;
 use crate::paths::AppPaths;
+use crate::process_icons::attach_capture_target_icons;
 use crate::state_machine::{RecordingEvent, transition};
 use crate::storage::Storage;
 use crate::voiceprints::VoiceprintManager;
@@ -1331,8 +1332,14 @@ fn stop_in_background(app: &AppHandle, recorder: Arc<RecordingController>) {
 }
 
 #[tauri::command]
-fn list_capture_targets() -> std::result::Result<Vec<CaptureTarget>, String> {
-    command_result(enumerate_capture_targets())
+async fn list_capture_targets() -> std::result::Result<Vec<CaptureTarget>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut targets = command_result(enumerate_capture_targets())?;
+        attach_capture_target_icons(&mut targets);
+        Ok(targets)
+    })
+    .await
+    .map_err(|error| format!("无法刷新应用列表：{error}"))?
 }
 
 #[tauri::command]
@@ -3366,8 +3373,10 @@ mod tray_tests {
         let mut changed = 0;
         for (index, (before, after)) in base
             .rgba()
-            .chunks_exact(4)
-            .zip(recording.rgba().chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(recording.rgba().as_chunks::<4>().0)
             .enumerate()
         {
             if before != after {
@@ -3382,13 +3391,16 @@ mod tray_tests {
         assert!(
             recording
                 .rgba()
-                .chunks_exact(4)
-                .any(|pixel| pixel == [255, 255, 255, 255])
+                .as_chunks::<4>()
+                .0
+                .contains(&[255, 255, 255, 255])
         );
         assert!(
             recording
                 .rgba()
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .any(|pixel| pixel[3] > 0 && pixel[3] < 255)
         );
         // Every new state is composed from the base, never from a previous badge.

@@ -76,6 +76,50 @@ h2 { margin: 0; font-size: var(--font-size-subtitle); line-height: var(--line-he
 .field { display: grid; gap: var(--space-2); }
 .field > span, .field > label { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-body); line-height: var(--line-height-body); color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); }
 .target-picker { display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: var(--space-2); }
+.capture-target-trigger {
+  min-width: 0; width: 100%; display: flex; align-items: center; gap: var(--space-2);
+  border: 1px solid var(--color-border-default); border-radius: var(--radius-large);
+  padding: var(--space-3); color: var(--color-text-primary); background: var(--color-surface-raised);
+  font: inherit; text-align: left; outline: none; cursor: pointer;
+}
+.capture-target-trigger:hover { border-color: var(--color-border-strong); }
+.capture-target-trigger:focus-visible { border-color: var(--color-focus-ring); box-shadow: var(--shadow-focus); }
+.capture-target-trigger[data-placeholder] { color: var(--color-text-muted); }
+.capture-target-trigger-value { min-width: 0; flex: 1; display: flex; align-items: center; gap: var(--space-2); }
+.capture-target-trigger-value > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capture-target-chevron { flex: 0 0 auto; display: grid; place-items: center; color: var(--color-icon-muted); }
+.capture-target-chevron svg, .capture-target-indicator svg, .capture-target-scroll-button svg { width: var(--icon-size-default); height: var(--icon-size-default); }
+.capture-target-icon {
+  box-sizing: border-box; flex: 0 0 auto; width: var(--icon-size-large); height: var(--icon-size-large);
+  border: 1px solid var(--color-border-subtle); border-radius: var(--radius-small);
+  object-fit: contain; background: var(--color-surface-raised);
+}
+.capture-target-icon.fallback { display: grid; place-items: center; color: var(--color-icon-muted); background: var(--color-surface-subtle); }
+.capture-target-icon.fallback svg { width: var(--icon-size-compact); height: var(--icon-size-compact); }
+.capture-target-content {
+  z-index: 1000; min-width: var(--radix-select-trigger-width);
+  max-width: min(480px, calc(100vw - var(--space-6)));
+  max-height: min(360px, var(--radix-select-content-available-height)); overflow: hidden;
+  border: 1px solid var(--color-border-default); border-radius: var(--radius-large);
+  color: var(--color-text-primary); background: var(--color-surface-raised); box-shadow: var(--shadow-md);
+}
+.capture-target-viewport { padding: var(--space-1); }
+.capture-target-item {
+  position: relative; display: grid; grid-template-columns: var(--icon-size-large) minmax(0, 1fr) var(--icon-size-default);
+  align-items: center; gap: var(--space-2); min-height: var(--space-13); padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-small); outline: none; cursor: pointer; user-select: none;
+}
+.capture-target-item[data-highlighted] { background: var(--color-surface-hover); }
+.capture-target-item[data-state="checked"] { color: var(--color-text-brand); background: var(--color-surface-brand); }
+.capture-target-item[data-disabled] { color: var(--color-text-disabled); cursor: default; }
+.capture-target-item.empty { grid-template-columns: var(--icon-size-large) minmax(0, 1fr); }
+.capture-target-copy { min-width: 0; display: grid; gap: var(--space-0-5); }
+.capture-target-copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capture-target-copy > span:first-child { color: var(--color-text-primary); font-size: var(--font-size-body); line-height: var(--line-height-body); }
+.capture-target-copy > span:last-child { color: var(--color-text-muted); font-size: var(--font-size-caption); line-height: var(--line-height-caption); }
+.capture-target-item[data-state="checked"] .capture-target-copy > span:first-child { color: var(--color-text-brand); font-weight: var(--font-weight-semibold); }
+.capture-target-indicator { display: grid; place-items: center; color: var(--color-icon-brand); }
+.capture-target-scroll-button { height: var(--control-height-compact); display: grid; place-items: center; color: var(--color-icon-muted); background: var(--color-surface-raised); }
 .select-wrap { position: relative; }
 .select-wrap select {
   appearance: none; width: 100%; border: 1px solid var(--color-border-default); background: var(--color-surface-raised);

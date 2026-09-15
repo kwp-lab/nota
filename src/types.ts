@@ -15,6 +15,7 @@ export interface CaptureTarget {
   displayName: string;
   processId: number;
   executablePath: string;
+  iconDataUrl: string | null;
   browser: boolean;
   priority: number;
 }
