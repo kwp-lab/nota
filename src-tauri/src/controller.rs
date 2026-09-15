@@ -3373,8 +3373,10 @@ mod tray_tests {
         let mut changed = 0;
         for (index, (before, after)) in base
             .rgba()
-            .chunks_exact(4)
-            .zip(recording.rgba().chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(recording.rgba().as_chunks::<4>().0)
             .enumerate()
         {
             if before != after {
@@ -3389,13 +3391,16 @@ mod tray_tests {
         assert!(
             recording
                 .rgba()
-                .chunks_exact(4)
-                .any(|pixel| pixel == [255, 255, 255, 255])
+                .as_chunks::<4>()
+                .0
+                .contains(&[255, 255, 255, 255])
         );
         assert!(
             recording
                 .rgba()
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .any(|pixel| pixel[3] > 0 && pixel[3] < 255)
         );
         // Every new state is composed from the base, never from a previous badge.

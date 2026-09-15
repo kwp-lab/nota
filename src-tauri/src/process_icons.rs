@@ -144,7 +144,12 @@ fn render_icon_rgba(icon: HICON) -> Result<Vec<u8>> {
     let black = draw_icon_on_background(icon, 0)?;
     let white = draw_icon_on_background(icon, 255)?;
     let mut rgba = Vec::with_capacity((ICON_SIZE * ICON_SIZE * 4) as usize);
-    for (black_pixel, white_pixel) in black.chunks_exact(4).zip(white.chunks_exact(4)) {
+    for (black_pixel, white_pixel) in black
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(white.as_chunks::<4>().0)
+    {
         let alpha = (0..3)
             .map(|channel| {
                 255u8.saturating_sub(white_pixel[channel].saturating_sub(black_pixel[channel]))
@@ -192,7 +197,7 @@ fn draw_icon_on_background(icon: HICON, background: u8) -> Result<Vec<u8>> {
     let byte_len = (ICON_SIZE * ICON_SIZE * 4) as usize;
     let result = (|| {
         let pixels = unsafe { slice::from_raw_parts_mut(bits.cast::<u8>(), byte_len) };
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             pixel.fill(background);
         }
         unsafe {
@@ -336,6 +341,6 @@ mod tests {
         let icon = shell_icon(executable.to_string_lossy().as_ref()).unwrap();
         let rgba = render_icon_rgba(icon.0).unwrap();
         assert_eq!(rgba.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
-        assert!(rgba.chunks_exact(4).any(|pixel| pixel[3] > 0));
+        assert!(rgba.as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 0));
     }
 }
