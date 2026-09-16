@@ -322,10 +322,17 @@ describe("RecordingsWorkspace", () => {
     const list = screen.getByLabelText("录音列表");
     const row = within(list).getByText("产品周会").closest("article")!;
     const metadata = row.querySelector(".history-item-meta");
+    const title = within(row).getByText("产品周会");
+    const status = within(row).getByText("已转写");
 
     expect(screen.getByLabelText("2 条录音")).toHaveTextContent("2 条");
     expect(row.querySelector(".history-item-icon")).toBeNull();
-    expect(row.querySelector(".history-status-dot")).toBeInTheDocument();
+    expect(row.querySelector(".history-status-dot")).toBeNull();
+    expect(title).toHaveClass("history-item-title");
+    expect(title).toHaveAttribute("title", "产品周会");
+    expect(metadata?.firstElementChild).toHaveClass("history-item-facts");
+    expect(metadata?.lastElementChild).toBe(status);
+    expect(status).toHaveClass("transcription-badge", "history-transcription-status", "status-completed");
     expect(metadata).toHaveTextContent("1:02");
     expect(metadata).toHaveTextContent("已转写");
     expect(within(list).queryByText("1.0 MB")).not.toBeInTheDocument();

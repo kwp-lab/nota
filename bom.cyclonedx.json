@@ -1,14 +1,14 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:2e51a386-9432-4a50-a3c3-0e7d998d7106",
+  "serialNumber": "urn:uuid:30a8310e-8b01-43a9-a4ca-542abf91333f",
   "version": 1,
   "metadata": {
     "component": {
       "type": "application",
       "bom-ref": "pkg:github/kwp-lab/nota",
       "name": "Nota",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "licenses": [
         {
           "license": {

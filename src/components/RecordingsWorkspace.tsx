@@ -845,15 +845,16 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                   }}
                 >
                   <span className="history-item-main">
-                    <strong>{item.title}</strong>
+                    <span className="history-item-title" title={item.title}>{item.title}</span>
                     <small className="history-item-meta">
-                      {new Date(item.createdAt).toLocaleDateString("zh-CN", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                      {" · "}{formatDuration(item.durationMs)}{" · "}
-                      <span className={`history-transcription-status status-${item.transcription?.status ?? "none"}`}>
-                        <span className="history-status-dot" aria-hidden="true" />
+                      <span className="history-item-facts">
+                        {new Date(item.createdAt).toLocaleDateString("zh-CN", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {" · "}{formatDuration(item.durationMs)}
+                      </span>
+                      <span className={`transcription-badge history-transcription-status status-${item.transcription?.status ?? "none"}`}>
                         {item.transcription ? transcriptionLabel(item.transcription) : "未转写"}
                         {item.transcription ? transcriptionProgressSuffix(item.transcription) : ""}
                       </span>

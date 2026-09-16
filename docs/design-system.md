@@ -11,7 +11,7 @@ It is intentionally separate from marketing artwork and release assets.
 ## Product Character
 
 Nota should feel calm, trustworthy, local, and precise. The visual language
-uses warm neutral surfaces and a restrained jade accent so recording state and
+uses clean neutral surfaces and a restrained jade accent so recording state and
 meeting content remain more prominent than decoration. Interfaces should feel
 native to Windows 11 without impersonating a Microsoft product.
 
@@ -226,17 +226,24 @@ The compact title, detail tabs, contextual toolbar, reading region, and native
 audio player follow DOM order. The list and reading region scroll independently;
 the outer detail pane must not scroll. Playback remains mounted across tabs.
 The recording list uses compact two-line rows rather than individual cards. A
-row contains the recording title followed by date, duration, and transcription
-state on one metadata line; file size remains available in the selected
-recording header instead of being repeated throughout the list. Status uses a
-compact semantic dot plus text, not a pill or a second leading icon. Subtle
-inset dividers establish row rhythm, while the selected row adds a short jade
-selection marker and flat brand surface. The quick-play action appears for
-hover, keyboard focus, selection, or active playback, and Space toggles
-playback for the focused row. Its circular raised surface distinguishes the
-row action from the selection target without returning to a second permanent
-icon column. The list scrollbar uses a narrow neutral thumb on a transparent
-track while retaining a visible high-contrast fallback.
+row contains a regular-weight, single-line recording title followed by a
+two-ended metadata line: date and duration stay at the leading edge, while a
+compact semantic transcription badge aligns to the trailing edge. Long titles
+truncate with an ellipsis without displacing the fixed quick-play action; the
+full title remains available to assistive technology and on pointer hover. File
+size remains available in the selected recording header instead of being
+repeated throughout the list. Status badges use Caption text, a small radius,
+semantic foreground/surface colors, and a subtle border instead of relying on
+text color alone. Quiet inter-row spacing, comfortable vertical padding, and
+subtle inset hairline separators establish rhythm without turning rows into
+individual cards or restoring a permanent leading icon. Separators sit between
+rows and disappear when a row is hovered, selected, or owns an open context
+menu so the interactive surface reads as one unit. The selected row uses a
+flat brand surface. The quick-play action appears for hover, keyboard focus,
+selection, or active playback, and Space toggles playback for the focused row.
+Its compact trailing slot remains reserved so row content does not shift when
+the action appears. The list scrollbar uses a narrow neutral thumb on a
+transparent track while retaining a visible high-contrast fallback.
 
 AI documents use shared select styling for document/version selection instead
 of a permanent nested document sidebar. The document selector may grow to a
