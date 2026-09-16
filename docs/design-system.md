@@ -227,11 +227,23 @@ audio player follow DOM order. The list and reading region scroll independently;
 the outer detail pane must not scroll. Playback remains mounted across tabs.
 
 AI documents use shared select styling for document/version selection instead
-of a permanent nested document sidebar. AI revision and copying stay directly
-available; low-frequency file and generation actions use a keyboard-accessible
-disclosure. Generation details open in a right-hand native dialog drawer with
-focus containment and restoration. Generation configuration dialogs retain
-their original fields and controls. Their rounded outer shell clips overflow;
+of a permanent nested document sidebar. The document selector may grow to a
+bounded readable width; the version selector stays narrower, and both truncate
+before displacing the trailing action group. The unified new-document/new-version
+action leads that group, followed by AI revision and Markdown copying; all stay
+directly available as icon-only controls with accessible names and custom
+tooltips. PDF export follows Markdown copying and uses a download-document icon;
+its in-progress state replaces that icon with the shared spinner and disables
+repeat submission. Successful export uses the existing transient success-toast
+pattern with a clearly labelled “打开文件夹” action; it does not open Explorer
+without a second user action. Generation details and low-frequency file actions
+use the keyboard-accessible disclosure; the disclosure remains the final trailing
+control. Generation details open in
+a right-hand native dialog drawer with focus containment and restoration. The
+generation dialog lists both unused templates and templates already used by the
+meeting, clearly distinguishing “new document” from “new version” without
+changing the one-document-per-template model. Generation configuration dialogs
+retain their original fields and controls. Their rounded outer shell clips overflow;
 only the active form/request panel scrolls, leaving the title, tabs and footer
 visible. Scrollbars stay inside the shell padding, clear of its rounded corners.
 Close controls use Lucide `X`; JSON tree disclosure slots use the bundled Lucide
@@ -239,6 +251,17 @@ chevron SVG as a semantic-color CSS mask without replacing tree keyboard behavio
 Both generation overlays dismiss on primary clicks that start and end on their
 backdrop. Inside clicks and text-selection drags must not dismiss them; generation
 submission disables close, cancel and backdrop dismissal together.
+
+AI document printing is a content surface, not a screenshot of application
+chrome. Print output uses A4 portrait pages, the platform UI/display/monospace
+font stacks, existing type and reading-line-height tokens, and a centered body
+no wider than 80 characters. Headings keep clear hierarchy, code and tables wrap
+inside the page, semantic syntax colors and subtle backgrounds are preserved,
+and page breaks avoid separating a heading from its following content. Remote
+images retain the same safe placeholder used in the preview. The sidebar,
+toolbar, player, dialogs, and other application UI never appear in the PDF.
+The first visible Markdown H1 supplies both the sanitized suggested filename
+and PDF document title; documents without an H1 fall back to their stored title.
 
 At 1280×800 and 980×640, normal completed-document content targets at least
 70% and 60% of workspace height respectively. Necessary warnings may reduce

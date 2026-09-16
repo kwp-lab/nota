@@ -36,16 +36,29 @@
 .ai-documents-layout { min-height: 0; min-width: 0; display: flex; flex-direction: column; margin: 0; border: 0; border-radius: 0; overflow: visible; }
 .ai-document-preview { flex: 1 1 0; }
 .ai-document-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-5); border-block: 1px solid var(--color-border-subtle); background: var(--color-surface-primary); }
-.ai-document-toolbar > .detail-select { flex: 1 1 150px; min-width: 0; }
-.ai-document-toolbar > button { flex-shrink: 0; }
-.ai-document-toolbar > button[aria-label="复制 Markdown"] { display: grid; place-items: center; width: var(--control-height-default); height: var(--control-height-default); border: 0; border-radius: var(--radius-medium); background: transparent; color: var(--color-icon-primary); cursor: pointer; }
-.ai-document-toolbar > button[aria-label="复制 Markdown"]:hover { background: var(--color-surface-hover); }
+.ai-document-context { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: var(--space-2); }
+.ai-document-selector { min-width: 0; flex: 1 1 200px; max-width: 240px; }
+.ai-version-selector { min-width: 160px; flex: 0 1 200px; max-width: 200px; }
+.ai-document-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; }
 .detail-select { min-width: 0; width: 100%; }
 .detail-select select { width: 100%; min-width: 0; height: var(--control-height-compact-text); padding: var(--space-1-5) var(--space-8) var(--space-1-5) var(--space-2-5); font-size: var(--font-size-body); line-height: var(--line-height-body); text-overflow: ellipsis; }
 .ai-markdown-body { overflow-wrap: anywhere; padding: var(--space-5) var(--space-6); }
 .ai-markdown-content { max-width: 80ch; margin-inline: auto; }
 .ai-markdown-body pre { white-space: pre-wrap; }
 .ai-markdown-body table { table-layout: fixed; }
+.ai-pdf-document { display: none; }
+.ai-markdown-body :is(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link),
+.ai-pdf-document :is(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link) { color: var(--color-syntax-key); }
+.ai-markdown-body :is(.hljs-string, .hljs-title, .hljs-name, .hljs-type, .hljs-attribute, .hljs-symbol, .hljs-bullet, .hljs-addition),
+.ai-pdf-document :is(.hljs-string, .hljs-title, .hljs-name, .hljs-type, .hljs-attribute, .hljs-symbol, .hljs-bullet, .hljs-addition) { color: var(--color-syntax-string); }
+.ai-markdown-body :is(.hljs-number, .hljs-meta, .hljs-built_in, .hljs-builtin-name),
+.ai-pdf-document :is(.hljs-number, .hljs-meta, .hljs-built_in, .hljs-builtin-name) { color: var(--color-syntax-number); }
+.ai-markdown-body :is(.hljs-boolean, .hljs-deletion),
+.ai-pdf-document :is(.hljs-boolean, .hljs-deletion) { color: var(--color-syntax-boolean); }
+.ai-markdown-body :is(.hljs-comment, .hljs-quote),
+.ai-pdf-document :is(.hljs-comment, .hljs-quote) { color: var(--color-syntax-null); }
+.ai-markdown-body :is(.hljs-punctuation, .hljs-operator, .hljs-variable, .hljs-template-variable),
+.ai-pdf-document :is(.hljs-punctuation, .hljs-operator, .hljs-variable, .hljs-template-variable) { color: var(--color-syntax-punctuation); }
 .ai-documents-layout > .ai-inline-warning { margin: var(--space-2) var(--space-4); }
 .detail-action-popover { position: relative; flex-shrink: 0; }
 .detail-action-popover summary { list-style: none; }
@@ -70,4 +83,135 @@
   .ai-document-toolbar { gap: var(--space-1); }
   .ai-markdown-body { padding-inline: var(--space-4); }
   .library-workspace .history-header { flex-wrap: wrap; }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 18mm 16mm 20mm;
+  }
+
+  :root,
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    background: var(--color-surface-raised);
+  }
+
+  body {
+    color: var(--color-text-primary);
+    font-family: var(--font-family-ui);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #root { display: none !important; }
+  .ai-pdf-document {
+    display: block;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-reading);
+  }
+
+  .ai-pdf-content {
+    width: 100%;
+    max-width: 80ch;
+    margin-inline: auto;
+    overflow-wrap: anywhere;
+  }
+
+  .ai-pdf-document h1 {
+    margin: 0 0 var(--space-5);
+    font-family: var(--font-family-display);
+    font-size: var(--font-size-title);
+    line-height: var(--line-height-title);
+  }
+
+  .ai-pdf-document h2 {
+    margin: var(--space-6) 0 var(--space-2-5);
+    padding-bottom: var(--space-1);
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-family: var(--font-family-display);
+    font-size: var(--font-size-subtitle);
+    line-height: var(--line-height-subtitle);
+  }
+
+  .ai-pdf-document h3 {
+    margin: var(--space-5) 0 var(--space-2);
+    font-size: var(--font-size-body-large);
+    line-height: var(--line-height-body-large);
+  }
+
+  .ai-pdf-document h4,
+  .ai-pdf-document h5,
+  .ai-pdf-document h6 {
+    margin: var(--space-4) 0 var(--space-2);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+  }
+
+  .ai-pdf-document :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid-page;
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .ai-pdf-document p { margin: var(--space-2) 0; }
+  .ai-pdf-document :is(ul, ol) { padding-inline-start: var(--space-6); }
+  .ai-pdf-document li + li { margin-top: var(--space-1); }
+  .ai-pdf-document a { color: var(--color-text-brand); text-decoration-thickness: 1px; text-underline-offset: var(--space-0-5); }
+  .ai-pdf-document blockquote {
+    margin: var(--space-4) 0;
+    padding: var(--space-2) var(--space-4);
+    border-inline-start: var(--space-1) solid var(--color-border-strong);
+    background: var(--color-surface-subtle);
+    color: var(--color-text-secondary);
+    break-inside: avoid-page;
+  }
+
+  .ai-pdf-document table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption);
+  }
+
+  .ai-pdf-document :is(th, td) {
+    padding: var(--space-2);
+    border: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .ai-pdf-document th { background: var(--color-surface-subtle); font-weight: var(--font-weight-semibold); }
+  .ai-pdf-document tr { break-inside: avoid-page; }
+  .ai-pdf-document code { font-family: var(--font-family-mono); }
+  .ai-pdf-document :not(pre) > code {
+    padding: var(--space-0-5) var(--space-1);
+    border-radius: var(--radius-small);
+    background: var(--color-surface-subtle);
+  }
+
+  .ai-pdf-document pre {
+    margin: var(--space-4) 0;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-medium);
+    background: var(--color-surface-subtle);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .ai-pdf-document hr { margin: var(--space-6) 0; border: 0; border-top: 1px solid var(--color-border-subtle); }
+  .ai-pdf-document img { max-width: 100%; height: auto; }
+  .ai-pdf-document .ai-remote-image {
+    display: inline-block;
+    padding: var(--space-1-5) var(--space-2);
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption);
+  }
 }

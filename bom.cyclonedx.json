@@ -1,14 +1,14 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:54ad63fe-3c3a-4af4-ac2f-91d239fb104a",
+  "serialNumber": "urn:uuid:2e51a386-9432-4a50-a3c3-0e7d998d7106",
   "version": 1,
   "metadata": {
     "component": {
       "type": "application",
       "bom-ref": "pkg:github/kwp-lab/nota",
       "name": "Nota",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "licenses": [
         {
           "license": {
@@ -8171,6 +8171,24 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/hast-util-is-element@3.0.0",
+      "name": "hast-util-is-element",
+      "version": "3.0.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/hast-util-is-element@3.0.0",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.npmjs.com/package/hast-util-is-element/v/3.0.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/hast-util-to-jsx-runtime@2.3.6",
       "name": "hast-util-to-jsx-runtime",
       "version": "2.3.6",
@@ -8189,6 +8207,24 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/hast-util-to-text@4.0.2",
+      "name": "hast-util-to-text",
+      "version": "4.0.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/hast-util-to-text@4.0.2",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.npmjs.com/package/hast-util-to-text/v/4.0.2"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/hast-util-whitespace@3.0.0",
       "name": "hast-util-whitespace",
       "version": "3.0.0",
@@ -8202,6 +8238,24 @@
         {
           "type": "website",
           "url": "https://www.npmjs.com/package/hast-util-whitespace/v/3.0.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/highlight.js@11.11.2",
+      "name": "highlight.js",
+      "version": "11.11.2",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "purl": "pkg:npm/highlight.js@11.11.2",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.npmjs.com/package/highlight.js/v/11.11.2"
         }
       ]
     },
@@ -8346,6 +8400,24 @@
         {
           "type": "website",
           "url": "https://www.npmjs.com/package/longest-streak/v/3.1.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/lowlight@3.3.0",
+      "name": "lowlight",
+      "version": "3.3.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/lowlight@3.3.0",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.npmjs.com/package/lowlight/v/3.3.0"
         }
       ]
     },
@@ -9341,6 +9413,24 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/rehype-highlight@7.0.2",
+      "name": "rehype-highlight",
+      "version": "7.0.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/rehype-highlight@7.0.2",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.npmjs.com/package/rehype-highlight/v/7.0.2"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/remark-gfm@4.0.1",
       "name": "remark-gfm",
       "version": "4.0.1",
@@ -9588,6 +9678,24 @@
         {
           "type": "website",
           "url": "https://www.npmjs.com/package/unified/v/11.0.5"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/unist-util-find-after@5.0.0",
+      "name": "unist-util-find-after",
+      "version": "5.0.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/unist-util-find-after@5.0.0",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.npmjs.com/package/unist-util-find-after/v/5.0.0"
         }
       ]
     },
