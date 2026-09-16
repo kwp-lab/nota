@@ -11,7 +11,7 @@ It is intentionally separate from marketing artwork and release assets.
 ## Product Character
 
 Nota should feel calm, trustworthy, local, and precise. The visual language
-uses clean neutral surfaces and a restrained jade accent so recording state and
+uses warm neutral surfaces and a restrained jade accent so recording state and
 meeting content remain more prominent than decoration. Interfaces should feel
 native to Windows 11 without impersonating a Microsoft product.
 
@@ -238,8 +238,10 @@ text color alone. Quiet inter-row spacing, comfortable vertical padding, and
 subtle inset hairline separators establish rhythm without turning rows into
 individual cards or restoring a permanent leading icon. Separators sit between
 rows and disappear when a row is hovered, selected, or owns an open context
-menu so the interactive surface reads as one unit. The selected row uses a
-flat brand surface. The quick-play action appears for hover, keyboard focus,
+menu so the interactive surface reads as one unit. Hover uses the translucent
+white interaction surface; selection and an open context menu use the solid
+raised white surface without restoring card borders or shadows. The quick-play
+action appears for hover, keyboard focus,
 selection, or active playback, and Space toggles playback for the focused row.
 Its compact trailing slot remains reserved so row content does not shift when
 the action appears. The list scrollbar uses a narrow neutral thumb on a

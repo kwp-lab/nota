@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Restored neutral recording-list interaction surfaces: translucent white on
+  hover and solid white for selected or context-menu target rows.
+- Restored Nota's shared warm-neutral color palette while preserving those
+  neutral recording-list interaction states.
+
 ## [0.11.0] - 2026-09-16
 
 ### Changed

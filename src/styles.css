@@ -574,8 +574,7 @@ body.capture-prompt-body {
 }
 .history-item:last-child::after, .history-item:is(:hover, .selected, .menu-target)::after { opacity: 0; }
 .history-item:hover { background: var(--color-surface-hover-translucent); }
-.history-item.selected { background: var(--color-surface-brand); }
-.history-item.menu-target { background: var(--color-surface-brand-strong); }
+.history-item.selected, .history-item.menu-target { background: var(--color-surface-raised); }
 .history-select {
   min-width: 0; display: flex; align-items: center; padding: var(--space-2-5) var(--space-3);
   border: 0; text-align: left; background: transparent; cursor: pointer;
