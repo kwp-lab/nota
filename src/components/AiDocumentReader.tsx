@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { FileText, LoaderCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { AiDocumentContent } from "../types";
 
@@ -26,7 +27,7 @@ export function AiDocumentReader(props: {
         <div className="ai-documents-loading"><LoaderCircle className="spin" />读取 Markdown…</div>
       ) : props.content ? (
         <div className="ai-markdown-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
             img: ({ alt }) => <span className="ai-remote-image">[图片未自动加载：{alt || "无标题"}]</span>,
           }}>{props.content.markdown}</ReactMarkdown>
         </div>

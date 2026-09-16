@@ -464,8 +464,11 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | estree-util-is-identifier-name | 3.0.0 | MIT |
 | extend | 3.0.2 | MIT |
 | get-nonce | 1.0.1 | MIT |
+| hast-util-is-element | 3.0.0 | MIT |
 | hast-util-to-jsx-runtime | 2.3.6 | MIT |
+| hast-util-to-text | 4.0.2 | MIT |
 | hast-util-whitespace | 3.0.0 | MIT |
+| highlight.js | 11.11.2 | BSD-3-Clause |
 | html-url-attributes | 3.0.1 | MIT |
 | inline-style-parser | 0.2.7 | MIT |
 | is-alphabetical | 2.0.1 | MIT |
@@ -474,6 +477,7 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | is-hexadecimal | 2.0.1 | MIT |
 | is-plain-obj | 4.1.0 | MIT |
 | longest-streak | 3.1.0 | MIT |
+| lowlight | 3.3.0 | MIT |
 | lucide-react | 0.468.0 | ISC |
 | markdown-table | 3.0.4 | MIT |
 | mdast-util-find-and-replace | 3.0.2 | MIT |
@@ -529,6 +533,7 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | react-remove-scroll | 2.7.2 | MIT |
 | react-style-singleton | 2.2.3 | MIT |
 | react | 19.2.8 | MIT |
+| rehype-highlight | 7.0.2 | MIT |
 | remark-gfm | 4.0.1 | MIT |
 | remark-parse | 11.0.0 | MIT |
 | remark-rehype | 11.1.2 | MIT |
@@ -543,6 +548,7 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | trough | 2.2.0 | MIT |
 | tslib | 2.8.1 | 0BSD |
 | unified | 11.0.5 | MIT |
+| unist-util-find-after | 5.0.0 | MIT |
 | unist-util-is | 6.0.1 | MIT |
 | unist-util-position | 5.0.0 | MIT |
 | unist-util-stringify-position | 4.0.0 | MIT |

@@ -40,6 +40,7 @@ import { DetailActionPopover } from "./DetailActionPopover";
 import { DetailSelect } from "./DetailSelect";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import { AppTooltip } from "./AppTooltip";
+import type { ToastOptions } from "./ToastRegion";
 import {
   SpeakerIdentificationModal,
   type SpeakerAnalysisStatus,
@@ -99,7 +100,7 @@ interface RecordingsWorkspaceProps {
   onDiscardRecovery: (id: string) => void;
   onRename: (id: string, currentTitle: string) => void;
   onPermanentDelete: (id: string) => void;
-  onAiMessage: (type: "success" | "error", message: string) => void;
+  onAiMessage: (type: "success" | "error", message: string, options?: ToastOptions) => void;
 }
 
 interface RecordingActionMenu {

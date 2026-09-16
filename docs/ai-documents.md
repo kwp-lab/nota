@@ -1,10 +1,11 @@
 # AI Meeting Documents
 
 - Status: Accepted
-- Last updated: 2026-08-22
+- Last updated: 2026-09-15
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/ai.rs`, `src-tauri/src/storage.rs`,
-  `src/components/AiDocumentsPanel.tsx`, `src/components/AiSettingsSection.tsx`
+  `src-tauri/src/pdf_export.rs`, `src/components/AiDocumentsPanel.tsx`,
+  `src/components/AiDocumentReader.tsx`, `src/components/AiSettingsSection.tsx`
 - Related decision:
   [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md),
   [`0011-versioned-transcription-generations.md`](decisions/0011-versioned-transcription-generations.md)
@@ -37,9 +38,14 @@ Every generation attempt appends a version ledger row. Every successful
 attempt creates a new `.md` file with a monotonically increasing version number;
 Nota must never overwrite a previous generated file. The UI opens the newest
 completed version by default and lets the user select any earlier version.
-Regenerate and revise controls explicitly describe that they create a new
-version, and the generation dialog repeats that existing versions and files are
-never overwritten.
+The toolbar uses one generation entry point for both new documents and new
+versions. Its dialog lists every applicable template: selecting an unused
+template creates a document, while selecting a template already used by the
+meeting regenerates that document as a new version. The current document's
+template is selected by default. The dialog explicitly describes which outcome
+will occur and repeats that existing versions and files are never overwritten.
+Revision remains a separate action because it includes the selected version's
+content and a required revision request.
 
 Generation modes have distinct semantics:
 
@@ -52,6 +58,64 @@ Generation modes have distinct semantics:
 If a selected Markdown file was edited outside Nota, preview and `revise` use
 the current on-disk content. A hash mismatch is displayed as `modified`; it is
 not treated as corruption and the file is never rewritten.
+
+## PDF Export
+
+A completed, readable AI document version can be exported to a user-selected
+`.pdf` path. PDF is a derivative for sharing: the versioned Markdown file stays
+authoritative, no new document/version row is created, and export never changes
+the selected version.
+
+React renders the Markdown once with GFM and syntax highlighting. At export it
+clones that already-sanitized rendered body into a temporary print-only root,
+so the PDF cannot inherit clipped application scroll containers. The print
+stylesheet uses A4 portrait pages, Nota's existing typography and semantic
+colors, bounded reading width, wrapped code, repeating-safe table geometry, and
+visible backgrounds. Remote Markdown images remain text placeholders and are
+not fetched for either preview or export.
+
+The first non-empty rendered H1 is the export title. Nota uses its visible text
+for the native save dialog's suggested filename after Windows filename
+sanitization, and temporarily assigns the same text to the WebView document
+title so WebView2 writes meaningful PDF title metadata. If no H1 exists, the
+stored AI document title is used. The application document title is restored
+after both successful and failed exports.
+
+Rust validates that the requested version is still readable and that the
+destination is an absolute PDF path in an existing directory, then asks the
+current local WebView2 instance to print the temporary document. Native browser
+headers and footers are disabled. Export adds no network capability and must
+not log document content, titles, or destination paths.
+
+After a successful export, Nota shows a transient success toast with an
+`Open folder` action. The action revalidates that the selected path is an
+existing PDF before asking Windows Explorer to reveal the file. Nota does not
+open Explorer automatically, so repeated exports do not interrupt the user's
+document workflow.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as React Markdown reader
+    participant Rust as Rust PDF command
+    participant WV as Local WebView2
+    participant FS as User-selected PDF
+
+    User->>UI: choose Export PDF and destination
+    UI->>UI: derive title from first H1 and clone rendered body
+    UI->>UI: temporarily apply H1 as WebView title
+    UI->>Rust: export version ID and destination path
+    Rust->>Rust: validate version and destination
+    Rust->>WV: PrintToPdf with A4 settings
+    WV->>FS: write PDF locally
+    WV-->>Rust: completion status
+    Rust-->>UI: success or actionable failure
+    UI->>UI: restore app title and remove temporary print root
+    UI-->>User: show success toast with Open folder action
+    User->>Rust: optionally reveal exported PDF
+    Rust->>FS: validate existing PDF
+    Rust-->>User: select file in Windows Explorer
+```
 
 ## Context Layers
 

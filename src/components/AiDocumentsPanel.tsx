@@ -1,4 +1,4 @@
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
   Clipboard,
@@ -16,9 +16,15 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 import { AiDocumentToolbar } from "./AiDocumentToolbar";
 import { AiDocumentReader } from "./AiDocumentReader";
 import { api, type UnlistenFn } from "../api";
+import {
+  aiDocumentExportTitle,
+  pdfDefaultFileName,
+  withAiDocumentPrintRoot,
+} from "../ai-document-pdf";
 import { estimateAiRequestInputTokens } from "../ai-token-estimate";
 import { llmProviderReady } from "../llm";
 import { AiGenerationDetailsDrawer } from "./AiGenerationDetailsDrawer";
+import type { ToastOptions } from "./ToastRegion";
 import { AppTooltip } from "./AppTooltip";
 import { JsonTreeView } from "./JsonTreeView";
 import { useBackdropDismiss } from "./useBackdropDismiss";
@@ -42,7 +48,7 @@ interface AiDocumentsPanelProps {
   transcript: TranscriptDocument | null;
   providers: LlmProvider[];
   activeProviderId: string | null;
-  onMessage: (type: "success" | "error", message: string) => void;
+  onMessage: (type: "success" | "error", message: string, options?: ToastOptions) => void;
 }
 
 interface GenerationDialogState {
@@ -113,6 +119,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
   const [estimatedTokens, setEstimatedTokens] = useState<number | null>(null);
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
   const recordingIdRef = useRef(props.recording.id);
   const selectedDocumentIdRef = useRef(selectedDocumentId);
   const contentRequestRef = useRef(0);
@@ -299,23 +306,38 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     && selectedVersion.outputTokens !== null
     ? selectedVersion.inputTokens + selectedVersion.outputTokens
     : null;
-  const unusedTemplates = useMemo(() => {
+  const speakerLabelsAvailable = hasSpeakerLabels(props.transcript);
+  const generationTemplates = useMemo(() => {
     if (!workspace) return [];
     const used = new Set(workspace.documents.map((document) => document.templateId));
-    return workspace.templates.filter((template) => !template.archived && !used.has(template.id));
+    return workspace.templates.filter((template) => !template.archived || used.has(template.id));
   }, [workspace]);
+  const eligibleGenerationTemplates = useMemo(
+    () => generationTemplates.filter((template) => !isSpeakerTemplate(template) || speakerLabelsAvailable),
+    [generationTemplates, speakerLabelsAvailable],
+  );
   const availableProviders = useMemo(
     () => props.providers.filter(llmProviderReady),
     [props.providers],
   );
-  const canCreateDocument = unusedTemplates.length > 0 && availableProviders.length > 0;
+  const canGenerateDocument = eligibleGenerationTemplates.length > 0 && availableProviders.length > 0;
+  const canReadVersion = Boolean(
+    selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing",
+  );
   const canReviseVersion = Boolean(
     availableProviders.length
     && selectedVersion
     && selectedVersion.status === "completed"
     && selectedVersion.fileState !== "missing",
   );
-  const speakerLabelsAvailable = hasSpeakerLabels(props.transcript);
+  const canExportPdf = Boolean(
+    canReadVersion
+    && content
+    && selectedVersion
+    && content.version.id === selectedVersion.id
+    && !contentLoading
+    && !pdfExporting,
+  );
   const provider = dialog
     ? availableProviders.find((item) => item.id === dialog.providerId) ?? null
     : null;
@@ -393,24 +415,47 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     sourceVersion: AiDocumentVersion | null = null,
   ) => {
     setDialogTab("settings");
-    const templateId = document?.templateId
-      ?? unusedTemplates.find((template) => !isSpeakerTemplate(template) || speakerLabelsAvailable)?.id
-      ?? unusedTemplates[0]?.id
+    const preferredTemplateId = document
+      && eligibleGenerationTemplates.some((template) => template.id === document.templateId)
+      ? document.templateId
+      : null;
+    const templateId = preferredTemplateId
+      ?? eligibleGenerationTemplates[0]?.id
+      ?? generationTemplates[0]?.id
       ?? "";
+    const resolvedDocument = mode === "revise"
+      ? document
+      : workspace?.documents.find((item) => item.templateId === templateId) ?? null;
+    const resolvedMode = mode === "revise" ? mode : resolvedDocument ? "regenerate" : "create";
     const defaultProvider = availableProviders.find((item) => item.id === props.activeProviderId)
       ?? availableProviders[0]
       ?? null;
     setDialog({
-      mode,
-      document,
+      mode: resolvedMode,
+      document: resolvedDocument,
       sourceVersion,
       templateId,
-      title: document?.title ?? workspace?.templates.find((item) => item.id === templateId)?.name ?? "",
+      title: resolvedDocument?.title ?? workspace?.templates.find((item) => item.id === templateId)?.name ?? "",
       meetingContext: workspace?.profile.meetingContext ?? "",
-      documentRequirements: document?.requirements ?? "",
+      documentRequirements: resolvedDocument?.requirements ?? "",
       runRequest: "",
       providerId: defaultProvider?.id ?? "",
       modelId: defaultProvider?.modelId ?? "",
+    });
+  };
+
+  const selectGenerationTemplate = (templateId: string) => {
+    if (!dialog || dialog.mode === "revise" || !workspace) return;
+    const template = generationTemplates.find((item) => item.id === templateId);
+    const document = workspace.documents.find((item) => item.templateId === templateId) ?? null;
+    setDialog({
+      ...dialog,
+      mode: document ? "regenerate" : "create",
+      document,
+      sourceVersion: null,
+      templateId,
+      title: document?.title ?? template?.name ?? dialog.title,
+      documentRequirements: document?.requirements ?? "",
     });
   };
 
@@ -516,6 +561,37 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     }
   };
 
+  const exportPdf = async () => {
+    if (!canExportPdf || !selectedDocument || !selectedVersion) return;
+    setPdfExporting(true);
+    try {
+      const renderedDocument = document.querySelector<HTMLElement>(".ai-markdown-content");
+      if (!renderedDocument) throw new Error("当前 AI 文档尚未完成排版");
+      const exportTitle = aiDocumentExportTitle(renderedDocument, selectedDocument.title);
+      const path = await save({
+        defaultPath: pdfDefaultFileName(exportTitle),
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+      if (!path) return;
+      await withAiDocumentPrintRoot(renderedDocument, exportTitle, () =>
+        api.exportAiDocumentPdf(selectedVersion.id, path));
+      props.onMessage("success", "AI 文档已导出为 PDF", {
+        durationMs: 8_000,
+        action: {
+          label: "打开文件夹",
+          onClick: () => {
+            void api.revealAiDocumentPdf(path).catch((error) =>
+              props.onMessage("error", String(error)));
+          },
+        },
+      });
+    } catch (error) {
+      props.onMessage("error", String(error));
+    } finally {
+      setPdfExporting(false);
+    }
+  };
+
   if (loading) {
     return <div className="ai-documents-loading"><LoaderCircle className="spin" />读取 AI 文档…</div>;
   }
@@ -536,18 +612,22 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
         model={{
           documents: workspace?.documents ?? [], versions: versions.map((version) => ({ id: version.id, label: formatVersionLabel(version) })),
           documentId: selectedDocumentId, versionId: selectedVersionId,
-          canCreate: canCreateDocument, canRegenerate: availableProviders.length > 0, canRevise: canReviseVersion,
-          canRead: selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing",
-          createHint: !availableProviders.length ? "请先配置可用的 LLM Provider" : unusedTemplates.length ? "生成新文档" : "所有模板都已生成",
+          canGenerate: canGenerateDocument, canRevise: canReviseVersion,
+          canRead: canReadVersion, canExport: canExportPdf, exporting: pdfExporting,
+          generationHint: !availableProviders.length
+            ? "请先配置可用的 LLM Provider"
+            : eligibleGenerationTemplates.length
+              ? "生成 AI 文档或新版本"
+              : "没有适用于当前转写的场景模板",
         }}
         actions={{
           selectDocument: setSelectedDocumentId, selectVersion: setSelectedVersionId,
-          create: () => openDialog("create", null),
-          regenerate: () => { if (selectedDocument) openDialog("regenerate", selectedDocument); },
+          generate: () => openDialog(selectedDocument ? "regenerate" : "create", selectedDocument),
           revise: () => { if (selectedDocument) openDialog("revise", selectedDocument, selectedVersion); },
           details: () => setPreviewTab("details"),
           refresh: () => setContentReloadKey((current) => current + 1),
           copy: () => { if (selectedVersion) void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error))); },
+          exportPdf: () => { void exportPdf(); },
           copyPath: () => { if (selectedVersion) void api.copyAiDocumentPath(selectedVersion.id).then(() => props.onMessage("success", "已复制文件路径")).catch((error) => props.onMessage("error", String(error))); },
           open: () => { if (selectedVersion) void api.openAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error))); },
           reveal: () => { if (selectedVersion) void api.revealAiDocumentVersion(selectedVersion.id).catch((error) => props.onMessage("error", String(error))); },
@@ -558,7 +638,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
         {!selectedDocument ? (
           <div className="ai-documents-empty">
             <WandSparkles size={28} /><p>选择模板生成第一份 Markdown 文档。</p>
-            <button className="button primary" disabled={!canCreateDocument} onClick={() => openDialog("create", null)}><Plus size={15} />生成文档</button>
+            <button className="button primary" disabled={!canGenerateDocument} onClick={() => openDialog("create", null)}><Plus size={15} />生成文档</button>
           </div>
         ) : (
           <>
@@ -705,7 +785,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
             <header>
               <div>
                 <p className="eyebrow">AI MARKDOWN</p>
-                <h3>{dialog.mode === "create" ? "生成 AI 文档" : dialog.mode === "revise" ? "基于所选版本创建新版" : "生成全新版本"}</h3>
+                <h3>{dialog.mode === "revise" ? "基于所选版本创建新版" : "生成 AI 文档"}</h3>
                 <small className="ai-version-creation-note">
                   每次生成都会创建新的 Markdown 版本，不会覆盖已有版本或文件。
                 </small>
@@ -750,23 +830,34 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                 role="tabpanel"
                 aria-labelledby="ai-generation-settings-tab"
               >
-                {dialog.mode === "create" && (
+                {dialog.mode !== "revise" && (
                   <label>
                     <span>场景模板</span>
-                    <select value={dialog.templateId} onChange={(event) => {
-                      const template = workspace.templates.find((item) => item.id === event.target.value);
-                      setDialog({ ...dialog, templateId: event.target.value, title: template?.name ?? dialog.title });
-                    }}>
-                      {unusedTemplates.map((template) => (
+                    <select aria-label="场景模板" value={dialog.templateId} onChange={(event) => selectGenerationTemplate(event.target.value)}>
+                      {generationTemplates.map((template) => {
+                        const existingDocument = workspace.documents.find((item) => item.templateId === template.id);
+                        const unavailable = isSpeakerTemplate(template) && !speakerLabelsAvailable;
+                        return (
                         <option
                           key={template.id}
                           value={template.id}
-                          disabled={isSpeakerTemplate(template) && !speakerLabelsAvailable}
+                          disabled={unavailable}
                         >
-                          {template.name}{isSpeakerTemplate(template) && !speakerLabelsAvailable ? "（需要说话人标签）" : ""}
+                          {template.name}
+                          {unavailable
+                            ? "（需要说话人标签）"
+                            : existingDocument
+                              ? `（${template.archived ? "已归档 · " : ""}创建新版本）`
+                              : "（新建文档）"}
                         </option>
-                      ))}
+                        );
+                      })}
                     </select>
+                    {dialog.mode === "regenerate" && (
+                      <small className="ai-generation-template-note" aria-live="polite">
+                        该模板已有文档，本次将创建新版本，不会覆盖现有版本。
+                      </small>
+                    )}
                   </label>
                 )}
                 <label><span>文档标题</span><input value={dialog.title} onChange={(event) => setDialog({ ...dialog, title: event.target.value })} /></label>

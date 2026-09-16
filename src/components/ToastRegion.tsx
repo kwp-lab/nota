@@ -22,6 +22,8 @@ export interface AppToast {
   };
 }
 
+export type ToastOptions = Partial<Pick<AppToast, "durationMs" | "dedupeKey" | "action">>;
+
 interface ToastRegionProps {
   toasts: AppToast[];
   onDismiss: (id: number) => void;

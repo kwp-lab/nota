@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "../api";
 import { AiDocumentsPanel } from "./AiDocumentsPanel";
 import type {
@@ -20,7 +21,10 @@ const testState = vi.hoisted(() => ({
   details: new Map<string, AiGenerationDetails>(),
   readDocument: null as null | ((id: string) => Promise<AiDocumentContent | undefined>),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(async () => null),
+  save: vi.fn(async () => null),
+}));
 
 vi.mock("../api", () => ({
   api: {
@@ -51,6 +55,8 @@ vi.mock("../api", () => ({
     relinkAiDocumentVersion: vi.fn(),
     findAiDocumentVersion: vi.fn(),
     copyAiDocumentVersion: vi.fn(),
+    exportAiDocumentPdf: vi.fn(),
+    revealAiDocumentPdf: vi.fn(async () => undefined),
     copyAiDocumentPath: vi.fn(),
     openAiDocumentVersion: vi.fn(),
     revealAiDocumentVersion: vi.fn(),
@@ -166,9 +172,17 @@ describe("AI documents panel", () => {
     const secondProvider = { ...provider, id: "provider-2", name: "Second provider", modelId: "second-model" };
     render(<AiDocumentsPanel recording={recording} transcript={transcript} providers={[provider, secondProvider]} activeProviderId={provider.id} onMessage={onMessage} />);
     await screen.findByRole("heading", { name: "Existing summary" });
-    if (mode === "regenerate") fireEvent.click(screen.getByLabelText("更多文档操作"));
-    fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "生成新文档" : mode === "revise" ? "AI修改" : "重新生成" }));
-    let dialog = screen.getByRole("dialog");
+    const openModeDialog = async () => {
+      fireEvent.click(screen.getByRole("button", {
+        name: mode === "revise" ? "AI 修改" : "生成 AI 文档或新版本",
+      }));
+      const nextDialog = await screen.findByRole("dialog");
+      if (mode === "create") {
+        fireEvent.change(within(nextDialog).getByLabelText("场景模板"), { target: { value: "extra" } });
+      }
+      return nextDialog;
+    };
+    let dialog = await openModeDialog();
     const backdrop = dialog.parentElement!;
     const close = within(dialog).getByRole("button", { name: "关闭生成窗口" });
     expect(close.querySelector("svg.lucide-x")).not.toBeNull();
@@ -185,12 +199,20 @@ describe("AI documents panel", () => {
     fireEvent.click(backdrop);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.generateAiDocument).not.toHaveBeenCalled();
-    if (mode === "regenerate") fireEvent.click(screen.getByLabelText("更多文档操作"));
-    fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "生成新文档" : mode === "revise" ? "AI修改" : "重新生成" }));
-    dialog = screen.getByRole("dialog");
+    dialog = await openModeDialog();
     expect(within(dialog).getByRole("tab", { name: "生成设置" })).toBeInTheDocument();
     expect(within(dialog).getByRole("tab", { name: "请求预览" })).toBeInTheDocument();
-    expect(within(dialog).queryByLabelText("场景模板") !== null).toBe(mode === "create");
+    expect(within(dialog).queryByLabelText("场景模板") !== null).toBe(mode !== "revise");
+    if (mode === "regenerate") {
+      expect(within(dialog).getByLabelText("场景模板")).toHaveValue("summary");
+      expect(within(dialog).getByRole("option", { name: "会议总结（创建新版本）" })).toBeInTheDocument();
+      expect(within(dialog).getByText("该模板已有文档，本次将创建新版本，不会覆盖现有版本。")).toBeInTheDocument();
+    }
+    if (mode === "create") {
+      expect(within(dialog).getByLabelText("场景模板")).toHaveValue("extra");
+      expect(within(dialog).getByRole("option", { name: "会议总结（新建文档）" })).toBeInTheDocument();
+      expect(within(dialog).queryByText("该模板已有文档，本次将创建新版本，不会覆盖现有版本。")).toBeNull();
+    }
     expect(within(dialog).getByLabelText(/会议级上下文/)).toHaveValue("existing meeting context");
     expect(within(dialog).getByLabelText(/文档要求/)).toHaveValue(mode === "create" ? "" : "existing document requirements");
     if (mode === "revise") {
@@ -224,7 +246,7 @@ describe("AI documents panel", () => {
     let finish!: (value: AiDocumentVersion) => void;
     vi.mocked(api.generateAiDocument).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     render(<AiDocumentsPanel recording={recording} transcript={transcript} providers={[provider]} activeProviderId={provider.id} onMessage={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "生成新文档" }));
+    fireEvent.click(await screen.findByRole("button", { name: "生成 AI 文档或新版本" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "生成新版本" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "生成新版本" }));
     const dialog = screen.getByRole("dialog");
@@ -240,7 +262,7 @@ describe("AI documents panel", () => {
   it("keeps token budget and preview failures blocking generation without losing the draft", async () => {
     testState.workspace!.templates = [template("summary", "meeting_summary")];
     render(<AiDocumentsPanel recording={recording} transcript={transcript} providers={[{ ...provider, inputTokenBudget: 1 }]} activeProviderId={provider.id} onMessage={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "生成新文档" }));
+    fireEvent.click(await screen.findByRole("button", { name: "生成 AI 文档或新版本" }));
     await waitFor(() => expect(document.querySelector(".ai-token-estimate.over")).not.toBeNull());
     expect(screen.getByRole("button", { name: "生成新版本" })).toBeDisabled();
     vi.mocked(api.previewAiGenerationRequest).mockRejectedValueOnce(new Error("Preview unavailable"));
@@ -315,13 +337,89 @@ describe("AI documents panel", () => {
     expect(await screen.findByRole("heading", { name: "Current summary" })).toBeInTheDocument();
     expect(screen.getByText("[图片未自动加载：chart]")).toBeInTheDocument();
     expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByRole("button", { name: "AI 修改" })).toHaveClass("icon-button");
+    expect(screen.getByRole("button", { name: "AI 修改" })).not.toHaveTextContent("AI修改");
+    expect(screen.getByRole("button", { name: "生成 AI 文档或新版本" })).toHaveClass("icon-button");
+    const toolbarActions = document.querySelector(".ai-document-actions");
+    expect(toolbarActions).not.toBeNull();
+    expect(within(toolbarActions as HTMLElement).getAllByRole("button")[0]).toHaveAccessibleName("生成 AI 文档或新版本");
     fireEvent.click(screen.getByLabelText("更多文档操作"));
-    expect(screen.getByRole("button", { name: "重新生成" })).toHaveClass("compact");
-    expect(screen.getByRole("button", { name: "重新生成" })).not.toHaveAttribute("title");
-    expect(screen.getByRole("button", { name: "AI修改" })).toHaveClass("compact");
-    expect(screen.getByRole("button", { name: "AI修改" })).not.toHaveAttribute("title");
-    fireEvent.click(screen.getByRole("button", { name: "生成详情" }));
+    expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看生成详情" }));
     expect(await screen.findByText("该版本生成时尚未记录原始请求 JSON。")).toBeInTheDocument();
+  });
+
+  it("exports the rendered Markdown with syntax highlighting and removes the temporary print root", async () => {
+    const summaryTemplate = template("summary", "meeting_summary");
+    const completedVersion = version("v1", 1, "completed");
+    testState.workspace = {
+      ...testState.workspace!,
+      templates: [summaryTemplate],
+      documents: [{
+        id: "document-1",
+        recordingId: recording.id,
+        templateId: summaryTemplate.id,
+        title: "Weekly: meeting?",
+        requirements: "",
+        templateName: summaryTemplate.name,
+        templateBuiltinKey: summaryTemplate.builtinKey,
+        latestVersion: completedVersion,
+        createdAt: "2026-08-09T00:00:00Z",
+        updatedAt: "2026-08-09T00:03:00Z",
+      }],
+    };
+    testState.versions = [completedVersion];
+    testState.contents.set("v1", {
+      version: completedVersion,
+      markdown: "# Current summary\n\n```js\nconst ready = true;\n```",
+    });
+    vi.mocked(save).mockResolvedValueOnce("C:\\Exports\\Weekly meeting.pdf");
+    vi.mocked(api.exportAiDocumentPdf).mockImplementationOnce(async () => {
+      const printRoot = document.querySelector(".ai-pdf-document");
+      expect(printRoot).not.toBeNull();
+      expect(printRoot).toHaveTextContent("Current summary");
+      expect(printRoot?.querySelector(".hljs-keyword")).toHaveTextContent("const");
+      expect(document.title).toBe("Current summary");
+    });
+    const onMessage = vi.fn();
+    const originalTitle = document.title;
+
+    render(
+      <AiDocumentsPanel
+        recording={recording}
+        transcript={transcript}
+        providers={[provider]}
+        activeProviderId={provider.id}
+        onMessage={onMessage}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Current summary" });
+    fireEvent.click(screen.getByRole("button", { name: "导出 PDF" }));
+
+    await waitFor(() => expect(api.exportAiDocumentPdf).toHaveBeenCalledWith(
+      "v1",
+      "C:\\Exports\\Weekly meeting.pdf",
+    ));
+    expect(save).toHaveBeenCalledWith({
+      defaultPath: "Current summary.pdf",
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    expect(document.querySelector(".ai-pdf-document")).toBeNull();
+    expect(document.title).toBe(originalTitle);
+    expect(onMessage).toHaveBeenCalledWith(
+      "success",
+      "AI 文档已导出为 PDF",
+      expect.objectContaining({
+        durationMs: 8_000,
+        action: expect.objectContaining({ label: "打开文件夹" }),
+      }),
+    );
+    const successOptions = onMessage.mock.calls.find(([tone]) => tone === "success")?.[2];
+    successOptions?.action.onClick();
+    await waitFor(() => expect(api.revealAiDocumentPdf).toHaveBeenCalledWith(
+      "C:\\Exports\\Weekly meeting.pdf",
+    ));
   });
 
   it("shows persisted request and response JSON with normalized token usage", async () => {
@@ -371,8 +469,10 @@ describe("AI documents panel", () => {
       />,
     );
 
-    const detailsButton = await screen.findByRole("button", { name: "生成详情" });
+    const moreButton = await screen.findByLabelText("更多文档操作");
     expect(api.readAiGenerationDetails).not.toHaveBeenCalled();
+    fireEvent.click(moreButton);
+    const detailsButton = screen.getByRole("button", { name: "查看生成详情" });
     detailsButton.focus();
     fireEvent.click(detailsButton);
     expect(screen.getByRole("dialog", { name: "生成详情" })).toBeInTheDocument();
@@ -394,7 +494,7 @@ describe("AI documents panel", () => {
     ));
     fireEvent.keyDown(screen.getByRole("button", { name: "关闭生成详情" }), { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(detailsButton).toHaveFocus();
+    expect(moreButton).toHaveFocus();
   });
 
   it("skips an unavailable speaker template when opening a new document dialog", async () => {

@@ -6,6 +6,7 @@ mod importer;
 mod logging;
 mod models;
 mod paths;
+mod pdf_export;
 mod process_icons;
 mod state_machine;
 mod storage;

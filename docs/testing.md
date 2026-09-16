@@ -290,8 +290,21 @@ Automated coverage for AI documents must include:
   overwrite of an existing or concurrently created path;
 - `ready`, `modified`, and `missing` file states plus identity-checked relink;
 - safe Markdown preview with raw HTML disabled and remote images not loaded;
+- syntax-highlighted fenced code in preview and local PDF export of the same
+  sanitized rendered body, with the first H1 as the safe default filename and
+  PDF metadata title, selected-version/path IPC, and restoration of the app
+  title plus print-root cleanup after both success and failure;
+- PDF destination validation for empty, relative, non-PDF, directory, and
+  missing-parent paths without creating output during validation, plus
+  revalidation of the exported file before revealing it in Explorer;
 - document-first and version-second UI selection, with newest successful
   version selected by default;
+- the unified generation entry point defaulting to the current template,
+  submitting `regenerate` for a used template and `create` for an unused one,
+  while the separate regenerate action stays absent;
+- the compact AI document toolbar keeping revision, Markdown copy, generation,
+  and overflow actions visible while generation details remain keyboard
+  accessible inside overflow;
 - three context lifetimes and per-version prompt/provider/template snapshots;
 - credential-free request JSON matching the submitted body, successful raw
   response JSON and normalized usage persistence, nullable-column migration
@@ -438,6 +451,17 @@ include the recording or transcript in ordinary logs or committed artifacts.
 - Regress generation progress/cancel, missing/externally modified Markdown,
   file relinking, stale responses, and on-demand request/response inspection.
   Retain all existing playback, speaker, export and transcription tests.
+- Export a synthetic long AI document to PDF on Windows 11 at 100%, 125%, and
+  150% scaling. Inspect every page for A4 margins, Chinese/Latin typography,
+  heading-page breaks, long lists, links, quotes, tables, inline/fenced code,
+  syntax colors, wrapped long lines, and absence of application chrome. Confirm
+  the first H1 becomes both the suggested filename and the document title shown
+  by Chrome's PDF viewer, while no-H1 documents use the stored title. Confirm
+  remote images stay placeholders, cancellation creates no file, overwrite uses
+  the native save confirmation, completion reports success with an optional
+  “打开文件夹” toast action that selects the PDF in Explorer, and invalid or
+  unwritable destinations produce an actionable error without changing the
+  Markdown version.
 - Verify generation dialogs and the details drawer close on backdrop clicks,
   but not inside clicks, cancelled pointers, secondary buttons, or text-selection
   drags ending outside. Submission blocks close/cancel/backdrop dismissal. Check
