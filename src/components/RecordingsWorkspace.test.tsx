@@ -315,6 +315,47 @@ describe("RecordingsWorkspace", () => {
     expect(screen.getByText("客户访谈")).toBeInTheDocument();
   });
 
+  it("renders recordings as compact two-line rows without redundant list chrome", async () => {
+    const actions = renderWorkspace();
+    await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());
+
+    const list = screen.getByLabelText("录音列表");
+    const row = within(list).getByText("产品周会").closest("article")!;
+    const metadata = row.querySelector(".history-item-meta");
+    const title = within(row).getByText("产品周会");
+    const status = within(row).getByText("已转写");
+
+    expect(screen.getByLabelText("2 条录音")).toHaveTextContent("2 条");
+    expect(row.querySelector(".history-item-icon")).toBeNull();
+    expect(row.querySelector(".history-status-dot")).toBeNull();
+    expect(title).toHaveClass("history-item-title");
+    expect(title).toHaveAttribute("title", "产品周会");
+    expect(metadata?.firstElementChild).toHaveClass("history-item-facts");
+    expect(metadata?.lastElementChild).toBe(status);
+    expect(status).toHaveClass("transcription-badge", "history-transcription-status", "status-completed");
+    expect(metadata).toHaveTextContent("1:02");
+    expect(metadata).toHaveTextContent("已转写");
+    expect(within(list).queryByText("1.0 MB")).not.toBeInTheDocument();
+    expect(screen.queryByText(/本地录音；仅在转写或手动生成 AI 文档时连接所选服务/)).not.toBeInTheDocument();
+  });
+
+  it("plays the focused recording with Space while Enter remains selection", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const actions = renderWorkspace();
+    await waitFor(() => expect(document.querySelector("audio")).toHaveAttribute(
+      "src",
+      `asset://${completed.path}`,
+    ));
+    const select = within(screen.getByLabelText("录音列表"))
+      .getByText("产品周会")
+      .closest("button")!;
+
+    fireEvent.keyDown(select, { key: "Enter" });
+    expect(play).not.toHaveBeenCalled();
+    fireEvent.keyDown(select, { key: " " });
+    expect(play).toHaveBeenCalledOnce();
+  });
+
   it("shows provider speaker labels and timestamp controls without inventing roles", () => {
     renderWorkspace();
     expect(screen.getByText("speaker_1")).toBeInTheDocument();

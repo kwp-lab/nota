@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-16
+
+### Changed
+
+- Refined the recording library into compact two-line rows with regular-weight
+  truncated titles, trailing semantic status badges, flatter selection,
+  subtle inset separators, quieter progressive quick-play actions, a narrow
+  scrollbar, and playback controls free of the redundant persistent
+  network-use reminder. Refreshed the shared neutral palette to cleaner white
+  and cool-neutral surfaces with stronger secondary-text legibility.
+
 ## [0.10.0] - 2026-09-15
 
 ### Added
@@ -395,7 +406,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added GitHub Actions workflows for continuous integration and tagged Windows releases.
 - Added English and Simplified Chinese README documentation.
 
-[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/kwp-lab/nota/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/kwp-lab/nota/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kwp-lab/nota/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kwp-lab/nota/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kwp-lab/nota/compare/v0.7.0...v0.8.0

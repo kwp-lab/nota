@@ -23,15 +23,15 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
-  /* Nota's warm-neutral, calm-jade semantic color system. */
-  --color-text-primary: #242726;
-  --color-text-secondary: #59615d;
-  --color-text-muted: #737a76;
-  --color-text-subtle: #858a86;
-  --color-text-disabled: #999d99;
+  /* Nota's clean-neutral, calm-jade semantic color system. */
+  --color-text-primary: #2b302e;
+  --color-text-secondary: #4f5954;
+  --color-text-muted: #626c67;
+  --color-text-subtle: #66706b;
+  --color-text-disabled: #8d9590;
   --color-text-inverse: #ffffff;
-  --color-text-brand: #285f58;
-  --color-text-success: #2d675e;
+  --color-text-brand: #245e55;
+  --color-text-success: #285f57;
   --color-text-info: #3d6875;
   --color-text-warning: #80621e;
   --color-text-danger: #a23e3e;
@@ -45,45 +45,45 @@
   --color-syntax-null: var(--color-text-muted);
   --color-syntax-punctuation: var(--color-text-secondary);
 
-  --color-surface-canvas: #f4f3ef;
-  --color-surface-primary: #fbfaf7;
+  --color-surface-canvas: #f4f6f4;
+  --color-surface-primary: #ffffff;
   --color-surface-raised: #ffffff;
-  --color-surface-subtle: #f1f0ec;
-  --color-surface-sunken: #efeee9;
-  --color-surface-hover: #ebeae5;
-  --color-surface-brand: #e4eeeb;
-  --color-surface-brand-strong: #dce9e6;
-  --color-surface-success: #dfebe7;
-  --color-surface-info: #deebef;
-  --color-surface-warning: #f5eedf;
-  --color-surface-danger: #f2e3df;
+  --color-surface-subtle: #f7f8f6;
+  --color-surface-sunken: #eef1ee;
+  --color-surface-hover: #e9eeea;
+  --color-surface-brand: #e1eeea;
+  --color-surface-brand-strong: #d8e9e4;
+  --color-surface-success: #deede8;
+  --color-surface-info: #e2edf0;
+  --color-surface-warning: #f7f1e4;
+  --color-surface-danger: #f4e7e3;
   --color-surface-tooltip: #26312e;
 
-  --color-border-default: #d8d7d1;
-  --color-border-subtle: #e5e4df;
-  --color-border-strong: #bed2cc;
-  --color-border-danger: #e7cfca;
+  --color-border-default: #dce1dd;
+  --color-border-subtle: #e7ebe8;
+  --color-border-strong: #b8d3cb;
+  --color-border-danger: #e5ccc5;
   --color-border-inverse: #ffffff;
-  --color-focus-ring: #4d7f77;
+  --color-focus-ring: #477a72;
 
-  --color-control-primary: #285f58;
-  --color-control-primary-hover: #214f49;
+  --color-control-primary: #245e55;
+  --color-control-primary-hover: #1f514a;
   --color-control-secondary: #ffffff;
   --color-control-danger: #a23e3e;
-  --color-icon-primary: #59615d;
-  --color-icon-muted: #737a76;
-  --color-icon-brand: #39786e;
-  --color-brand-accent: #4b8178;
-  --color-brand-accent-soft: #72a49b;
+  --color-icon-primary: #56615c;
+  --color-icon-muted: #66706b;
+  --color-icon-brand: #34766b;
+  --color-brand-accent: #468078;
+  --color-brand-accent-soft: #70a49b;
   --color-status-recording: #c84f45;
   --color-status-paused: #bd8b35;
   --color-status-warning-accent: #d99a42;
 
   /* Translucent surfaces and effect colors. */
-  --color-surface-app-chrome: rgba(248, 247, 243, 0.92);
-  --color-surface-app-chrome-soft: rgba(248, 247, 243, 0.88);
-  --color-surface-glass: rgba(255, 254, 251, 0.98);
-  --color-surface-hover-translucent: rgba(255, 255, 255, 0.55);
+  --color-surface-app-chrome: rgba(247, 249, 247, 0.92);
+  --color-surface-app-chrome-soft: rgba(247, 249, 247, 0.88);
+  --color-surface-glass: rgba(255, 255, 255, 0.98);
+  --color-surface-hover-translucent: rgba(255, 255, 255, 0.62);
   --color-surface-selected-translucent: rgba(255, 255, 255, 0.72);
   --color-border-inverse-subtle: rgba(255, 255, 255, 0.09);
   --color-fill-inverse-subtle: rgba(255, 255, 255, 0.18);
