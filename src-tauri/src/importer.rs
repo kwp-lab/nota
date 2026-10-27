@@ -654,8 +654,13 @@ impl ImportResampler {
         let Some(inner) = self.inner.as_mut() else {
             return Ok(());
         };
-        let input = [std::mem::take(&mut self.pending)];
-        let output = inner.process_partial(Some(&input), None)?;
+        let output = if self.pending.is_empty() {
+            // Rubato treats an empty channel as undersized, not as a zero-padded flush.
+            inner.process_partial::<Vec<f32>>(None, None)?
+        } else {
+            let input = [std::mem::take(&mut self.pending)];
+            inner.process_partial(Some(&input), None)?
+        };
         self.emit_output(&output[0], writer)?;
         for _ in 0..4 {
             if self.emitted_frames >= self.target_output_frames() {
@@ -851,6 +856,97 @@ mod tests {
             .unwrap();
         assert_eq!(unique_import_path(&root, "会议"), root.join("会议_2.ogg"));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resampler_finishes_empty_and_partial_tails_without_changing_length() {
+        let root = std::env::temp_dir().join(format!("nota-import-tail-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        for source_rate in [16_000, 44_100, 48_000, 96_000] {
+            for frames in [0, 1, 4_095, 4_096, 4_097, 8_192] {
+                let output = root.join(format!("{source_rate}-{frames}.ogg"));
+                let mut writer = OpusOggWriter::create(&output).unwrap();
+                let mut resampler = ImportResampler::new(source_rate).unwrap();
+                let input = vec![0.1; frames];
+                for packet in input.chunks(1_024) {
+                    resampler.push(packet, &mut writer).unwrap();
+                }
+                resampler.finish(&mut writer).unwrap();
+                assert_eq!(
+                    resampler.emitted_frames,
+                    frames as u64 * SAMPLE_RATE as u64 / source_rate as u64,
+                    "incorrect output length for {frames} frames at {source_rate} Hz"
+                );
+                writer.finish().unwrap();
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn whole_resampling_blocks_import_to_playable_ogg() {
+        let root = std::env::temp_dir().join(format!("nota-import-block-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let cancel = AtomicBool::new(false);
+        for source_rate in [16_000, 44_100, 48_000] {
+            let frames = RESAMPLE_CHUNK_FRAMES * 4;
+            let source = root.join(format!("{source_rate}.wav"));
+            let output = root.join(format!("{source_rate}.ogg"));
+            write_pcm16_stereo_wave(&source, source_rate, frames);
+            let (duration_ms, actual_output) =
+                decode_to_nota_ogg(&source, &output, &cancel, &mut |_, _| {}).unwrap();
+            assert_eq!(actual_output, output);
+            assert_eq!(duration_ms, frames as u64 * 1_000 / source_rate as u64);
+            let mut reader = OggPcm16Reader::open(&output, duration_ms).unwrap();
+            let samples = reader.read_samples(32_000).unwrap();
+            assert_eq!(samples.len() as u64, duration_ms * 16);
+            assert!(samples.iter().any(|sample| *sample != 0));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires NOTA_TEST_IMPORT_SOURCE pointing to a local audio file; uses isolated temporary storage"]
+    fn local_audio_import_commits_playable_ogg_without_changing_source() {
+        let source = PathBuf::from(
+            std::env::var_os("NOTA_TEST_IMPORT_SOURCE")
+                .expect("NOTA_TEST_IMPORT_SOURCE is required"),
+        );
+        let root = std::env::temp_dir().join(format!("nota-import-local-test-{}", Uuid::new_v4()));
+        let storage = test_storage(&root);
+        let cancel = AtomicBool::new(false);
+        let original_hash = hash_file(&source, &cancel).unwrap();
+        let outcome = import_one(&storage, &source, &cancel, |_, _| {}, || {}).unwrap();
+        let ImportOneOutcome::Completed(recording) = outcome else {
+            panic!("fresh isolated import was unexpectedly skipped");
+        };
+        assert_eq!(recording.origin, RecordingOrigin::Imported);
+        assert!(recording.duration_ms > 0);
+        assert!(storage.audio_import_jobs().unwrap().is_empty());
+        assert_eq!(
+            storage.find_recording(&recording.id).unwrap().id,
+            recording.id
+        );
+        let mut reader =
+            OggPcm16Reader::open(Path::new(&recording.path), recording.duration_ms).unwrap();
+        let mut samples_read = 0u64;
+        let mut audible = false;
+        loop {
+            let samples = reader.read_samples(16_000).unwrap();
+            if samples.is_empty() {
+                break;
+            }
+            audible |= samples.iter().any(|sample| *sample != 0);
+            samples_read += samples.len() as u64;
+        }
+        // The existing Opus writer's frame padding and pre-skip can shift decoded
+        // length by less than one 20 ms packet; resampler PCM length is tested exactly.
+        assert!(samples_read.abs_diff(recording.duration_ms * 16) <= 320);
+        assert!(audible);
+        assert_eq!(hash_file(&source, &cancel).unwrap(), original_hash);
+        drop(reader);
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

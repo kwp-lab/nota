@@ -14,6 +14,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Restored Nota's shared warm-neutral color palette while preserving those
   neutral recording-list interaction states.
 
+### Fixed
+
+- Fixed audio imports failing after reaching 100% when a resampled file ended
+  on an exact 4,096-frame block boundary, including affected M4A recordings.
+
 ## [0.11.0] - 2026-09-16
 
 ### Changed
