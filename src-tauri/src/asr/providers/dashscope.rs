@@ -16,7 +16,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-pub(super) const API_ROOT: &str = "https://dashscope.aliyuncs.com/api/v1";
+#[cfg(test)]
+const DEFAULT_API_ROOT: &str = "https://dashscope.aliyuncs.com/api/v1";
 pub(super) const MODEL: &str = "qwen-audio-3.0-asr-flash-filetrans";
 const MAX_CONTROL_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_RESULT_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
@@ -215,11 +216,9 @@ impl Read for ProgressReader {
 }
 
 pub(super) fn validate_credentials(credentials: &AsrProviderCredentials) -> Result<()> {
-    if credentials.provider.base_url.trim_end_matches('/') != API_ROOT {
-        bail!("DashScope 第一版仅支持中国区公共端点 {API_ROOT}");
-    }
+    normalize_api_root(&credentials.provider.base_url)?;
     if credentials.provider.model_id != MODEL {
-        bail!("DashScope 第一版仅支持模型 {MODEL}");
+        bail!("DashScope 当前仅支持模型 {MODEL}");
     }
     if credentials.api_key.trim().is_empty() {
         bail!("请先填写 DashScope API Key");
@@ -329,7 +328,7 @@ pub(super) fn submit_task(
     if !oss_url.starts_with("oss://") {
         bail!("DashScope 临时对象地址无效");
     }
-    let response = build_submit_request(&client()?, credentials, oss_url, speaker_count, hotwords)
+    let response = build_submit_request(&client()?, credentials, oss_url, speaker_count, hotwords)?
         .send()
         .map_err(|_| {
             anyhow::anyhow!("DashScope 任务提交结果未知；为避免重复计费，Nota 不会自动重试")
@@ -353,7 +352,7 @@ fn build_submit_request(
     oss_url: &str,
     speaker_count: Option<u32>,
     hotwords: &[HotwordEntry],
-) -> reqwest::blocking::RequestBuilder {
+) -> Result<reqwest::blocking::RequestBuilder> {
     let mut parameters = json!({
         "channel_id": [0],
         "diarization_enabled": true
@@ -368,8 +367,11 @@ fn build_submit_request(
             .collect::<serde_json::Map<String, Value>>();
         parameters["vocabulary"] = Value::Object(vocabulary);
     }
-    client
-        .post(format!("{API_ROOT}/services/audio/asr/transcription"))
+    Ok(client
+        .post(format!(
+            "{}/services/audio/asr/transcription",
+            api_root(credentials)?
+        ))
         .timeout(Duration::from_secs(120))
         .bearer_auth(&credentials.api_key)
         .header("X-DashScope-Async", "enable")
@@ -378,13 +380,13 @@ fn build_submit_request(
             "model": MODEL,
             "input": { "file_urls": [oss_url] },
             "parameters": parameters
-        }))
+        })))
 }
 
 pub(super) fn get_task(credentials: &AsrProviderCredentials, task_id: &str) -> Result<TaskStatus> {
     validate_credentials(credentials)?;
     let response = client()?
-        .get(format!("{API_ROOT}/tasks/{task_id}"))
+        .get(format!("{}/tasks/{task_id}", api_root(credentials)?))
         .timeout(Duration::from_secs(60))
         .bearer_auth(&credentials.api_key)
         .send()
@@ -427,7 +429,7 @@ pub(super) fn cancel_pending_task(
 ) -> Result<()> {
     validate_credentials(credentials)?;
     let response = client()?
-        .post(format!("{API_ROOT}/tasks/{task_id}/cancel"))
+        .post(format!("{}/tasks/{task_id}/cancel", api_root(credentials)?))
         .timeout(Duration::from_secs(60))
         .bearer_auth(&credentials.api_key)
         .send()
@@ -457,7 +459,7 @@ pub(super) fn download_result(result_url: &str) -> Result<ProviderTranscript> {
 
 fn get_upload_policy(credentials: &AsrProviderCredentials) -> Result<UploadPolicy> {
     let response = client()?
-        .get(format!("{API_ROOT}/uploads"))
+        .get(format!("{}/uploads", api_root(credentials)?))
         .query(&[("action", "getPolicy"), ("model", MODEL)])
         .timeout(Duration::from_secs(60))
         .bearer_auth(&credentials.api_key)
@@ -484,6 +486,46 @@ fn client() -> Result<Client> {
         .connect_timeout(Duration::from_secs(15))
         .build()
         .context("无法初始化 DashScope HTTP 客户端")
+}
+
+fn api_root(credentials: &AsrProviderCredentials) -> Result<String> {
+    normalize_api_root(&credentials.provider.base_url)
+}
+
+pub(super) fn normalize_api_root(value: &str) -> Result<String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        bail!("DashScope API Base URL 不能为空");
+    }
+    let mut url = reqwest::Url::parse(trimmed).context("DashScope API Base URL 格式无效")?;
+    if url.scheme() != "https" {
+        bail!("DashScope API Base URL 必须使用 HTTPS");
+    }
+    if !url.username().is_empty() || url.password().is_some() || url.port().is_some() {
+        bail!("DashScope API Base URL 不能包含凭据或自定义端口");
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        bail!("DashScope API Base URL 不能包含查询参数或片段");
+    }
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if !is_trusted_api_host(&host) {
+        bail!("DashScope API Base URL 必须使用阿里云 DashScope 或百炼业务空间专属域名");
+    }
+    let path = url.path().trim_end_matches('/');
+    if !matches!(path, "" | "/api" | "/api/v1") {
+        bail!("DashScope API Base URL 必须以 /api/v1 结尾");
+    }
+    url.set_path("/api/v1");
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+fn is_trusted_api_host(host: &str) -> bool {
+    host == "dashscope.aliyuncs.com"
+        || host.ends_with(".dashscope.aliyuncs.com")
+        || host
+            .strip_suffix(".aliyuncs.com")
+            .is_some_and(|prefix| prefix.starts_with("dashscope-") && !prefix.contains('.'))
+        || host.ends_with(".maas.aliyuncs.com")
 }
 
 fn read_json(response: Response, operation: &str, max_bytes: u64) -> Result<Value> {
@@ -664,12 +706,16 @@ mod tests {
     use crate::models::{AsrProvider, AsrProviderKind};
 
     fn credentials() -> AsrProviderCredentials {
+        credentials_with_base_url(DEFAULT_API_ROOT)
+    }
+
+    fn credentials_with_base_url(base_url: &str) -> AsrProviderCredentials {
         AsrProviderCredentials {
             provider: AsrProvider {
                 id: "dashscope".into(),
                 name: "DashScope".into(),
                 kind: AsrProviderKind::DashScope,
-                base_url: API_ROOT.into(),
+                base_url: base_url.into(),
                 model_id: MODEL.into(),
                 has_api_key: true,
                 capabilities: AsrProviderKind::DashScope.capabilities(),
@@ -677,6 +723,36 @@ mod tests {
                 updated_at: "2026-08-22T00:00:00Z".into(),
             },
             api_key: "secret-test-key".into(),
+        }
+    }
+
+    #[test]
+    fn normalizes_shared_and_workspace_api_roots() {
+        assert_eq!(
+            normalize_api_root("https://dashscope.aliyuncs.com/api/v1/").unwrap(),
+            DEFAULT_API_ROOT
+        );
+        assert_eq!(
+            normalize_api_root("https://llm-example.cn-beijing.maas.aliyuncs.com").unwrap(),
+            "https://llm-example.cn-beijing.maas.aliyuncs.com/api/v1"
+        );
+        assert_eq!(
+            normalize_api_root("https://llm-example.ap-southeast-1.maas.aliyuncs.com/api").unwrap(),
+            "https://llm-example.ap-southeast-1.maas.aliyuncs.com/api/v1"
+        );
+    }
+
+    #[test]
+    fn rejects_untrusted_or_incompatible_api_roots() {
+        for value in [
+            "http://dashscope.aliyuncs.com/api/v1",
+            "https://example.com/api/v1",
+            "https://dashscope.aliyuncs.com.evil.test/api/v1",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "https://dashscope.aliyuncs.com:8443/api/v1",
+            "https://dashscope.aliyuncs.com/api/v1?workspace=other",
+        ] {
+            assert!(normalize_api_root(value).is_err(), "accepted {value}");
         }
     }
 
@@ -721,6 +797,7 @@ mod tests {
             Some(4),
             &[],
         )
+        .unwrap()
         .build()
         .unwrap();
         assert_eq!(request.headers()["X-DashScope-Async"], "enable");
@@ -754,6 +831,7 @@ mod tests {
                 },
             ],
         )
+        .unwrap()
         .build()
         .unwrap();
         let body: Value =
@@ -763,7 +841,25 @@ mod tests {
     }
 
     #[test]
-    fn credentials_reject_mutable_endpoint_model_and_missing_key() {
+    fn credentials_accept_workspace_endpoint_and_reject_invalid_configuration() {
+        let workspace =
+            credentials_with_base_url("https://llm-example.cn-beijing.maas.aliyuncs.com/api/v1");
+        validate_credentials(&workspace).unwrap();
+        let request = build_submit_request(
+            &client().unwrap(),
+            &workspace,
+            "oss://temporary/audio.ogg",
+            None,
+            &[],
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        assert_eq!(
+            request.url().as_str(),
+            "https://llm-example.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/asr/transcription"
+        );
+
         let mut value = credentials();
         value.provider.base_url = "https://example.com/api/v1".into();
         assert!(validate_credentials(&value).is_err());

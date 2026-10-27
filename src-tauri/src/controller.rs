@@ -1901,7 +1901,7 @@ fn save_asr_provider(
         if request.kind == AsrProviderKind::DashScope
             && request.model_id != "qwen-audio-3.0-asr-flash-filetrans"
         {
-            bail!("DashScope 第一版仅支持 qwen-audio-3.0-asr-flash-filetrans 模型");
+            bail!("DashScope 当前仅支持 qwen-audio-3.0-asr-flash-filetrans 模型");
         }
         let provider = state.storage.save_asr_provider(request)?;
         logging::info(

@@ -187,10 +187,11 @@ Automated client coverage must include:
   rename/delete, and voiceprint sample deletion;
 - unchanged OpenAI-compatible multipart and response-format fallback behavior;
 - Ogg Opus decode coverage for the legacy path.
-- DashScope fixed endpoint/model, `2–100` count, two-hour preflight, trusted
-  HTTPS host validation, sentence/speaker normalization, generation snapshot,
-  and completed-checkpoint cleanup;
-- DashScope UI fixed fields, no model discovery, temporary-cloud disclosure,
+- DashScope configurable trusted shared/workspace API roots, fixed model,
+  `2–100` count, two-hour preflight, HTTPS host validation, sentence/speaker
+  normalization, generation snapshot, and completed-checkpoint cleanup;
+- DashScope UI editable API root, fixed model, no model discovery,
+  temporary-cloud disclosure,
   automatic-upload wording, and generation-bound voiceprint degradation;
 - recording-detail switching between FunASR and DashScope transcript versions,
   including generation-specific text, speaker count, manual assignments, and
@@ -241,7 +242,8 @@ Automated coverage for Settings must include:
 - ASR and LLM Provider API-key keep/replace/clear, unsaved-draft connection
   testing, model discovery and manual fallback, explicit save/delete, default
   cleanup and first-valid default selection;
-- DashScope fixed fields, no model discovery, and temporary upload disclosure;
+- DashScope editable API root with associated guidance, fixed model, no model
+  discovery, and temporary upload disclosure;
 - built-in template read-only behavior and copying, custom-template create,
   save, revision update, archive, load failures, and dirty-editor navigation
   protection;

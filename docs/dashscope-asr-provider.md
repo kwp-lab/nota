@@ -7,7 +7,8 @@
   `src-tauri/src/storage.rs`, `src/components/SettingsWorkspace.tsx`, and
   `src/components/SpeakerIdentificationModal.tsx`
 - Related decision:
-  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md)
+  [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md),
+  [`0013-configurable-trusted-dashscope-api-roots.md`](decisions/0013-configurable-trusted-dashscope-api-roots.md)
 
 ## Purpose and Boundary
 
@@ -17,11 +18,13 @@ never reads the recording, stored API key, temporary object URL, provider task
 response, or raw transcript payload. Nota ASR Server remains the self-hosted
 inference and voiceprint-extraction service; it is not a DashScope proxy.
 
-The first supported configuration is deliberately fixed:
+The model and transcription contract remain fixed, while the API root is
+user-configurable so an installation can use either the compatible shared
+DashScope domain or its Alibaba Cloud Model Studio workspace-specific domain:
 
 | Setting | Value |
 |---|---|
-| API root | `https://dashscope.aliyuncs.com/api/v1` |
+| API root | Trusted Alibaba Cloud HTTPS root ending in `/api/v1`; defaults to `https://dashscope.aliyuncs.com/api/v1` |
 | Model | `qwen-audio-3.0-asr-flash-filetrans` |
 | Input | One original Nota Ogg recording |
 | Language | Automatic detection |
@@ -143,9 +146,12 @@ first release and are not added to the public Nota transcript schema.
 
 ## Product Interaction
 
-DashScope settings expose only a local display name and API key. The API root
-and model are visible but read-only. Connection testing obtains an upload
-policy without uploading audio or creating a billed transcription task.
+DashScope settings expose a local display name, editable API root, and API key.
+The model remains visible but read-only. The API root accepts the compatible
+shared DashScope domains and workspace-specific `*.maas.aliyuncs.com` domains,
+requires HTTPS, and normalizes a bare host or `/api` suffix to `/api/v1`.
+Connection testing uses the unsaved draft root to obtain an upload policy
+without uploading audio or creating a billed transcription task.
 
 The settings and transcription-options surfaces explain that a complete
 recording is uploaded to Alibaba Cloud. Automatic transcription repeats that
@@ -163,7 +169,9 @@ voiceprint provider is configured.
 
 - The API key remains in the existing local SQLite provider record and is
   exposed to React only as `hasApiKey`.
-- Upload hosts and result URLs must use HTTPS Alibaba Cloud hosts.
+- The configured API root, upload hosts, and result URLs must use HTTPS Alibaba
+  Cloud hosts. The configured root must be a DashScope shared domain or a
+  Model Studio workspace-specific domain and must end in `/api/v1`.
 - Technical logs may contain provider kind, model, phase, HTTP status, bounded
   error codes, recording id, and generation.
 - Logs must not contain API keys, authorization headers, audio, transcript
@@ -174,10 +182,12 @@ voiceprint provider is configured.
 
 ## Acceptance
 
-Automated tests use mock HTTP services and cover request headers and multipart
-shape, URL validation, limits, normalization, recovery, ambiguous submission,
-remote cancellation, local interruption, migrations, UI capability messaging,
-and regressions for existing providers. Automated tests never call DashScope.
+Automated tests use mock HTTP services and cover configured shared and
+workspace-specific API roots, request URL construction, request headers and
+multipart shape, URL validation, limits, normalization, recovery, ambiguous
+submission, remote cancellation, local interruption, migrations, UI capability
+messaging, and regressions for existing providers. Automated tests never call
+DashScope.
 
 Manual acceptance uses the ignored `examples/dashscope-filetrans/sample.ogg`
 and confirms upload, asynchronous polling, sentence timestamps, anonymous

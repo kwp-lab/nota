@@ -298,17 +298,37 @@ describe("Settings resource managers", () => {
     expect(await screen.findByText(/服务可用 · 设备：cpu/)).toBeInTheDocument();
   });
 
-  it("applies fixed DashScope fields and preserves its cloud disclosure", () => {
+  it("allows a trusted DashScope API root while keeping its model fixed", async () => {
     render(<Harness initialRoute="asrProviders" />);
     fireEvent.click(screen.getByRole("button", { name: /添加/ }));
     const draftCard = screen.getByRole("button", { name: "正在添加 本地 FunASR FunASR" });
     expect(draftCard).toHaveClass("resource-draft", "selected");
     expect(screen.getByText("填写中")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("服务类型"), { target: { value: "dashScope" } });
-    expect(screen.getByRole("button", { name: "正在添加 千问云转写 阿里云千问" })).toHaveClass("selected");
-    expect(screen.getByDisplayValue("https://dashscope.aliyuncs.com/api/v1")).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "正在添加 百炼云转写 阿里云百炼" })).toHaveClass("selected");
+    const baseUrl = screen.getByDisplayValue("https://dashscope.aliyuncs.com/api/v1");
+    expect(baseUrl).not.toHaveAttribute("readonly");
+    expect(baseUrl).toHaveAttribute("aria-describedby", "dashscope-base-url-help");
+    fireEvent.change(baseUrl, {
+      target: { value: "https://llm-example.cn-beijing.maas.aliyuncs.com/api/v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
+    await waitFor(() => expect(mocks.testAsrProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: "https://llm-example.cn-beijing.maas.aliyuncs.com/api/v1",
+      }),
+    ));
     expect(screen.getByDisplayValue("qwen-audio-3.0-asr-flash-filetrans")).toHaveAttribute("readonly");
+    expect(screen.getByText(/百炼业务空间专属域名/)).toBeInTheDocument();
     expect(screen.getByText(/约在 48 小时后清理/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /保存服务/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /保存服务/ }));
+    await waitFor(() => expect(mocks.saveAsrProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "dashScope",
+        baseUrl: "https://llm-example.cn-beijing.maas.aliyuncs.com/api/v1",
+      }),
+    ));
   });
 
   it("renders LLM provider readiness and explicit save controls", () => {

@@ -69,7 +69,7 @@ const probeRequest = (draft: AsrProviderDraft): AsrProviderProbeRequest => ({
 
 const kindLabel = (kind: AsrProviderKind) => {
   if (kind === "funAsr") return "FunASR";
-  if (kind === "dashScope") return "阿里云千问";
+  if (kind === "dashScope") return "阿里云百炼";
   return "Compatible";
 };
 
@@ -78,7 +78,7 @@ const applyKind = (draft: AsrProviderDraft, kind: AsrProviderKind): AsrProviderD
     return {
       ...draft,
       kind,
-      name: draft.id ? draft.name : "千问云转写",
+      name: draft.id ? draft.name : "百炼云转写",
       baseUrl: DASHSCOPE_BASE_URL,
       modelId: DASHSCOPE_MODEL,
     };
@@ -319,16 +319,27 @@ export function AsrProviderManager(props: {
                 >
                   <option value="funAsr">FunASR</option>
                   <option value="openAiCompatible">OpenAI-compatible</option>
-                  <option value="dashScope">阿里云千问（DashScope）</option>
+                  <option value="dashScope">阿里云百炼（DashScope）</option>
                 </SelectControl>
               </label>
               <label className="wide">
                 <span>API Base URL</span>
                 <input
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
                   value={draft.baseUrl}
-                  readOnly={draft.kind === "dashScope"}
+                  placeholder={draft.kind === "dashScope"
+                    ? "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1"
+                    : undefined}
+                  aria-describedby={draft.kind === "dashScope" ? "dashscope-base-url-help" : undefined}
                   onChange={(event) => changeDraft({ ...draft, baseUrl: event.target.value })}
                 />
+                {draft.kind === "dashScope" && (
+                  <small id="dashscope-base-url-help" className="provider-field-hint">
+                    支持 DashScope 共享域名或百炼业务空间专属域名；必须使用 HTTPS 并以 /api/v1 结尾，且与 API Key 所属业务空间和地域一致。
+                  </small>
+                )}
               </label>
               <label className="wide">
                 <span>API Key</span>
@@ -336,7 +347,7 @@ export function AsrProviderManager(props: {
                   type="password"
                   autoComplete="new-password"
                   value={draft.apiKey}
-                  placeholder="可留空"
+                  placeholder={draft.kind === "dashScope" ? "阿里云百炼 API Key（必填）" : "可留空"}
                   onFocus={(event) => draft.apiKey === KEY_MASK && event.currentTarget.select()}
                   onChange={(event) => changeDraft({ ...draft, apiKey: event.target.value })}
                 />
