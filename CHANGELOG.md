@@ -22,6 +22,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Renamed the speech-provider label from “阿里云千问（DashScope）” to
   “阿里云百炼（DashScope）”.
 
+### Fixed
+
+- Fixed audio imports failing after reaching 100% when a resampled file ended
+  on an exact 4,096-frame block boundary, including affected M4A recordings.
+
 ## [0.11.0] - 2026-09-16
 
 ### Changed

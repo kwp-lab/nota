@@ -28,6 +28,13 @@ recording directory. It downmixes multichannel input, resamples in bounded
 chunks, and uses the existing Nota Opus writer. No FFmpeg executable, codec
 pack, PATH configuration, or runtime DLL is required.
 
+At end of input, the resampler must flush its delayed samples even when the
+decoded frame count is an exact multiple of its 4,096-frame input block. An
+empty tail uses Rubato's no-input flush (`None`), not a present-but-empty
+channel. Non-empty tails remain zero-padded by Rubato; emitted samples are
+clipped to the source-derived target frame count so flush padding never extends
+the normalized PCM duration.
+
 The recording title comes from the source file stem. The displayed meeting
 time uses the source modification time when plausible and otherwise the import
 time. SQLite records `origin = imported`, original file name, source format,

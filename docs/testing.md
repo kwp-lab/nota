@@ -135,6 +135,10 @@ Automated coverage must include:
 - supported-extension validation for MP3, M4A, WAV, and FLAC plus a clear
   unsupported-format error;
 - stereo downmix and non-48-kHz resampling into a readable Nota Ogg Opus file;
+- resampler finalization with empty, one-frame, partial, and whole 4,096-frame
+  tails at 16, 44.1, 48, and 96 kHz, preserving the exact target PCM frame count;
+- full decode/encode coverage for whole-block input at 16, 44.1, and 48 kHz,
+  verifying a readable non-silent Ogg with the expected duration;
 - imported recording origin and source-display metadata across Rust/TypeScript
   IPC;
 - exact source-hash deduplication without changing or deleting the original;
@@ -144,6 +148,16 @@ Automated coverage must include:
 - recording/import mutual exclusion and visible batch progress/actions;
 - imported-recording deletion copy that distinguishes the managed Ogg from the
   original source.
+
+The ignored Rust test
+`importer::tests::local_audio_import_commits_playable_ogg_without_changing_source`
+accepts `NOTA_TEST_IMPORT_SOURCE` for opt-in local-file acceptance. It uses a
+fresh temporary database and output directory, checks successful journal commit
+and playback decoding within one 20 ms Opus packet of the recorded duration,
+and verifies that the source hash is
+unchanged. It never uploads audio, writes to the user's library, or logs source
+paths, hashes, or audio content. The source and converted audio are not test
+fixtures and must not be committed.
 
 ## ASR Regression Matrix
 
