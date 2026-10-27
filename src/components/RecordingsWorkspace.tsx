@@ -534,7 +534,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const requestTranscription = (item: RecordingItem, retranscription: boolean) => {
     if (props.activeProviderKind === "dashScope" && item.durationMs > 7_200_000) {
       props.onPlaybackError(
-        "该录音超过 2 小时，无法使用千问云转写；Nota 不会自动切片或关闭说话人分离。",
+        "该录音超过 2 小时，无法使用百炼云转写；Nota 不会自动切片或关闭说话人分离。",
       );
       return;
     }

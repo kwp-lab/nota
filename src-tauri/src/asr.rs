@@ -1193,10 +1193,10 @@ fn process_dashscope_job(
 
 fn validate_dashscope_recording(recording_path: &Path, recorded_duration_ms: u64) -> Result<()> {
     if recorded_duration_ms > 7_200_000 {
-        bail!("该录音超过 2 小时，无法使用千问云转写；Nota 不会自动切片或关闭说话人分离");
+        bail!("该录音超过 2 小时，无法使用百炼云转写；Nota 不会自动切片或关闭说话人分离");
     }
     if recording_path.extension().and_then(|value| value.to_str()) != Some("ogg") {
-        bail!("千问云转写第一版仅支持 Nota 原始 Ogg 录音");
+        bail!("百炼云转写当前仅支持 Nota 原始 Ogg 录音");
     }
     Ok(())
 }
@@ -1852,14 +1852,7 @@ pub fn normalize_base_url(value: &str) -> Result<String> {
 
 pub fn normalize_provider_base_url(kind: AsrProviderKind, value: &str) -> Result<String> {
     if kind == AsrProviderKind::DashScope {
-        let normalized = value.trim().trim_end_matches('/');
-        if normalized != dashscope::API_ROOT {
-            bail!(
-                "DashScope 第一版仅支持中国区公共端点 {}",
-                dashscope::API_ROOT
-            );
-        }
-        return Ok(dashscope::API_ROOT.into());
+        return dashscope::normalize_api_root(value);
     }
     normalize_base_url(value)
 }

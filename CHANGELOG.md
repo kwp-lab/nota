@@ -7,12 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added editable Alibaba Cloud Model Studio (DashScope) API roots for speech
+  transcription, including workspace-specific `*.maas.aliyuncs.com` domains
+  with HTTPS and trusted-host validation.
+
 ### Changed
 
 - Restored neutral recording-list interaction surfaces: translucent white on
   hover and solid white for selected or context-menu target rows.
 - Restored Nota's shared warm-neutral color palette while preserving those
   neutral recording-list interaction states.
+- Renamed the speech-provider label from “阿里云千问（DashScope）” to
+  “阿里云百炼（DashScope）”.
 
 ## [0.11.0] - 2026-09-16
 

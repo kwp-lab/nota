@@ -1,6 +1,6 @@
 # ADR 0010: Connect Directly to DashScope From the Nota Client
 
-- Status: Accepted
+- Status: Accepted; fixed-endpoint constraint superseded by [ADR 0013](0013-configurable-trusted-dashscope-api-roots.md)
 - Date: 2026-08-22
 - Last updated: 2026-08-22
 - Decision owners: Nota maintainers

@@ -200,6 +200,9 @@ are removed so the settings hierarchy owns the available height.
   persistent category navigation, a `260 px` resource list, and a scrollable
   detail editor. ASR and LLM editors share this shell and its feedback/action
   treatments, but keep type-specific fields and validation.
+- The Alibaba Cloud Model Studio ASR editor keeps its model fixed while making
+  the API root editable. Concise helper text is programmatically associated
+  with that URL field and explains the required HTTPS `/api/v1` form.
 - Explicit-save editors keep their actions in a stable detail footer. Built-in
   templates use the same detail region in a read-only state; custom templates
   may be edited, saved, or archived.
