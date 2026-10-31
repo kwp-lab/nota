@@ -53,7 +53,64 @@ const session: SpeakerIdentificationSession = {
   }],
 };
 
+const defaultProps = () => ({
+  speakers, session: null, analysisStatus: "idle" as const, analysisError: null,
+  participants, initialSpeaker: null, saving: false,
+  voiceprintAvailability: { kind: "available" } as const,
+  activePreviewId: null, previewPlaying: false,
+  onAnalyze: vi.fn(), onConfigureVoiceprints: vi.fn(), onPreview: vi.fn(),
+  onStopPreview: vi.fn(), onCancel: vi.fn(), onSave: vi.fn(),
+});
+
 describe("SpeakerIdentificationModal", () => {
+  it("defaults to a persistent meeting-local name and does not let late suggestions replace it", () => {
+    const props = defaultProps();
+    const localSpeaker = { ...speakers[0], currentParticipantId: null, currentDisplayName: "客户采购负责人" };
+    const { rerender } = render(<SpeakerIdentificationModal {...props} speakers={[localSpeaker]} />);
+    expect(screen.getByRole("textbox", { name: "speaker_0 本场显示名称" })).toHaveValue("客户采购负责人");
+    expect(screen.getByText(/重启后保留，不加入声纹库/)).toBeInTheDocument();
+    rerender(<SpeakerIdentificationModal {...props} speakers={[localSpeaker]} session={session} analysisStatus="ready" />);
+    expect(screen.getByRole("textbox", { name: "speaker_0 本场显示名称" })).toHaveValue("客户采购负责人");
+    expect(screen.queryByText("建议：小红")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "speaker_0 本场显示名称" }), { target: { value: "张经理" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
+    expect(props.onSave).toHaveBeenCalledWith({
+      mappingAssignments: [{ rawSpeaker: "speaker_0", participantId: null, newDisplayName: "张经理" }],
+      sessionAssignments: [{ rawSpeaker: "speaker_0", participantId: null, newDisplayName: "张经理" }],
+      saveVoiceprints: false,
+    });
+  });
+
+  it("edits an existing person's name locally without renaming their global profile", () => {
+    const props = defaultProps();
+    render(<SpeakerIdentificationModal {...props} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "speaker_0 本场显示名称" }), { target: { value: "本场称呼" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
+    expect(props.onSave.mock.calls[0][0].mappingAssignments).toEqual([
+      { rawSpeaker: "speaker_0", participantId: null, newDisplayName: "本场称呼" },
+    ]);
+  });
+
+  it("enrolls only the individually checked speaker and resets consent when identity changes", () => {
+    const props = defaultProps();
+    const second = { ...speakers[0], rawSpeaker: "speaker_1", currentParticipantId: null, currentDisplayName: null };
+    render(<SpeakerIdentificationModal {...props} speakers={[speakers[0], second]}
+      initialSpeaker="speaker_0" session={{ ...session, candidates: [session.candidates[0], { ...session.candidates[0], rawSpeaker: "speaker_1" }] }} analysisStatus="ready" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "speaker_0 保存声纹供以后会议识别" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "会议说话人" })).getAllByRole("button")[0]);
+    fireEvent.change(screen.getByRole("textbox", { name: "speaker_1 本场显示名称" }), { target: { value: "客户" } });
+    expect(screen.getByRole("checkbox", { name: "speaker_1 保存声纹供以后会议识别" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "保存姓名与 1 份声纹" }));
+    const request = props.onSave.mock.calls[0][0];
+    expect(request.sessionAssignments).toEqual(expect.arrayContaining([
+      { rawSpeaker: "speaker_0", participantId: "confirmed", newDisplayName: null, saveVoiceprint: true },
+      { rawSpeaker: "speaker_1", participantId: null, newDisplayName: "客户" },
+    ]));
+    fireEvent.click(screen.getByRole("checkbox", { name: "speaker_1 保存声纹供以后会议识别" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "speaker_1 本场显示名称" }), { target: { value: "另一位客户" } });
+    expect(screen.getByRole("checkbox", { name: "speaker_1 保存声纹供以后会议识别" })).not.toBeChecked();
+  });
+
   it("keeps manual naming but hides voiceprint actions for a DashScope generation", () => {
     render(
       <SpeakerIdentificationModal
@@ -80,10 +137,10 @@ describe("SpeakerIdentificationModal", () => {
     );
     expect(screen.getByText(/支持区分匿名说话人，但不支持 Nota 声纹分析/))
       .toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "speaker_0 真实姓名" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "speaker_0 本场显示名称" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "声纹分析不可用" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "前往声纹管理" })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("keeps a confirmed assignment ahead of a new voiceprint suggestion", () => {
@@ -110,7 +167,7 @@ describe("SpeakerIdentificationModal", () => {
       />,
     );
 
-    expect(screen.getByRole("combobox", { name: "speaker_0 真实姓名" })).toHaveValue("confirmed");
+    expect(screen.getByRole("combobox", { name: "speaker_0 关联已有人员" })).toHaveValue("confirmed");
     expect(screen.queryByText("建议：小红")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新分析" }))
       .toHaveClass("button", "secondary", "speaker-analysis-action");
@@ -120,7 +177,7 @@ describe("SpeakerIdentificationModal", () => {
       startMs: 2_000,
       endMs: 9_000,
     });
-    const saveVoiceprints = screen.getByRole("checkbox", { name: /同时保存 1 份可用声纹/ });
+    const saveVoiceprints = screen.getByRole("checkbox", { name: "speaker_0 保存声纹供以后会议识别" });
     expect(saveVoiceprints).not.toBeChecked();
     fireEvent.click(saveVoiceprints);
     fireEvent.click(screen.getByRole("button", { name: "保存 1 份声纹" }));
@@ -130,6 +187,7 @@ describe("SpeakerIdentificationModal", () => {
         rawSpeaker: "speaker_0",
         participantId: "confirmed",
         newDisplayName: null,
+        saveVoiceprint: true,
       }],
       saveVoiceprints: true,
     });
@@ -178,13 +236,10 @@ describe("SpeakerIdentificationModal", () => {
       startMs: 20_000,
       endMs: 26_000,
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "speaker_0 真实姓名" }), {
-      target: { value: "__new__" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "speaker_0 新参会人姓名" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "speaker_0 本场显示名称" }), {
       target: { value: "小绿" },
     });
-    expect(screen.getByRole("checkbox", { name: /同时保存 0 份可用声纹/ })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "speaker_0 保存声纹供以后会议识别" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
     expect(onSave).toHaveBeenCalledWith({
       mappingAssignments: [{
@@ -225,7 +280,8 @@ describe("SpeakerIdentificationModal", () => {
     );
 
     expect(screen.getByText(/正在分析声纹/)).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "speaker_0 真实姓名" }), {
+    fireEvent.click(screen.getByText("从声纹库选择已有人员"));
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_0 关联已有人员" }), {
       target: { value: "confirmed" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
@@ -276,7 +332,8 @@ describe("SpeakerIdentificationModal", () => {
     );
     const speakerList = screen.getByRole("navigation", { name: "会议说话人" });
     expect(within(speakerList).getAllByRole("button")[0]).toHaveTextContent("speaker_1");
-    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+    fireEvent.click(screen.getByText("从声纹库选择已有人员"));
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 关联已有人员" }), {
       target: { value: "confirmed" },
     });
 
@@ -296,7 +353,7 @@ describe("SpeakerIdentificationModal", () => {
       />,
     );
 
-    expect(screen.getByRole("combobox", { name: "speaker_1 真实姓名" })).toHaveValue("confirmed");
+    expect(screen.getByRole("combobox", { name: "speaker_1 关联已有人员" })).toHaveValue("confirmed");
   });
 
   it("shows which clean or representative preview is currently playing", () => {

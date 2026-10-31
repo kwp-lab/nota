@@ -1,7 +1,7 @@
 # Speaker Identification and Local Voiceprints
 
 - Status: Accepted
-- Last updated: 2026-08-22
+- Last updated: 2026-10-30
 - Owners: Nota maintainers
 
 This specification describes the optional, user-triggered workflow that maps
@@ -28,10 +28,11 @@ flowchart TD
 
     F --> M["保存姓名更改"]
     L --> M
-    M --> N["SQLite 增量更新会议映射"]
-    L --> O{"是否勾选保存可用声纹？"}
-    O -->|"否，默认"| N
-    O -->|"是"| P["将已命名且合格的 embedding<br/>保存到本地声纹库"]
+    M --> O{"逐位说话人选择保存范围"}
+    O -->|"默认：填写本场名称"| N["仅写入录音和版本范围的姓名<br/>不创建全局人物或声纹"]
+    O -->|"选择已有人员"| V["关联全局人物<br/>不新增声纹"]
+    O -->|"主动勾选且声纹合格"| P["创建或复用人物档案<br/>保存该人的合格声纹"]
+    V --> Q
     N --> Q["刷新消息、复制和 TXT 导出"]
     P --> Q
 
@@ -78,7 +79,8 @@ flowchart LR
 - Switching the completed transcript version loads that generation's speaker
   assignments and Provider capabilities together. An in-progress voiceprint
   session becomes stale if the current generation changes before save.
-- The resolved display label is `participant name ?? raw speaker label`.
+- The resolved display label is `meeting-local name ?? linked participant name
+  ?? raw speaker label`. Each speaker has at most one mapping kind.
   Detail views, copy, and TXT export must use the same resolver.
 - Failure to find a clean sample must not modify or fail the completed
   transcript. It only prevents reusable voiceprint enrollment for that speaker.
@@ -122,11 +124,15 @@ the opaque Rust session arrives later, React must discard it. A result may
 populate a suggestion only for an untouched, unresolved speaker. It cannot
 overwrite a persisted assignment or a selection already edited in the dialog.
 
-The manager orders unresolved speakers before confirmed speakers and keeps
-confirmed participant ids selected on every reopen. Saving names before
-analysis finishes persists current meeting assignments only. After successful
-analysis, reusable voiceprint enrollment remains disabled by default and
-requires a separate user-controlled checkbox.
+The manager orders unresolved speakers before confirmed speakers, including
+confirmed local names, and restores both mapping kinds on reopen. A plain
+**本场显示名称** field is available without creating a person. An optional
+**从声纹库选择已有人员** disclosure links an existing profile. Editing a linked
+name detaches that speaker and makes the edited label local; it never renames
+the global profile. Clearing a local name restores the anonymous label.
+Saving during analysis only persists mappings. Enrollment is a separate,
+default-off checkbox for each eligible speaker, never one all-speaker switch.
+Changing identity or starting another analysis resets that enrollment consent.
 
 Every clean preview and representative utterance has a stable UI playback id.
 Only the active range displays its playing color and pause icon. Pausing,
@@ -205,20 +211,26 @@ sample status, clean preview action, representative transcript utterances,
 suggested participant and score, plus a name field. It distinguishes a reusable
 `enrollable` sample from `preview_only` and `unavailable`; transcript utterance
 preview remains independent of all three states.
-The user may select an existing participant, create a new one, map multiple
-anonymous clusters to the same participant, or leave a speaker unresolved. A
-name assignment without a clean embedding applies to this meeting but creates
-no reusable voiceprint sample.
+The user may type a local name or role, select an existing participant, map
+multiple anonymous clusters to the same participant, or leave a speaker
+unresolved. Identical local text must not automatically link a global person.
+Local names persist across restarts but never appear in the people/voiceprint
+library or matching candidates.
 
-Name saving is transactional and incremental. Participants are created or
-reused, changed current-generation assignments are upserted, an explicit clear
-deletes only its raw speaker mapping, and omitted speakers remain unchanged.
-This path never creates or mutates a voiceprint.
+Name saving is transactional and incremental. Local labels are stored in
+`recording_speaker_names`, without inserting `participants` or `voiceprints`.
+Explicitly selected existing people use `recording_speaker_assignments`.
+Switching mapping kind removes the other kind in the same transaction. Clear
+removes only that raw speaker's mapping; omitted speakers remain unchanged.
+Both save paths check the selected generation; stale requests fail rather than
+writing names into a newer transcript.
 
-Voiceprint enrollment is optional even after successful analysis. The checkbox
-is disabled unless at least one candidate has both a confirmed identity and an
-enrollable embedding. When selected, the confirmation transaction applies the
-explicit mapping patches and upserts only the named, eligible embeddings. The
+Voiceprint enrollment is optional even after successful analysis. Each checkbox
+is disabled unless that speaker has a name and an enrollable embedding. The
+IPC assignment's `saveVoiceprint` flag defaults to false in Rust. Only explicitly
+selected candidates carry embeddings into the confirmation transaction; other
+new names stay local even when another speaker is enrolled in the same save.
+Unsupported generations cannot enroll even through a direct request. The
 source recording, transcription generation, and raw speaker uniqueness key
 prevents duplicate samples from accumulating for repeated saves. Dismissing the
 dialog saves nothing.
@@ -235,6 +247,12 @@ dialog saves nothing.
   remain, but their source recording and preview reference become null.
 - Embeddings with a different model fingerprint or vector dimension are not
   compared.
+
+The additive local-name table leaves all legacy global profiles and links
+unchanged, including zero-sample profiles. Existing global rename/delete
+semantics remain unchanged; they cannot affect independent local labels.
+UI, clipboard, TXT, and new AI generation resolve the same selected-generation
+name map. Existing AI Markdown and its historical name snapshot are not rewritten.
 
 See ADR 0003 for local ownership and separation, and ADR 0004 for the clean
 sample policy. The server endpoint schema remains canonical in the Nota ASR

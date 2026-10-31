@@ -351,6 +351,12 @@ impl VoiceprintManager {
             let candidate = candidates
                 .get(assignment.raw_speaker.as_str())
                 .context("识别结果中不存在该 speaker")?;
+            if assignment.save_voiceprint
+                && (candidate.embedding.is_none()
+                    || candidate.view.sample_status != SpeakerSampleStatus::Enrollable)
+            {
+                bail!("该说话人没有可保存的声纹，请重新分析或仅保存本场姓名");
+            }
             let match_score = assignment
                 .participant_id
                 .as_deref()
@@ -362,7 +368,10 @@ impl VoiceprintManager {
                 new_display_name: assignment.new_display_name,
                 match_score,
                 embedding_fingerprint: candidate.embedding_fingerprint.clone(),
-                embedding: candidate.embedding.clone(),
+                embedding: assignment
+                    .save_voiceprint
+                    .then(|| candidate.embedding.clone())
+                    .flatten(),
                 preview_start_ms: candidate.view.preview_start_ms,
                 preview_end_ms: candidate.view.preview_end_ms,
                 speech_duration_ms: candidate.view.total_speech_ms,
@@ -659,6 +668,165 @@ fn sanitize_file_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_save_requires_individual_consent_and_rejects_ineligible_enrollment() {
+        use crate::models::{
+            AsrApiKeyUpdate, RecordingItem, RecordingOrigin, SaveAsrProviderRequest,
+        };
+        use crate::paths::AppPaths;
+        let root =
+            std::env::temp_dir().join(format!("nota-speaker-consent-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let storage = Arc::new(
+            Storage::open(AppPaths {
+                recovery: root.join("Recovery"),
+                logs: root.join("Logs"),
+                default_recordings: root.clone(),
+                default_ai_documents: root.join("AI"),
+                legacy_default_recordings: root.join("Legacy"),
+                database: root.join("test.db"),
+            })
+            .unwrap(),
+        );
+        storage
+            .insert_recording(&RecordingItem {
+                id: "meeting".into(),
+                title: "Test".into(),
+                path: root.join("test.ogg").to_string_lossy().into_owned(),
+                created_at: "now".into(),
+                duration_ms: 10_000,
+                size_bytes: 0,
+                recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_asr_provider(SaveAsrProviderRequest {
+                id: None,
+                name: "Test".into(),
+                kind: AsrProviderKind::FunAsr,
+                base_url: "http://127.0.0.1:8000/v1".into(),
+                model_id: "sensevoice".into(),
+                api_key: AsrApiKeyUpdate::Clear,
+            })
+            .unwrap();
+        let generation = storage
+            .begin_transcription("meeting", &provider, None)
+            .unwrap();
+        storage
+            .complete_transcription(
+                "meeting",
+                generation,
+                "Test",
+                &[
+                    TranscriptSegment {
+                        start_ms: 0,
+                        end_ms: 5_000,
+                        text: "Test".into(),
+                        speaker: Some("speaker_0".into()),
+                    },
+                    TranscriptSegment {
+                        start_ms: 5_000,
+                        end_ms: 10_000,
+                        text: "Test".into(),
+                        speaker: Some("speaker_1".into()),
+                    },
+                ],
+                None,
+            )
+            .unwrap();
+        let manager = VoiceprintManager::new(Arc::clone(&storage)).unwrap();
+        let candidate = |speaker: &str| PendingCandidate {
+            view: SpeakerIdentificationCandidate {
+                raw_speaker: speaker.into(),
+                total_speech_ms: 5_000,
+                preview_start_ms: 0,
+                preview_end_ms: 5_000,
+                embedding_extracted: true,
+                sample_status: SpeakerSampleStatus::Enrollable,
+                status_message: None,
+                error_message: None,
+                suggested_participant_id: None,
+                suggested_participant_name: None,
+                match_score: None,
+            },
+            embedding_fingerprint: "test".into(),
+            embedding: Some(vec![1.0, 0.0]),
+        };
+        let session = PendingSession {
+            recording_id: "meeting".into(),
+            generation,
+            candidates: vec![candidate("speaker_0"), candidate("speaker_1")],
+        };
+        manager
+            .sessions
+            .lock()
+            .insert("mixed".into(), session.clone());
+        // Older callers that omit the opt-in must remain name-only.
+        let local: SpeakerIdentificationAssignment = serde_json::from_value(serde_json::json!({
+            "rawSpeaker": "speaker_1", "participantId": null, "newDisplayName": "Customer",
+        }))
+        .unwrap();
+        assert!(!local.save_voiceprint);
+        manager
+            .save(
+                "mixed",
+                vec![
+                    SpeakerIdentificationAssignment {
+                        raw_speaker: "speaker_0".into(),
+                        participant_id: None,
+                        new_display_name: Some("Reusable".into()),
+                        save_voiceprint: true,
+                    },
+                    local,
+                ],
+            )
+            .unwrap();
+        let people = storage.list_participants().unwrap();
+        assert_eq!(people.len(), 1);
+        assert_eq!(people[0].samples.len(), 1);
+        assert_eq!(
+            storage.transcript("meeting").unwrap().speaker_assignments["speaker_1"].participant_id,
+            None
+        );
+        let mut ineligible = session.clone();
+        ineligible.candidates[0].embedding = None;
+        ineligible.candidates[0].view.sample_status = SpeakerSampleStatus::PreviewOnly;
+        manager
+            .sessions
+            .lock()
+            .insert("ineligible".into(), ineligible);
+        assert!(
+            manager
+                .save(
+                    "ineligible",
+                    vec![SpeakerIdentificationAssignment {
+                        raw_speaker: "speaker_0".into(),
+                        participant_id: None,
+                        new_display_name: Some("Must not create".into()),
+                        save_voiceprint: true,
+                    }]
+                )
+                .is_err()
+        );
+        assert_eq!(storage.list_participants().unwrap().len(), 1);
+        let next = storage
+            .begin_transcription("meeting", &provider, None)
+            .unwrap();
+        storage
+            .complete_transcription("meeting", next, "New", &[], None)
+            .unwrap();
+        manager.sessions.lock().insert("stale".into(), session);
+        assert!(manager.save("stale", vec![]).is_err());
+        drop(manager);
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn plans_multiple_bounded_ranges_for_each_speaker() {

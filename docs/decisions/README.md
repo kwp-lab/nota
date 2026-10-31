@@ -25,6 +25,7 @@ rejected alternatives, and consequences.
 | [0011](0011-versioned-transcription-generations.md) | Accepted | Preserve completed transcription generations and select one current version |
 | [0012](0012-local-cross-provider-hotword-library.md) | Accepted | Keep reusable hotword lists local and snapshot one list per transcription generation |
 | [0013](0013-configurable-trusted-dashscope-api-roots.md) | Accepted | Allow configurable trusted DashScope shared and workspace API roots |
+| [0014](0014-meeting-local-speaker-names.md) | Accepted | Default to recording/version-local names and explicitly enroll reusable people per speaker |
 
 ## Lifecycle
 

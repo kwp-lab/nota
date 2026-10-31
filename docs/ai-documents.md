@@ -24,8 +24,10 @@ The first release includes four built-in templates:
 - summary grouped by speaker;
 - stand-up and action items grouped by speaker.
 
-Speaker templates require diarized transcript segments. Confirmed participant
-names are resolved at generation time without rewriting raw `speaker_N` labels.
+Speaker templates require diarized transcript segments. Recording/version-local
+names and explicitly linked participant names are resolved at generation time
+without rewriting raw `speaker_N` labels. Updating a name does not rewrite an
+existing Markdown document or its historical speaker-name snapshot.
 
 ## Document and Version Model
 

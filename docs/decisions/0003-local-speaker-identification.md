@@ -4,6 +4,8 @@
 - Date: 2026-08-02
 - Last updated: 2026-08-06
 - Decision owners: Nota maintainers
+- Refined by: [ADR 0014](0014-meeting-local-speaker-names.md) for independent
+  meeting-local names and per-speaker enrollment consent.
 
 ## Context
 

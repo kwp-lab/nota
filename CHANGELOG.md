@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added persistent recording/version-local speaker names that do not create
+  global people, with explicit per-speaker opt-in for reusable voiceprints.
 - Added editable Alibaba Cloud Model Studio (DashScope) API roots for speech
   transcription, including workspace-specific `*.maas.aliyuncs.com` domains
   with HTTPS and trusted-host validation.

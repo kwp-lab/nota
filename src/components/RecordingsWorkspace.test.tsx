@@ -486,7 +486,7 @@ describe("RecordingsWorkspace", () => {
 
     expect(actions.onIdentifySpeakers).not.toHaveBeenCalled();
     expect(screen.getByText(/声纹分析是可选功能/)).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 关联已有人员" }), {
       target: { value: "participant-2" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
@@ -497,6 +497,7 @@ describe("RecordingsWorkspace", () => {
         participantId: "participant-2",
         newDisplayName: null,
       }],
+      transcript.generation,
     ));
   });
 
@@ -538,10 +539,11 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
-    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+    fireEvent.click(screen.getByText("从声纹库选择已有人员"));
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 关联已有人员" }), {
       target: { value: "participant-1" },
     });
-    expect(screen.getByRole("checkbox", { name: /同时保存 1 份可用声纹/ })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "speaker_1 保存声纹供以后会议识别" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "保存姓名更改" }));
 
     await waitFor(() => expect(actions.onUpdateSpeakerAssignments).toHaveBeenCalledWith(
@@ -551,6 +553,7 @@ describe("RecordingsWorkspace", () => {
         participantId: "participant-1",
         newDisplayName: null,
       }],
+      transcript.generation,
     ));
     expect(actions.onSaveSpeakerIdentification).not.toHaveBeenCalled();
     expect(actions.onDiscardSpeakerIdentification).toHaveBeenCalledWith("speaker-session");
@@ -578,10 +581,11 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "管理说话人" }));
     fireEvent.click(screen.getByRole("button", { name: "开始声纹分析" }));
     await screen.findByText(/声纹分析完成/);
-    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 真实姓名" }), {
+    fireEvent.click(screen.getByText("从声纹库选择已有人员"));
+    fireEvent.change(screen.getByRole("combobox", { name: "speaker_1 关联已有人员" }), {
       target: { value: "participant-1" },
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: /同时保存 1 份可用声纹/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "speaker_1 保存声纹供以后会议识别" }));
     fireEvent.click(screen.getByRole("button", { name: "保存姓名与 1 份声纹" }));
 
     await waitFor(() => expect(actions.onSaveSpeakerIdentification).toHaveBeenCalledWith(
@@ -590,6 +594,7 @@ describe("RecordingsWorkspace", () => {
         rawSpeaker: "speaker_1",
         participantId: "participant-1",
         newDisplayName: null,
+        saveVoiceprint: true,
       }],
     ));
     expect(actions.onUpdateSpeakerAssignments).not.toHaveBeenCalled();

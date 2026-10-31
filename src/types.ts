@@ -415,7 +415,7 @@ export interface TranscriptDocument {
 }
 
 export interface RecordingSpeakerAssignment {
-  participantId: string;
+  participantId: string | null;
   displayName: string;
 }
 
@@ -467,6 +467,7 @@ export interface SpeakerIdentificationAssignment {
   rawSpeaker: string;
   participantId: string | null;
   newDisplayName: string | null;
+  saveVoiceprint?: boolean;
 }
 
 export interface TranscriptionEvent {

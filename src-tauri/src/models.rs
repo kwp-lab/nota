@@ -861,7 +861,7 @@ pub struct TranscriptDocument {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingSpeakerAssignment {
-    pub participant_id: String,
+    pub participant_id: Option<String>,
     pub display_name: String,
 }
 
@@ -931,6 +931,8 @@ pub struct SpeakerIdentificationAssignment {
     pub raw_speaker: String,
     pub participant_id: Option<String>,
     pub new_display_name: Option<String>,
+    #[serde(default)]
+    pub save_voiceprint: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

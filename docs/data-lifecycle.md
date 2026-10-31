@@ -1,7 +1,7 @@
 # Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-08-22
+- Last updated: 2026-10-30
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`, `src-tauri/src/importer.rs`,
@@ -24,6 +24,7 @@
 | Reusable hotword lists | Local SQLite | Until the user deletes the list |
 | Generation hotword snapshot | Local SQLite, backend-only full text | Until the associated recording is permanently deleted |
 | Participant names and confirmed meeting assignments | Local SQLite, Rust access only | Until participant, assignment, or recording deletion |
+| Recording/version-local display names | Local SQLite `recording_speaker_names` | Until explicit clear or recording deletion |
 | CAM++ voiceprint embeddings | Local SQLite BLOB, Rust access only | Until sample or participant deletion |
 | Voiceprint candidate WAVs | Recovery `VoiceprintTemp` directory | One clean-sample analysis request; stale files are removed at startup |
 | Legacy temporary WAV | Recovery `TranscriptionTemp` directory | One provider request; stale files are removed at startup |
@@ -138,7 +139,7 @@ fields are:
 | `text`, `segments_json`, `language` | Durable result for this generation |
 | `error_message` | Bounded user-facing failure detail |
 
-### `participants`, `voiceprints`, and `recording_speaker_assignments`
+### `participants`, `voiceprints`, and speaker name mappings
 
 `participants` owns the stable local display name. `voiceprints` stores
 little-endian f32 vectors with their model fingerprint, dimension, source
@@ -148,12 +149,20 @@ the vector BLOB.
 `recording_speaker_assignments` maps a raw speaker label to a participant for
 one recording and transcription generation. `segments_json` remains raw.
 The desktop transcript IPC returns both a display-only `speakerNames` map and a
-stable `speakerAssignments` map containing participant ids. Management saves
+stable `speakerAssignments` map containing nullable participant ids. A local
+label has `participantId: null`, not a synthetic global identity.
+`recording_speaker_names` stores independent display names using the same
+recording/generation/raw-speaker key, with no participant foreign key. Names
+persist across restarts but are not offered for cross-meeting matching. A
+transaction enforces exclusive local-name versus global-link mappings; the
+resolver reads both kinds into the same name map. Management saves
 are patches: omitted raw speakers remain unchanged and only an explicit clear
 deletes one mapping. This prevents a partial confirmation pass from erasing an
-earlier pass. The default name-save path touches only participants and meeting
-assignments. It must not insert or update `voiceprints`; reusable embeddings are
-upserted only after successful analysis and explicit enrollment opt-in.
+earlier pass. Default typed names touch only the local-name table; selecting
+an existing person updates its meeting link without creating a person.
+Only successful, per-speaker, explicitly selected voiceprint enrollment may
+create/reuse a global profile and upsert its embedding. Batch failure rolls
+back all name, link, profile, and sample mutations.
 Renaming a participant updates historical display at read time. Deleting one
 sample preserves assignments; deleting a participant cascades samples and
 assignments so affected transcripts fall back to `speaker_N`. Recording
@@ -302,6 +311,12 @@ Audio-import migration is additive. Existing `recordings` rows receive
 `origin = 'captured'` and nullable source metadata. New databases create the
 import journal and an imported-source-hash uniqueness constraint. No existing
 recording is reclassified or re-encoded.
+
+Local speaker naming adds `recording_speaker_names` with `CREATE TABLE IF NOT
+EXISTS`, a recording-delete cascade and generation-scoped primary key. It does
+not rebuild or reclassify legacy person/link/sample rows. Historical zero-sample
+people remain intact. Both manual and analyzed save requests validate their
+generation before changing data. No audio or transcript segments are rewritten.
 
 Rust and TypeScript serialization names are part of the Tauri IPC contract.
 Changing a field requires updating both sides and adding migration or default
