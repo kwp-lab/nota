@@ -219,6 +219,17 @@ roles. The workspace geometry does not introduce a new visual token role.
 
 ### Recording Detail Workspace
 
+Speaker management defaults to a plain **本场显示名称** input with concise scope
+help: the label survives restart but belongs only to this recording and selected
+transcript version. **从声纹库选择已有人员** uses a native disclosure and existing
+select styling. Editing a linked name makes it local rather than renaming the
+person. Per-speaker, default-off enrollment sits beside that person's naming
+controls, requires an eligible analyzed sample and name, and is absent for
+unsupported transcription providers. The stable footer summarizes selected
+enrollments and saves all explicit patches; it has no global enrollment switch.
+These controls reuse the existing form, helper-text, checkbox, and spacing
+roles without introducing new design tokens.
+
 The recording library uses the full application height with the main sidebar
 retained and the redundant global header/footer removed. The record list is a
 280 px track (240 px at widths up to 1100 px). The icon button before the detail

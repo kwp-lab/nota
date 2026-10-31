@@ -91,6 +91,7 @@ interface RecordingsWorkspaceProps {
   onUpdateSpeakerAssignments: (
     recordingId: string,
     assignments: SpeakerIdentificationAssignment[],
+    generation: number,
   ) => Promise<void>;
   onDiscardSpeakerIdentification: (sessionId: string) => void;
   onOpenVoiceprintSettings: () => void;
@@ -112,6 +113,7 @@ interface RecordingActionMenu {
 
 interface SpeakerIdentificationDialog {
   recordingId: string;
+  generation: number;
   initialSpeaker: string | null;
   session: SpeakerIdentificationSession | null;
   analysisStatus: SpeakerAnalysisStatus;
@@ -341,7 +343,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
     });
     // A different recording cannot reuse the previous extraction session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.selectedId]);
+  }, [props.selectedId, props.transcript?.generation]);
 
   useEffect(() => {
     if (!actionMenu) return;
@@ -511,10 +513,11 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   };
 
   const openSpeakerManagement = (initialSpeaker: string | null) => {
-    if (!selected || managementSpeakers.length === 0) return;
+    if (!selected || !props.transcript || managementSpeakers.length === 0) return;
     identificationRequestRef.current += 1;
     setIdentification({
       recordingId: selected.id,
+      generation: props.transcript.generation,
       initialSpeaker,
       session: null,
       analysisStatus: "idle",
@@ -1286,6 +1289,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               : props.onUpdateSpeakerAssignments(
                 identification.recordingId,
                 request.mappingAssignments,
+                identification.generation,
               );
             void save
               .then(() => {

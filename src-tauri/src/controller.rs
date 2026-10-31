@@ -2516,11 +2516,14 @@ fn update_recording_speaker_assignments(
     state: State<AppState>,
     recording_id: String,
     assignments: Vec<SpeakerIdentificationAssignment>,
+    generation: u32,
 ) -> std::result::Result<TranscriptDocument, String> {
     command_result((|| {
-        state
-            .storage
-            .update_recording_speaker_assignments(&recording_id, &assignments)?;
+        state.storage.update_recording_speaker_assignments(
+            &recording_id,
+            &assignments,
+            generation,
+        )?;
         state.storage.transcript(&recording_id)
     })())
 }

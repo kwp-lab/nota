@@ -73,6 +73,7 @@ interface Selection {
   participantId: string;
   newDisplayName: string;
   dirty: boolean;
+  saveVoiceprint: boolean;
 }
 
 const formatDuration = (milliseconds: number) => {
@@ -96,8 +97,9 @@ const initialSelections = (speakers: SpeakerManagementSpeaker[]) =>
     speaker.rawSpeaker,
     {
       participantId: speaker.currentParticipantId ?? "",
-      newDisplayName: "",
+      newDisplayName: speaker.currentParticipantId ? "" : speaker.currentDisplayName ?? "",
       dirty: false,
+      saveVoiceprint: false,
     },
   ])) as Record<string, Selection>;
 
@@ -111,11 +113,11 @@ const previewId = (
 const assignmentFor = (speaker: SpeakerManagementSpeaker, selection: Selection) => ({
   rawSpeaker: speaker.rawSpeaker,
   participantId:
-    selection.participantId && selection.participantId !== "__new__"
+    selection.participantId
       ? selection.participantId
       : null,
   newDisplayName:
-    selection.participantId === "__new__"
+    !selection.participantId
       ? selection.newDisplayName.trim() || null
       : null,
 });
@@ -123,8 +125,8 @@ const assignmentFor = (speaker: SpeakerManagementSpeaker, selection: Selection) 
 export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProps) {
   const orderedSpeakers = useMemo(
     () => [...props.speakers].sort((left, right) => {
-      const leftConfirmed = left.currentParticipantId ? 1 : 0;
-      const rightConfirmed = right.currentParticipantId ? 1 : 0;
+      const leftConfirmed = left.currentDisplayName ? 1 : 0;
+      const rightConfirmed = right.currentDisplayName ? 1 : 0;
       return leftConfirmed - rightConfirmed
         || left.rawSpeaker.localeCompare(right.rawSpeaker, undefined, { numeric: true });
     }),
@@ -136,7 +138,6 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
     : orderedSpeakers[0]?.rawSpeaker ?? "";
   const [activeSpeaker, setActiveSpeaker] = useState(defaultSpeaker);
   const [selections, setSelections] = useState(() => initialSelections(props.speakers));
-  const [saveVoiceprints, setSaveVoiceprints] = useState(false);
 
   const candidates = useMemo(
     () => new Map(props.session?.candidates.map((candidate) => [candidate.rawSpeaker, candidate])),
@@ -156,10 +157,11 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
       for (const speaker of props.speakers) {
         const existing = current[speaker.rawSpeaker] ?? {
           participantId: speaker.currentParticipantId ?? "",
-          newDisplayName: "",
+          newDisplayName: speaker.currentParticipantId ? "" : speaker.currentDisplayName ?? "",
           dirty: false,
+          saveVoiceprint: false,
         };
-        if (existing.dirty || speaker.currentParticipantId) {
+        if (existing.dirty || speaker.currentDisplayName) {
           next[speaker.rawSpeaker] = existing;
           continue;
         }
@@ -173,7 +175,9 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
   }, [candidates, props.speakers]);
 
   useEffect(() => {
-    setSaveVoiceprints(false);
+    setSelections((current) => Object.fromEntries(Object.entries(current).map(
+      ([speaker, selection]) => [speaker, { ...selection, saveVoiceprint: false }],
+    )));
   }, [props.session?.id]);
 
   const update = (speaker: string, patch: Partial<Selection>) => {
@@ -182,7 +186,8 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
       [speaker]: {
         ...current[speaker],
         ...patch,
-        dirty: true,
+        saveVoiceprint: patch.saveVoiceprint ?? false,
+        dirty: patch.saveVoiceprint !== undefined ? current[speaker].dirty : true,
       },
     }));
   };
@@ -192,7 +197,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
       const selection = selections[speaker.rawSpeaker];
       if (!selection) return [];
       const candidate = candidates.get(speaker.rawSpeaker);
-      const suggestedSelection = !speaker.currentParticipantId
+      const suggestedSelection = !speaker.currentDisplayName
         && Boolean(candidate?.suggestedParticipantId)
         && candidate?.suggestedParticipantId === selection.participantId;
       return selection.dirty || suggestedSelection
@@ -206,22 +211,22 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
     () => props.speakers.flatMap((speaker) => {
       const selection = selections[speaker.rawSpeaker];
       const candidate = candidates.get(speaker.rawSpeaker);
-      if (!selection || !props.session || !candidate?.embeddingExtracted) return [];
-      const hasIdentity = selection.participantId === "__new__"
-        ? Boolean(selection.newDisplayName.trim())
-        : Boolean(selection.participantId);
-      return hasIdentity ? [assignmentFor(speaker, selection)] : [];
+      if (!selection?.saveVoiceprint || !props.session || !candidate?.embeddingExtracted
+        || candidate.sampleStatus !== "enrollable" || props.analysisStatus !== "ready"
+        || props.voiceprintAvailability.kind !== "available") return [];
+      const hasIdentity = Boolean(selection.participantId || selection.newDisplayName.trim());
+      return hasIdentity ? [{ ...assignmentFor(speaker, selection), saveVoiceprint: true }] : [];
     }),
-    [candidates, props.session, props.speakers, selections],
+    [candidates, props.session, props.speakers, selections, props.analysisStatus, props.voiceprintAvailability],
   );
 
   const sessionAssignments = useMemo(
     () => {
       const combined = new Map<string, SpeakerIdentificationAssignment>();
-      for (const assignment of voiceprintAssignments) {
+      for (const assignment of mappingAssignments) {
         combined.set(assignment.rawSpeaker, assignment);
       }
-      for (const assignment of mappingAssignments) {
+      for (const assignment of voiceprintAssignments) {
         combined.set(assignment.rawSpeaker, assignment);
       }
       return [...combined.values()];
@@ -229,18 +234,20 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
     [mappingAssignments, voiceprintAssignments],
   );
 
-  const hasInvalidNewParticipant = Object.values(selections).some(
-    (selection) => selection.participantId === "__new__"
-      && !selection.newDisplayName.trim(),
-  );
-  const confirmedCount = props.speakers.filter((speaker) => speaker.currentParticipantId).length;
+  const confirmedCount = props.speakers.filter((speaker) => speaker.currentDisplayName).length;
   const selectedSpeaker = props.speakers.find((speaker) => speaker.rawSpeaker === activeSpeaker)
     ?? orderedSpeakers[0];
   const selection = selectedSpeaker ? selections[selectedSpeaker.rawSpeaker] : null;
   const candidate = selectedSpeaker ? candidates.get(selectedSpeaker.rawSpeaker) : undefined;
-  const isNew = selection?.participantId === "__new__";
-  const canSaveVoiceprints = Boolean(props.session && voiceprintAssignments.length > 0);
   const canAnalyzeVoiceprints = props.voiceprintAvailability.kind === "available";
+  const canSaveVoiceprints = Boolean(props.session && candidate?.embeddingExtracted
+    && candidate.sampleStatus === "enrollable" && props.analysisStatus === "ready"
+    && (selection?.participantId || selection?.newDisplayName.trim()) && canAnalyzeVoiceprints);
+  const saveVoiceprints = voiceprintAssignments.length > 0;
+  const selectedName = selection?.participantId
+    ? props.participants.find((person) => person.id === selection.participantId)?.displayName
+      ?? selectedSpeaker?.currentDisplayName ?? ""
+    : selection?.newDisplayName ?? "";
   const hasSaveableWork = mappingAssignments.length > 0
     || (saveVoiceprints && voiceprintAssignments.length > 0);
 
@@ -252,7 +259,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
         ? { label: "已修改", tone: "changed" }
         : { label: "将清除", tone: "cleared" };
     }
-    if (speaker.currentParticipantId) return { label: "已确认", tone: "confirmed" };
+    if (speaker.currentDisplayName) return { label: "已确认", tone: "confirmed" };
     if (suggestion && item?.participantId === suggestion) {
       return { label: "建议匹配", tone: "suggested" };
     }
@@ -305,7 +312,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <span>声纹分析完成，{props.session?.voiceprintCount ?? 0} 位具备可用声纹。</span>
               <button
                 className="button secondary compact speaker-analysis-action"
-                disabled={!canAnalyzeVoiceprints}
+                disabled={!canAnalyzeVoiceprints || props.saving}
                 onClick={props.onAnalyze}
               >
                 <RotateCcw size={13} />重新分析
@@ -317,7 +324,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <span>声纹分析失败：{props.analysisError}</span>
               <button
                 className="button secondary speaker-analysis-action"
-                disabled={!canAnalyzeVoiceprints}
+                disabled={!canAnalyzeVoiceprints || props.saving}
                 onClick={props.onAnalyze}
               >
                 <RotateCcw size={13} />重试
@@ -347,6 +354,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <span>可直接手动设置姓名；如需声纹分析，请先选择声纹提取服务。</span>
               <button
                 className="button secondary speaker-analysis-action"
+                disabled={props.saving}
                 onClick={props.onConfigureVoiceprints}
               >
                 前往声纹管理
@@ -358,6 +366,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <span>声纹分析是可选功能；仅在需要跨会议识别时手动启动。</span>
               <button
                 className="button secondary speaker-analysis-action"
+                disabled={props.saving}
                 onClick={props.onAnalyze}
               >
                 <Waves size={13} />开始声纹分析
@@ -374,7 +383,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               const selectedParticipant = props.participants.find(
                 (participant) => participant.id === item?.participantId,
               );
-              const displayName = item?.participantId === "__new__"
+              const displayName = !item?.participantId
                 ? item.newDisplayName.trim()
                 : selectedParticipant?.displayName ?? speaker.currentDisplayName;
               return (
@@ -435,7 +444,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
                 })()}
               </div>
 
-              {candidate?.suggestedParticipantName && !selectedSpeaker.currentParticipantId && (
+              {candidate?.suggestedParticipantName && !selectedSpeaker.currentDisplayName && (
                 <div className="match-suggestion">
                   建议：{candidate.suggestedParticipantName}
                   {candidate.matchScore !== null && (
@@ -455,34 +464,66 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               )}
 
               <label className="speaker-name-field">
-                <span>真实姓名</span>
+                <span>本场显示名称</span>
+                <input
+                  aria-label={`${selectedSpeaker.rawSpeaker} 本场显示名称`}
+                  aria-describedby="speaker-name-scope"
+                  value={selectedName}
+                  maxLength={80}
+                  placeholder="例如：张经理、客户采购负责人"
+                  disabled={props.saving}
+                  onChange={(event) => update(selectedSpeaker.rawSpeaker, {
+                    participantId: "",
+                    newDisplayName: event.target.value,
+                  })}
+                />
+              </label>
+              <p id="speaker-name-scope" className="speaker-name-scope">
+                {selection.participantId
+                  ? "已关联已有人员。修改上方名称将改为仅本场使用，不会重命名全局人员。"
+                  : "仅用于当前录音的此转写版本，重启后保留，不加入声纹库。清空可恢复匿名标签。"}
+              </p>
+              <details className="speaker-library-picker" open={Boolean(selection.participantId) || undefined}>
+                <summary>从声纹库选择已有人员</summary>
+                <label className="speaker-name-field">
+                <span>关联已有人员</span>
                 <select
-                  aria-label={`${selectedSpeaker.rawSpeaker} 真实姓名`}
+                  aria-label={`${selectedSpeaker.rawSpeaker} 关联已有人员`}
                   value={selection.participantId}
+                  disabled={props.saving}
                   onChange={(event) => update(selectedSpeaker.rawSpeaker, {
                     participantId: event.target.value,
+                    newDisplayName: event.target.value ? "" : selectedName,
                   })}
                 >
-                  <option value="">暂不标记</option>
+                  <option value="">仅本场录音（不关联人员）</option>
                   {props.participants.map((participant) => (
                     <option value={participant.id} key={participant.id}>
                       {participant.displayName}
                     </option>
                   ))}
-                  <option value="__new__">+ 新建参会人</option>
                 </select>
-              </label>
-              {isNew && (
-                <input
-                  aria-label={`${selectedSpeaker.rawSpeaker} 新参会人姓名`}
-                  value={selection.newDisplayName}
-                  maxLength={80}
-                  placeholder="例如：小明"
-                  autoFocus
-                  onChange={(event) => update(selectedSpeaker.rawSpeaker, {
-                    newDisplayName: event.target.value,
-                  })}
-                />
+                </label>
+              </details>
+
+              {canAnalyzeVoiceprints && (
+                <div className="speaker-save-options">
+                  <label className={!canSaveVoiceprints ? "disabled" : ""}>
+                    <input type="checkbox"
+                      aria-label={`${selectedSpeaker.rawSpeaker} 保存声纹供以后会议识别`}
+                      checked={Boolean(selection.saveVoiceprint && canSaveVoiceprints)}
+                      disabled={!canSaveVoiceprints || props.saving}
+                      onChange={(event) => update(selectedSpeaker.rawSpeaker, {
+                        saveVoiceprint: event.target.checked,
+                      })}
+                    />
+                    <span>保存此人的声纹，供以后会议识别
+                      <small>{canSaveVoiceprints
+                        ? "默认不保存；勾选后将保存此人的档案和合格声纹。"
+                        : "填写名称并完成声纹分析，获得合格声纹后可选。"}</small>
+                    </span>
+                  </label>
+                </div>
               )}
 
               <section className="speaker-utterances" aria-label={`${selectedSpeaker.rawSpeaker} 代表发言`}>
@@ -532,25 +573,9 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
 
         <footer>
           <div className="speaker-save-options">
-            <AppTooltip
-              content={props.voiceprintAvailability.kind === "transcriptionProviderUnsupported"
-                ? `本次转写由${props.voiceprintAvailability.providerName}生成，不支持 Nota 声纹分析`
-                : ""}
-              wrapDisabled={props.voiceprintAvailability.kind === "transcriptionProviderUnsupported"}
-            >
-            <label className={!canSaveVoiceprints || !canAnalyzeVoiceprints ? "disabled" : ""}>
-              <input
-                type="checkbox"
-                checked={saveVoiceprints}
-                disabled={!canSaveVoiceprints || !canAnalyzeVoiceprints || props.saving}
-                onChange={(event) => setSaveVoiceprints(event.target.checked)}
-              />
-              <span>
-                同时保存 {voiceprintAssignments.length} 份可用声纹到本地声纹库
-                <small>默认关闭；以后需要跨会议识别时再保存。</small>
-              </span>
-            </label>
-            </AppTooltip>
+            {saveVoiceprints
+              ? `已选择保存 ${voiceprintAssignments.length} 位说话人的声纹。`
+              : "保存本场姓名不会新增全局人员或声纹。"}
           </div>
           <div>
             <button className="button secondary" disabled={props.saving} onClick={props.onCancel}>
@@ -558,7 +583,7 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
             </button>
             <button
               className="button primary"
-              disabled={props.saving || hasInvalidNewParticipant || !hasSaveableWork}
+              disabled={props.saving || !hasSaveableWork}
               onClick={() => props.onSave({
                 mappingAssignments,
                 sessionAssignments,

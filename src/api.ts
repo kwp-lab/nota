@@ -218,9 +218,11 @@ export const api = {
   updateRecordingSpeakerAssignments: (
     recordingId: string,
     assignments: SpeakerIdentificationAssignment[],
+    generation: number,
   ) => invoke<TranscriptDocument>("update_recording_speaker_assignments", {
     recordingId,
     assignments,
+    generation,
   }),
   discardSpeakerIdentification: (sessionId: string) =>
     invoke<void>("discard_speaker_identification", { sessionId }),

@@ -63,7 +63,7 @@ Nota gives Windows one focused recording workflow:
 | **Optional transcription** | Send a recording only when you click Transcribe or explicitly enable automatic transcription. Use Nota ASR Server, Alibaba Cloud DashScope, or another OpenAI-compatible provider. |
 | **Reusable hotword library** | Keep multiple local lists for names, product terms, and specialist vocabulary; choose one per transcription, snapshot it with that result, and use weighted DashScope super hotwords when needed. |
 | **Shareable AI documents** | Turn a completed transcript into versioned Markdown summaries or action lists with a user-configured OpenAI or OpenAI-compatible LLM. |
-| **Local speaker identities** | Explicitly extract anonymous CAM++ voiceprints, confirm real names, and reuse them in later meetings. Names, matching, and biometric vectors stay in the local Rust backend. |
+| **Local speaker identities** | Name speakers for just this recording without adding global people; explicitly opt individual speakers into reusable CAM++ voiceprints. Names, matching, and biometric vectors stay in the local Rust backend. |
 | **Offline recording** | Recording, playback, recovery, and file management remain fully usable without an account or network connection. |
 | **Meeting-end reminder** | When the selected meeting window or application target disappears, Nota asks whether to continue or stop and save instead of ending the recording automatically—even if the meeting engine remains resident for warm-up. |
 
@@ -185,12 +185,14 @@ new Markdown file under `Documents\Nota\AI Documents`; regeneration never
 overwrites an earlier version, and intentional edits made in an external editor
 remain the document content Nota previews and revises.
 
-Speaker identification is an independent, user-triggered action. Select a
-compatible Nota ASR Server in **Voiceprints**, then use **Identify speakers**
-from a completed recording. Nota sends only bounded voice samples for
-anonymous CAM++ extraction, performs matching locally, and asks you to confirm
-every name. Confirmed names are used consistently in the detail view, copy,
-and TXT export while raw `speaker_N` labels remain unchanged in the transcript.
+Open **Manage speakers** on a completed recording to type recording/version-local
+names without configuring a service or creating global people. You may explicitly
+link an existing person. For cross-meeting reuse, select a compatible Nota ASR
+Server in **Voiceprints**, run analysis, then opt individual speakers into saving
+eligible samples. Nota sends only bounded voice samples for anonymous CAM++
+extraction and keeps names and matching local. Detail, copy, TXT export, and new
+AI generation resolve the same names without changing raw `speaker_N` labels or
+rewriting historical AI documents.
 
 Default shortcuts:
 

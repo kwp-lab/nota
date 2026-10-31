@@ -195,6 +195,13 @@ Automated client coverage must include:
   meeting-local edits from transcript speaker labels;
 - name-only saves that never enroll embeddings by default, plus explicit
   optional enrollment for named candidates with reusable embeddings;
+  - typed names that create no global people, survive database reopen, remain
+    scoped to one recording/version, and clear without altering other mappings;
+  - equal local/global text without implicit identity linking, explicit existing
+    links, detachment on editing, and independent global rename/delete;
+  - mixed batches that enroll only individually checked speakers, default-false
+    IPC flags, ineligible/stale/unsupported enrollment rejection, transactional
+    rollback, and additive migration preserving legacy zero-sample people;
 - incremental assignment upsert and explicit single-speaker clear preserving
   every omitted current-generation assignment;
 - raw transcript preservation, generation-scoped assignments, participant
@@ -393,9 +400,11 @@ scenarios on Windows 11:
     switching, and range-end cleanup. Reduce the Nota window height and confirm
     the compact action footer and save button remain visible while both speaker
     panes scroll independently. Save one name with voiceprint persistence left
-    off, reopen, and confirm the assignment is preselected and no sample was
-    added. Then explicitly run analysis, opt in to saving a reusable sample,
-    and verify only named, eligible speakers are enrolled. Finally assign the
+    off, reopen, and confirm the label survives without adding a person or sample
+    to Voiceprints. Test two customers with the same name in separate recordings
+    and switching transcript versions. Then explicitly run analysis, opt in for
+    only one speaker, and verify other named speakers remain local. Editing a
+    linked person's label must not rename their global profile. Finally assign the
     last speaker without a configured server and confirm clearing one mapping
     leaves every omitted mapping untouched.
 14. With Enterprise WeChat `5.0.9.6065` and Tencent Meeting, keep the meeting

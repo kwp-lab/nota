@@ -131,7 +131,9 @@ struct RecordingSpeakerAssignmentUpsert<'a> {
     recording_id: &'a str,
     generation: u32,
     raw_speaker: &'a str,
-    participant_id: &'a str,
+    participant_id: Option<&'a str>,
+    new_display_name: Option<&'a str>,
+    enroll: bool,
     match_score: Option<f32>,
     assignment_source: &'a str,
     now: &'a str,
@@ -140,7 +142,46 @@ struct RecordingSpeakerAssignmentUpsert<'a> {
 fn upsert_recording_speaker_assignment(
     transaction: &Transaction<'_>,
     assignment: RecordingSpeakerAssignmentUpsert<'_>,
-) -> Result<()> {
+) -> Result<Option<String>> {
+    let name = assignment
+        .new_display_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
+    let requested_id = assignment
+        .participant_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if name.is_some_and(|name| name.chars().count() > 80) {
+        bail!("说话人姓名不能超过 80 个字符");
+    }
+    if name.is_some() && requested_id.is_some() {
+        bail!("不能同时选择现有说话人并填写本场姓名");
+    }
+    let participant_id = if assignment.enroll || requested_id.is_some() {
+        resolve_assignment_participant(transaction, requested_id, name, assignment.now)?
+    } else {
+        None
+    };
+    // The two mapping kinds are mutually exclusive. Never create a global person
+    // merely to store a meeting-local name, even when that name already exists.
+    transaction.execute(
+        "DELETE FROM recording_speaker_names WHERE recording_id=?1 AND generation=?2 AND raw_speaker=?3",
+        params![assignment.recording_id, assignment.generation, assignment.raw_speaker],
+    )?;
+    if participant_id.is_none() {
+        transaction.execute(
+            "DELETE FROM recording_speaker_assignments WHERE recording_id=?1 AND generation=?2 AND raw_speaker=?3",
+            params![assignment.recording_id, assignment.generation, assignment.raw_speaker],
+        )?;
+        if let Some(name) = name {
+            transaction.execute(
+                "INSERT INTO recording_speaker_names(recording_id,generation,raw_speaker,display_name,updated_at)
+                 VALUES(?1,?2,?3,?4,?5)",
+                params![assignment.recording_id, assignment.generation, assignment.raw_speaker, name, assignment.now],
+            )?;
+        }
+        return Ok(None);
+    }
     transaction.execute(
         "INSERT INTO recording_speaker_assignments
          (recording_id, generation, raw_speaker, participant_id,
@@ -155,13 +196,13 @@ fn upsert_recording_speaker_assignment(
             assignment.recording_id,
             assignment.generation,
             assignment.raw_speaker,
-            assignment.participant_id,
+            participant_id,
             assignment.match_score,
             assignment.assignment_source,
             assignment.now,
         ],
     )?;
-    Ok(())
+    Ok(participant_id)
 }
 
 pub struct Storage {
@@ -385,6 +426,14 @@ impl Storage {
               match_score REAL,
               assignment_source TEXT NOT NULL,
               confirmed_at TEXT NOT NULL,
+              PRIMARY KEY(recording_id, generation, raw_speaker)
+            );
+            CREATE TABLE IF NOT EXISTS recording_speaker_names (
+              recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+              generation INTEGER NOT NULL,
+              raw_speaker TEXT NOT NULL,
+              display_name TEXT NOT NULL CHECK(length(trim(display_name)) BETWEEN 1 AND 80),
+              updated_at TEXT NOT NULL,
               PRIMARY KEY(recording_id, generation, raw_speaker)
             );
             CREATE TABLE IF NOT EXISTS llm_providers (
@@ -2471,7 +2520,10 @@ impl Storage {
              JOIN transcriptions t
                ON t.recording_id = a.recording_id AND t.generation = a.generation
              WHERE a.recording_id = ?1 AND a.generation = ?2
-             ORDER BY a.raw_speaker",
+             UNION ALL
+             SELECT raw_speaker, NULL, display_name FROM recording_speaker_names
+             WHERE recording_id = ?1 AND generation = ?2
+             ORDER BY raw_speaker",
         )?;
         let rows = statement.query_map(params![recording_id, generation], |row| {
             Ok((
@@ -2618,6 +2670,7 @@ impl Storage {
         &self,
         recording_id: &str,
         assignments: &[SpeakerIdentificationAssignment],
+        expected_generation: u32,
     ) -> Result<()> {
         if assignments.is_empty() {
             return Ok(());
@@ -2646,6 +2699,9 @@ impl Storage {
             bail!("请先完成这场会议的文字转写");
         }
         let generation = generation.max(1).min(u32::MAX as i64) as u32;
+        if generation != expected_generation {
+            bail!("转写版本已改变，请重新打开说话人管理");
+        }
         let segments = serde_json::from_str::<Vec<TranscriptSegment>>(&segments_json)
             .context("当前转写片段无法读取")?;
         let valid_speakers = segments
@@ -2656,6 +2712,9 @@ impl Storage {
             .collect::<std::collections::HashSet<_>>();
         let mut seen = std::collections::HashSet::new();
         for assignment in assignments {
+            if assignment.save_voiceprint {
+                bail!("保存声纹需要有效的声纹分析会话");
+            }
             let raw_speaker = assignment.raw_speaker.trim();
             if raw_speaker.is_empty() || !valid_speakers.contains(raw_speaker) {
                 bail!("当前转写结果中不存在 speaker：{raw_speaker}");
@@ -2663,32 +2722,20 @@ impl Storage {
             if !seen.insert(raw_speaker.to_owned()) {
                 bail!("同一个 speaker 只能更新一次");
             }
-            let participant_id = resolve_assignment_participant(
+            upsert_recording_speaker_assignment(
                 &transaction,
-                assignment.participant_id.as_deref(),
-                assignment.new_display_name.as_deref(),
-                &now,
+                RecordingSpeakerAssignmentUpsert {
+                    recording_id,
+                    generation,
+                    raw_speaker,
+                    participant_id: assignment.participant_id.as_deref(),
+                    new_display_name: assignment.new_display_name.as_deref(),
+                    enroll: false,
+                    match_score: None,
+                    assignment_source: "manual",
+                    now: &now,
+                },
             )?;
-            if let Some(participant_id) = participant_id {
-                upsert_recording_speaker_assignment(
-                    &transaction,
-                    RecordingSpeakerAssignmentUpsert {
-                        recording_id,
-                        generation,
-                        raw_speaker,
-                        participant_id: &participant_id,
-                        match_score: None,
-                        assignment_source: "manual",
-                        now: &now,
-                    },
-                )?;
-            } else {
-                transaction.execute(
-                    "DELETE FROM recording_speaker_assignments
-                     WHERE recording_id = ?1 AND generation = ?2 AND raw_speaker = ?3",
-                    params![recording_id, generation, raw_speaker],
-                )?;
-            }
         }
         transaction.commit()?;
         Ok(())
@@ -2703,29 +2750,44 @@ impl Storage {
         let now = Utc::now().to_rfc3339();
         let mut connection = self.connection.lock();
         let transaction = connection.transaction()?;
+        let current: (u32, String, String, String) = transaction.query_row(
+            "SELECT t.generation,t.status,t.segments_json,t.provider_kind FROM transcriptions t
+             JOIN recordings r ON r.id=t.recording_id AND r.current_transcription_generation=t.generation
+             WHERE r.id=?1", [recording_id],
+            |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+        )?;
+        if current.0 != generation
+            || TranscriptionStatus::from_str(&current.1) != TranscriptionStatus::Completed
+        {
+            bail!("转写版本已改变，请重新打开说话人管理");
+        }
+        let segments: Vec<TranscriptSegment> = serde_json::from_str(&current.2)?;
+        let mut seen = std::collections::HashSet::new();
         for enrollment in enrollments {
             let raw_speaker = enrollment.raw_speaker.trim();
-            let participant_id = resolve_assignment_participant(
-                &transaction,
-                enrollment.participant_id.as_deref(),
-                enrollment.new_display_name.as_deref(),
-                &now,
-            )?;
-            let Some(participant_id) = participant_id else {
-                transaction.execute(
-                    "DELETE FROM recording_speaker_assignments
-                     WHERE recording_id = ?1 AND generation = ?2 AND raw_speaker = ?3",
-                    params![recording_id, generation, raw_speaker],
-                )?;
-                continue;
-            };
-            upsert_recording_speaker_assignment(
+            if !seen.insert(raw_speaker)
+                || !segments
+                    .iter()
+                    .any(|segment| segment.speaker.as_deref() == Some(raw_speaker))
+            {
+                bail!("说话人无效或重复");
+            }
+            if enrollment.embedding.is_some()
+                && !AsrProviderKind::from_str(&current.3)
+                    .capabilities()
+                    .voiceprint_analysis
+            {
+                bail!("voiceprint_not_supported_for_transcription_provider");
+            }
+            let participant_id = upsert_recording_speaker_assignment(
                 &transaction,
                 RecordingSpeakerAssignmentUpsert {
                     recording_id,
                     generation,
                     raw_speaker,
-                    participant_id: &participant_id,
+                    participant_id: enrollment.participant_id.as_deref(),
+                    new_display_name: enrollment.new_display_name.as_deref(),
+                    enroll: enrollment.embedding.is_some(),
                     match_score: enrollment.match_score,
                     assignment_source: "confirmed",
                     now: &now,
@@ -2734,6 +2796,7 @@ impl Storage {
             let Some(embedding) = enrollment.embedding.as_deref() else {
                 continue;
             };
+            let participant_id = participant_id.context("请先填写声纹对应的姓名")?;
             if embedding.is_empty() || embedding.iter().any(|value| !value.is_finite()) {
                 bail!("声纹向量无效");
             }
@@ -4631,7 +4694,9 @@ mod tests {
                     raw_speaker: "speaker_1".into(),
                     participant_id: None,
                     new_display_name: Some("小红".into()),
+                    save_voiceprint: false,
                 }],
+                generation,
             )
             .unwrap();
         storage
@@ -4662,7 +4727,9 @@ mod tests {
                     raw_speaker: "speaker_1".into(),
                     participant_id: None,
                     new_display_name: None,
+                    save_voiceprint: false,
                 }],
+                generation,
             )
             .unwrap();
         let transcript = storage.transcript("meeting").unwrap();
@@ -4676,7 +4743,9 @@ mod tests {
                         raw_speaker: "speaker_99".into(),
                         participant_id: None,
                         new_display_name: Some("不存在".into()),
+                        save_voiceprint: false,
                     }],
+                    generation,
                 )
                 .is_err()
         );
@@ -4737,6 +4806,340 @@ mod tests {
                 .is_empty()
         );
 
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn speaker_test_meeting(storage: &Storage, id: &str) -> (AsrProvider, u32) {
+        storage
+            .insert_recording(&RecordingItem {
+                id: id.into(),
+                title: "Test meeting".into(),
+                path: storage
+                    .paths()
+                    .default_recordings
+                    .join(format!("{id}.ogg"))
+                    .to_string_lossy()
+                    .into_owned(),
+                created_at: Utc::now().to_rfc3339(),
+                duration_ms: 10_000,
+                size_bytes: 0,
+                recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Clear))
+            .unwrap();
+        let generation = speaker_test_generation(storage, id, &provider);
+        (provider, generation)
+    }
+
+    fn speaker_test_generation(storage: &Storage, id: &str, provider: &AsrProvider) -> u32 {
+        let generation = storage.begin_transcription(id, provider, None).unwrap();
+        storage
+            .complete_transcription(
+                id,
+                generation,
+                "Test",
+                &[
+                    TranscriptSegment {
+                        start_ms: 0,
+                        end_ms: 5_000,
+                        text: "Test".into(),
+                        speaker: Some("speaker_0".into()),
+                    },
+                    TranscriptSegment {
+                        start_ms: 5_000,
+                        end_ms: 10_000,
+                        text: "Test".into(),
+                        speaker: Some("speaker_1".into()),
+                    },
+                ],
+                None,
+            )
+            .unwrap();
+        generation
+    }
+
+    fn local_name(speaker: &str, name: &str) -> SpeakerIdentificationAssignment {
+        SpeakerIdentificationAssignment {
+            raw_speaker: speaker.into(),
+            participant_id: None,
+            new_display_name: Some(name.into()),
+            save_voiceprint: false,
+        }
+    }
+
+    #[test]
+    fn local_speaker_names_survive_reopen_without_creating_global_people() {
+        let (root, storage) = test_storage();
+        let (provider, generation) = speaker_test_meeting(&storage, "one");
+        speaker_test_meeting(&storage, "two");
+        storage
+            .update_recording_speaker_assignments(
+                "one",
+                &[local_name("speaker_0", "Customer")],
+                generation,
+            )
+            .unwrap();
+        assert!(storage.list_participants().unwrap().is_empty());
+        let document = storage.transcript("one").unwrap();
+        assert_eq!(document.speaker_names["speaker_0"], "Customer");
+        assert_eq!(
+            document.speaker_assignments["speaker_0"].participant_id,
+            None
+        );
+        assert_eq!(document.segments[0].speaker.as_deref(), Some("speaker_0"));
+        assert!(serde_json::to_value(&document).unwrap()["speakerAssignments"]["speaker_0"]["participantId"].is_null());
+        assert!(storage.transcript("two").unwrap().speaker_names.is_empty());
+        let paths = storage.paths().clone();
+        drop(storage);
+        let storage = Storage::open(paths).unwrap();
+        assert_eq!(
+            storage.transcript("one").unwrap().speaker_names["speaker_0"],
+            "Customer"
+        );
+        let second = speaker_test_generation(&storage, "one", &provider);
+        assert!(storage.transcript("one").unwrap().speaker_names.is_empty());
+        assert!(
+            storage
+                .update_recording_speaker_assignments(
+                    "one",
+                    &[local_name("speaker_0", "Stale")],
+                    generation
+                )
+                .is_err()
+        );
+        assert_eq!(
+            storage
+                .transcript_for_generation("one", generation)
+                .unwrap()
+                .speaker_names["speaker_0"],
+            "Customer"
+        );
+        storage
+            .select_transcription_generation("one", generation)
+            .unwrap();
+        storage
+            .update_recording_speaker_assignments(
+                "one",
+                &[local_name("speaker_1", "Other")],
+                generation,
+            )
+            .unwrap();
+        storage
+            .update_recording_speaker_assignments(
+                "one",
+                &[local_name("speaker_0", "  ")],
+                generation,
+            )
+            .unwrap();
+        let document = storage.transcript("one").unwrap();
+        assert!(!document.speaker_names.contains_key("speaker_0"));
+        assert_eq!(document.speaker_names["speaker_1"], "Other");
+        assert!(
+            storage
+                .transcript_for_generation("one", second)
+                .unwrap()
+                .speaker_names
+                .is_empty()
+        );
+        storage
+            .connection
+            .lock()
+            .execute("DELETE FROM recordings WHERE id='one'", [])
+            .unwrap();
+        assert_eq!(
+            storage
+                .connection
+                .lock()
+                .query_row("SELECT COUNT(*) FROM recording_speaker_names", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mixed_enrollment_keeps_unselected_names_local_and_can_detach_linked_people() {
+        let (root, storage) = test_storage();
+        let (_, generation) = speaker_test_meeting(&storage, "one");
+        let enrollment = |speaker: &str, embedding| VoiceprintEnrollment {
+            raw_speaker: speaker.into(),
+            participant_id: None,
+            new_display_name: Some("Same name".into()),
+            match_score: None,
+            embedding_fingerprint: "test".into(),
+            embedding,
+            preview_start_ms: 0,
+            preview_end_ms: 5_000,
+            speech_duration_ms: 5_000,
+        };
+        storage
+            .save_speaker_identification(
+                "one",
+                generation,
+                &[
+                    enrollment("speaker_0", Some(vec![1.0, 0.0])),
+                    enrollment("speaker_1", None),
+                ],
+            )
+            .unwrap();
+        let profiles = storage.list_participants().unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].samples.len(), 1);
+        let document = storage.transcript("one").unwrap();
+        assert_eq!(
+            document.speaker_assignments["speaker_0"]
+                .participant_id
+                .as_deref(),
+            Some(profiles[0].id.as_str())
+        );
+        assert_eq!(
+            document.speaker_assignments["speaker_1"].participant_id,
+            None
+        );
+        storage
+            .rename_participant(&profiles[0].id, "Renamed")
+            .unwrap();
+        assert_eq!(
+            storage.transcript("one").unwrap().speaker_names["speaker_1"],
+            "Same name"
+        );
+        storage
+            .update_recording_speaker_assignments(
+                "one",
+                &[SpeakerIdentificationAssignment {
+                    raw_speaker: "speaker_1".into(),
+                    participant_id: Some(profiles[0].id.clone()),
+                    new_display_name: None,
+                    save_voiceprint: false,
+                }],
+                generation,
+            )
+            .unwrap();
+        assert_eq!(
+            storage.transcript("one").unwrap().speaker_names["speaker_1"],
+            "Renamed"
+        );
+        storage
+            .update_recording_speaker_assignments(
+                "one",
+                &[local_name("speaker_1", "Customer")],
+                generation,
+            )
+            .unwrap();
+        storage.delete_participant(&profiles[0].id).unwrap();
+        assert_eq!(
+            storage.transcript("one").unwrap().speaker_names["speaker_1"],
+            "Customer"
+        );
+        assert!(
+            !storage
+                .transcript("one")
+                .unwrap()
+                .speaker_names
+                .contains_key("speaker_0")
+        );
+        storage
+            .connection
+            .lock()
+            .execute(
+                "UPDATE transcriptions SET provider_kind='dash_scope' WHERE recording_id='one'",
+                [],
+            )
+            .unwrap();
+        assert!(
+            storage
+                .save_speaker_identification(
+                    "one",
+                    generation,
+                    &[enrollment("speaker_0", Some(vec![1.0, 0.0])),]
+                )
+                .is_err()
+        );
+        assert!(storage.list_participants().unwrap().is_empty());
+        assert_eq!(
+            storage.transcript("one").unwrap().speaker_names["speaker_1"],
+            "Customer"
+        );
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn speaker_name_validation_rolls_back_whole_batch_and_legacy_mappings_survive_upgrade() {
+        let (root, storage) = test_storage();
+        let (_, generation) = speaker_test_meeting(&storage, "one");
+        let mut invalid = local_name("speaker_1", "Invalid");
+        invalid.participant_id = Some("missing".into());
+        assert!(
+            storage
+                .update_recording_speaker_assignments(
+                    "one",
+                    &[local_name("speaker_0", "Customer"), invalid],
+                    generation
+                )
+                .is_err()
+        );
+        assert!(storage.transcript("one").unwrap().speaker_names.is_empty());
+        assert!(
+            storage
+                .update_recording_speaker_assignments(
+                    "one",
+                    &[local_name("speaker_0", &"名".repeat(81))],
+                    generation
+                )
+                .is_err()
+        );
+        let mut no_session = local_name("speaker_0", "Customer");
+        no_session.save_voiceprint = true;
+        assert!(
+            storage
+                .update_recording_speaker_assignments("one", &[no_session], generation)
+                .is_err()
+        );
+        assert!(storage.list_participants().unwrap().is_empty());
+        // Model the previous schema: all names were global, including zero-sample people.
+        {
+            let connection = storage.connection.lock();
+            connection.execute_batch("DROP TABLE recording_speaker_names;
+                INSERT INTO participants VALUES('legacy','Legacy name','now','now');
+                INSERT INTO recording_speaker_assignments VALUES('one',1,'speaker_0','legacy',NULL,'manual','now');").unwrap();
+        }
+        let paths = storage.paths().clone();
+        drop(storage);
+        let storage = Storage::open(paths).unwrap();
+        assert_eq!(storage.list_participants().unwrap()[0].id, "legacy");
+        assert_eq!(
+            storage.transcript("one").unwrap().speaker_names["speaker_0"],
+            "Legacy name"
+        );
+        storage
+            .update_recording_speaker_assignments(
+                "one",
+                &[local_name("speaker_1", "New local")],
+                generation,
+            )
+            .unwrap();
+        assert_eq!(storage.list_participants().unwrap().len(), 1);
+        assert!(
+            storage
+                .connection
+                .lock()
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()
+                .unwrap()
+                .is_none()
+        );
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }

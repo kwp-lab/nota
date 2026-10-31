@@ -1291,8 +1291,8 @@ export default function App() {
             await refreshParticipants();
             showToast("success", "声纹与当前会议的说话人姓名已保存");
           }}
-          onUpdateSpeakerAssignments={async (recordingId, assignments) => {
-            const updated = await api.updateRecordingSpeakerAssignments(recordingId, assignments);
+          onUpdateSpeakerAssignments={async (recordingId, assignments, generation) => {
+            const updated = await api.updateRecordingSpeakerAssignments(recordingId, assignments, generation);
             setTranscript(updated);
             await refreshParticipants();
             showToast("success", "当前会议的说话人姓名已更新");

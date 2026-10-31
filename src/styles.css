@@ -1125,16 +1125,21 @@ body.capture-prompt-body {
 
 .speaker-name-field { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: var(--space-2-5); }
 .speaker-manager-detail select,
-.speaker-manager-detail > input,
+.speaker-name-field input,
 .voiceprint-provider-card select {
   min-height: 38px;
   padding: 0 var(--space-2-5);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-medium);
-  background: white;
+  background: var(--color-surface-raised);
   color: inherit;
 }
-.speaker-manager-detail > input { margin-left: var(--space-24); }
+.speaker-name-field input { min-width: 0; width: 100%; }
+.speaker-name-scope { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-caption); line-height: var(--line-height-caption); }
+.speaker-library-picker summary { cursor: pointer; color: var(--color-text-secondary); }
+.speaker-library-picker[open] summary { margin-bottom: var(--space-3); }
+.speaker-library-picker summary:focus-visible,
+.speaker-name-field input:focus-visible { outline: var(--space-0-5) solid var(--color-focus-ring); outline-offset: var(--space-0-5); }
 .speaker-utterances { display: grid; gap: var(--space-2); padding-top: var(--space-1); }
 .speaker-utterances > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
 .speaker-utterances > div small { color: var(--color-text-muted); }
