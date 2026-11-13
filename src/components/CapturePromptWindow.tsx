@@ -95,13 +95,13 @@ export function CapturePromptWindow() {
         <div className="capture-prompt-content">
           <h1 id="capture-prompt-title">
             {prompt?.kind === "prolongedSilence"
-              ? "应用已持续一段时间没有声音"
+              ? "录音音源已持续一段时间没有声音"
               : "应用音频捕获已中断"}
           </h1>
           {prompt ? (
             <p>
               {prompt.kind === "prolongedSilence"
-                ? `Nota 已连续 3 分钟未检测到“${prompt.targetName}”的有效声音。会议可能仍在进行，你可以继续录音或停止并保存。`
+                ? `Nota 已连续 3 分钟未检测到“${prompt.targetName}”或已启用麦克风的有效声音。会议可能仍在进行，你可以继续录音或停止并保存。`
                 : `Nota 暂时无法继续获取“${prompt.targetName}”的声音。你可以继续等待恢复，或停止并保存录音。`}
             </p>
           ) : (

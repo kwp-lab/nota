@@ -11,6 +11,7 @@ use crate::asr::{
 };
 use crate::audio::{
     AudioMixer, AudioPacket, CaptureEvent, CaptureHandle, CaptureSource, OpusOggWriter,
+    RecordingSilenceMonitor, SILENCE_REMINDER_DELAY, SilenceEvent, contains_audible_audio,
     list_audio_devices as enumerate_audio_devices,
     list_capture_targets as enumerate_capture_targets, list_recoverable_files, move_verified,
     recover_ogg_file, start_capture,
@@ -242,6 +243,10 @@ impl RecordingController {
         let (system_tx, system_rx) = unbounded::<AudioPacket>();
         let initial_microphone_source_epoch = u64::from(request.microphone.is_some());
         let system_source = capture_source_from_selection(&request.capture)?;
+        let silence_target_name = match &system_source {
+            CaptureSource::Process { display_name, .. } => Some(display_name.clone()),
+            _ => None,
+        };
         // Attach process loopback before opening a Bluetooth microphone.
         // Switching a headset from A2DP to HFP can make a meeting client move
         // its render stream to a replacement process/session. Endpoint
@@ -361,8 +366,7 @@ impl RecordingController {
         let paused = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let worker_paused = Arc::clone(&paused);
-        let worker_snapshot = Arc::clone(&self.snapshot);
-        let worker_storage = Arc::clone(&self.storage);
+        let worker_recorder = Arc::clone(self);
         let worker_app = app.clone();
         let worker_request = request.clone();
         let worker_session = session_id.clone();
@@ -375,14 +379,14 @@ impl RecordingController {
             .spawn(move || {
                 recording_worker(
                     worker_app,
-                    worker_storage,
-                    worker_snapshot,
+                    worker_recorder,
                     writer,
                     partial_path,
                     output_path,
                     worker_session,
                     started_at,
                     worker_request,
+                    silence_target_name,
                     system_rx,
                     microphone_rx,
                     auto_should_enable_aec,
@@ -456,39 +460,64 @@ impl RecordingController {
                             );
                         }
                     }
-                    CaptureEvent::ProlongedSilence { display_name } => {
-                        if let Some(session_id) = recorder.snapshot().session_id {
-                            logging::info(
-                                "capture_health",
-                                "silence_prompt_requested",
-                                &[
-                                    Field::text(FieldKey::SessionId, session_id),
-                                    Field::text(FieldKey::Reason, "prolonged_silence"),
-                                ],
-                            );
-                        }
-                        recorder.show_capture_prompt(
-                            &app,
-                            display_name,
-                            CapturePromptKind::ProlongedSilence,
-                        );
-                    }
-                    CaptureEvent::AudioResumed => {
-                        if recorder.dismiss_capture_prompt_for_kind(
-                            &app,
-                            CapturePromptKind::ProlongedSilence,
-                        ) && let Some(session_id) = recorder.snapshot().session_id
-                        {
-                            logging::info(
-                                "capture_health",
-                                "silence_prompt_dismissed_after_audio_resumed",
-                                &[Field::text(FieldKey::SessionId, session_id)],
-                            );
-                        }
-                    }
                 }
             }
         })
+    }
+
+    fn handle_silence_event(&self, app: &AppHandle, target_name: &str, event: SilenceEvent) {
+        let snapshot = self.snapshot();
+        if !matches!(
+            snapshot.state,
+            RecordingState::Recording | RecordingState::Interrupted
+        ) {
+            return;
+        }
+        let Some(session_id) = snapshot.session_id else {
+            return;
+        };
+        match event {
+            SilenceEvent::ProlongedSilence => {
+                logging::info(
+                    "capture_health",
+                    "prolonged_silence_detected",
+                    &[
+                        Field::text(FieldKey::SessionId, session_id.clone()),
+                        Field::number(
+                            FieldKey::DurationMs,
+                            SILENCE_REMINDER_DELAY.as_millis() as u64,
+                        ),
+                    ],
+                );
+                logging::info(
+                    "capture_health",
+                    "silence_prompt_requested",
+                    &[
+                        Field::text(FieldKey::SessionId, session_id),
+                        Field::text(FieldKey::Reason, "prolonged_silence"),
+                    ],
+                );
+                self.show_capture_prompt(
+                    app,
+                    target_name.to_owned(),
+                    CapturePromptKind::ProlongedSilence,
+                );
+            }
+            SilenceEvent::AudioResumed => {
+                logging::info(
+                    "capture_health",
+                    "audio_resumed",
+                    &[Field::text(FieldKey::SessionId, session_id.clone())],
+                );
+                if self.dismiss_capture_prompt_for_kind(app, CapturePromptKind::ProlongedSilence) {
+                    logging::info(
+                        "capture_health",
+                        "silence_prompt_dismissed_after_audio_resumed",
+                        &[Field::text(FieldKey::SessionId, session_id)],
+                    );
+                }
+            }
+        }
     }
 
     fn show_capture_prompt(&self, app: &AppHandle, target_name: String, kind: CapturePromptKind) {
@@ -899,14 +928,14 @@ fn restart_system_loopback_after_device_mode_change(runtime: &mut RecordingRunti
 #[allow(clippy::too_many_arguments)]
 fn recording_worker(
     app: AppHandle,
-    storage: Arc<Storage>,
-    snapshot: Arc<Mutex<RecordingSnapshot>>,
+    recorder: Arc<RecordingController>,
     mut writer: OpusOggWriter,
     partial_path: PathBuf,
     output_path: PathBuf,
     session_id: String,
     started_at: chrono::DateTime<Utc>,
     request: StartRecordingRequest,
+    silence_target_name: Option<String>,
     system_rx: Receiver<AudioPacket>,
     microphone_rx: Receiver<AudioPacket>,
     auto_should_enable_aec: bool,
@@ -917,7 +946,10 @@ fn recording_worker(
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
 ) {
+    let storage = Arc::clone(&recorder.storage);
+    let snapshot = Arc::clone(&recorder.snapshot);
     let mut mixer = AudioMixer::new(request.aec_mode, auto_should_enable_aec);
+    let mut silence_monitor = RecordingSilenceMonitor::default();
     let mut system_connected;
     let mut microphone_connected;
     let mut last_emit = Instant::now();
@@ -931,6 +963,7 @@ fn recording_worker(
     while !stop.load(Ordering::Acquire) {
         let _ = tick.recv();
         if paused.load(Ordering::Acquire) {
+            silence_monitor.suspend();
             let _ = drain_packets(&system_rx, |_| {});
             let _ = drain_packets(&microphone_rx, |_| {});
             was_paused = true;
@@ -949,11 +982,16 @@ fn recording_worker(
             };
             was_paused = false;
         }
-        let _ = drain_packets(&system_rx, |packet| mixer.push_system(packet));
+        let mut system_audible = false;
+        let _ = drain_packets(&system_rx, |packet| {
+            system_audible |= contains_audible_audio(&packet.samples);
+            mixer.push_system(packet);
+        });
         system_connected = system_health.lock().load(Ordering::Acquire);
         let microphone_is_enabled = microphone_enabled.load(Ordering::Acquire);
         let current_microphone_epoch = microphone_source_epoch.load(Ordering::Acquire);
         if current_microphone_epoch != microphone_epoch {
+            silence_monitor.suspend();
             mixer.switch_microphone_source(
                 request.aec_mode,
                 auto_should_enable_aec,
@@ -978,11 +1016,25 @@ fn recording_worker(
                 AecStatus::Disabled
             };
         }
+        let mut microphone_audible = false;
         let _ = drain_current_source_packets(&microphone_rx, microphone_epoch, |packet| {
-            mixer.push_microphone(packet)
+            microphone_audible |= contains_audible_audio(&packet.samples);
+            mixer.push_microphone(packet);
         });
         microphone_connected =
             microphone_is_enabled && microphone_health.lock().load(Ordering::Acquire);
+        if let Some(target_name) = &silence_target_name
+            && let Some(event) = observe_recording_silence(
+                &mut silence_monitor,
+                Instant::now(),
+                system_connected,
+                system_audible,
+                microphone_connected,
+                microphone_audible,
+            )
+        {
+            recorder.handle_silence_event(&app, target_name, event);
+        }
         if !system_connected && !microphone_connected {
             let mut value = snapshot.lock();
             value.state = transition(
@@ -1206,6 +1258,27 @@ fn recording_worker(
         }
     }
     emit_snapshot(&app, &snapshot);
+}
+
+fn observe_recording_silence(
+    monitor: &mut RecordingSilenceMonitor,
+    now: Instant,
+    system_connected: bool,
+    system_audible: bool,
+    microphone_connected: bool,
+    microphone_audible: bool,
+) -> Option<SilenceEvent> {
+    if !system_connected {
+        monitor.suspend();
+        if !microphone_connected || !microphone_audible {
+            return None;
+        }
+    }
+    monitor.observe(
+        now,
+        system_connected && system_audible,
+        microphone_connected && microphone_audible,
+    )
 }
 
 fn drain_packets(receiver: &Receiver<AudioPacket>, mut consume: impl FnMut(AudioPacket)) -> bool {
@@ -2832,7 +2905,7 @@ fn build_tray_menu(
     if let Some(kind) = capture_prompt_kind {
         let prompt_label = match kind {
             CapturePromptKind::CaptureInterrupted => "应用音频捕获已中断，请确认…",
-            CapturePromptKind::ProlongedSilence => "应用已持续 3 分钟没有声音，请确认…",
+            CapturePromptKind::ProlongedSilence => "录音音源已持续 3 分钟没有声音，请确认…",
         };
         let prompt = MenuItem::with_id(app, "capture_prompt", prompt_label, true, None::<&str>)?;
         return Ok(Menu::with_items(
@@ -2889,7 +2962,7 @@ fn update_tray_on_main_thread(
     };
     let label = match capture_prompt_kind {
         Some(CapturePromptKind::CaptureInterrupted) => "Nota · 应用音频捕获已中断",
-        Some(CapturePromptKind::ProlongedSilence) => "Nota · 应用长时间没有声音",
+        Some(CapturePromptKind::ProlongedSilence) => "Nota · 录音音源长时间没有声音",
         None => match state {
             RecordingState::Recording | RecordingState::Preparing | RecordingState::Finalizing => {
                 "Nota · 正在录音"
@@ -3583,6 +3656,139 @@ mod tray_tests {
         assert!(drain_packets(&receiver, |_| drained += 1));
         assert_eq!(drained, MAX_PACKETS_PER_TICK);
         assert_eq!(receiver.len(), 10);
+    }
+
+    #[test]
+    fn disabled_or_disconnected_microphone_audio_does_not_suppress_silence() {
+        let started = Instant::now();
+        let mut monitor = RecordingSilenceMonitor::default();
+        assert_eq!(
+            observe_recording_silence(&mut monitor, started, true, false, false, true),
+            None
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + SILENCE_REMINDER_DELAY,
+                true,
+                false,
+                false,
+                true,
+            ),
+            Some(SilenceEvent::ProlongedSilence)
+        );
+    }
+
+    #[test]
+    fn capture_rebuild_suspends_silence_while_microphone_audio_can_dismiss_it() {
+        let started = Instant::now();
+        let mut monitor = RecordingSilenceMonitor::default();
+        assert_eq!(
+            observe_recording_silence(&mut monitor, started, true, false, true, false),
+            None
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + SILENCE_REMINDER_DELAY,
+                true,
+                false,
+                true,
+                false,
+            ),
+            Some(SilenceEvent::ProlongedSilence)
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + Duration::from_secs(200),
+                false,
+                false,
+                true,
+                true,
+            ),
+            Some(SilenceEvent::AudioResumed)
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + Duration::from_secs(600),
+                false,
+                false,
+                true,
+                false,
+            ),
+            None
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + Duration::from_secs(700),
+                true,
+                false,
+                true,
+                false,
+            ),
+            None
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + Duration::from_secs(879),
+                true,
+                false,
+                true,
+                false,
+            ),
+            None
+        );
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + Duration::from_secs(880),
+                true,
+                false,
+                true,
+                false,
+            ),
+            Some(SilenceEvent::ProlongedSilence)
+        );
+    }
+
+    #[test]
+    fn obsolete_microphone_packets_do_not_suppress_silence() {
+        let started = Instant::now();
+        let mut monitor = RecordingSilenceMonitor::default();
+        assert_eq!(
+            observe_recording_silence(&mut monitor, started, true, false, true, false),
+            None
+        );
+        let (sender, receiver) = unbounded();
+        sender
+            .send(AudioPacket {
+                samples: vec![0.25; 480],
+                sample_rate: 48_000,
+                timestamp_100ns: 0,
+                device_position: None,
+                discontinuity: false,
+                source_epoch: 4,
+            })
+            .unwrap();
+        let mut microphone_audible = false;
+        assert!(drain_current_source_packets(&receiver, 5, |packet| {
+            microphone_audible |= contains_audible_audio(&packet.samples);
+        }));
+        assert_eq!(
+            observe_recording_silence(
+                &mut monitor,
+                started + SILENCE_REMINDER_DELAY,
+                true,
+                false,
+                true,
+                microphone_audible,
+            ),
+            Some(SilenceEvent::ProlongedSilence)
+        );
     }
 
     #[test]

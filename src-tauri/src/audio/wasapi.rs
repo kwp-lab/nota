@@ -43,8 +43,6 @@ use super::AudioPacket;
 const CAPTURE_WAIT_MS: u32 = 100;
 const ACTIVATION_WAIT_MS: u32 = 5_000;
 const PROCESS_CAPTURE_FAILURE_GRACE: Duration = Duration::from_secs(15);
-const PROCESS_SILENCE_REMINDER_DELAY: Duration = Duration::from_secs(3 * 60);
-const PROCESS_AUDIBLE_PEAK_THRESHOLD: f32 = 0.001;
 
 #[derive(Debug, Clone)]
 pub enum CaptureSource {
@@ -61,16 +59,12 @@ pub enum CaptureSource {
 pub enum CaptureEvent {
     CaptureInterrupted { display_name: String },
     CaptureRecovered,
-    ProlongedSilence { display_name: String },
-    AudioResumed,
 }
 
 #[derive(Default)]
 struct ProcessCaptureHealth {
     failure_since: Option<Instant>,
     failure_alert_emitted: bool,
-    silence_since: Option<Instant>,
-    silence_alert_emitted: bool,
     diagnostic_session_id: Option<String>,
 }
 
@@ -83,7 +77,6 @@ impl ProcessCaptureHealth {
     }
 
     fn observe_failure(&mut self, now: Instant) -> bool {
-        self.silence_since = None;
         if self.failure_alert_emitted {
             return false;
         }
@@ -98,27 +91,6 @@ impl ProcessCaptureHealth {
     fn observe_healthy(&mut self) -> bool {
         self.failure_since = None;
         std::mem::replace(&mut self.failure_alert_emitted, false)
-    }
-
-    fn observe_silence(&mut self, now: Instant) -> bool {
-        if self.silence_alert_emitted {
-            return false;
-        }
-        let silence_since = self.silence_since.get_or_insert(now);
-        if now.duration_since(*silence_since) < PROCESS_SILENCE_REMINDER_DELAY {
-            return false;
-        }
-        self.silence_alert_emitted = true;
-        true
-    }
-
-    fn observe_audible(&mut self) -> bool {
-        self.silence_since = None;
-        std::mem::replace(&mut self.silence_alert_emitted, false)
-    }
-
-    fn suspend_silence_timer(&mut self) {
-        self.silence_since = None;
     }
 }
 
@@ -406,52 +378,6 @@ fn report_process_capture_healthy(
     let _ = events.try_send(CaptureEvent::CaptureRecovered);
 }
 
-fn report_process_silence(
-    source: &CaptureSource,
-    health: &mut ProcessCaptureHealth,
-    events: &Sender<CaptureEvent>,
-) {
-    let CaptureSource::Process { display_name, .. } = source else {
-        return;
-    };
-    if !health.observe_silence(Instant::now()) {
-        return;
-    }
-    let mut fields = vec![Field::number(
-        FieldKey::DurationMs,
-        PROCESS_SILENCE_REMINDER_DELAY.as_millis() as u64,
-    )];
-    if let Some(session_id) = health.diagnostic_session_id.clone() {
-        fields.push(Field::text(FieldKey::SessionId, session_id));
-    }
-    logging::info("capture_health", "prolonged_silence_detected", &fields);
-    let _ = events.try_send(CaptureEvent::ProlongedSilence {
-        display_name: display_name.clone(),
-    });
-}
-
-fn report_process_audio_resumed(
-    source: &CaptureSource,
-    health: &mut ProcessCaptureHealth,
-    events: &Sender<CaptureEvent>,
-) {
-    if !matches!(source, CaptureSource::Process { .. }) || !health.observe_audible() {
-        return;
-    }
-    let mut fields = Vec::new();
-    if let Some(session_id) = health.diagnostic_session_id.clone() {
-        fields.push(Field::text(FieldKey::SessionId, session_id));
-    }
-    logging::info("capture_health", "audio_resumed", &fields);
-    let _ = events.try_send(CaptureEvent::AudioResumed);
-}
-
-fn contains_audible_audio(samples: &[f32]) -> bool {
-    samples
-        .iter()
-        .any(|sample| sample.abs() > PROCESS_AUDIBLE_PEAK_THRESHOLD)
-}
-
 fn capture_source_label(source: &CaptureSource) -> &'static str {
     match source {
         CaptureSource::Process { .. } => "process loopback",
@@ -512,7 +438,6 @@ fn capture_session(
             bail!("Windows 报告音频设备配置已改变");
         }
         if paused.load(Ordering::Acquire) {
-            process_capture_health.suspend_silence_timer();
             if running {
                 unsafe {
                     setup.client.Stop()?;
@@ -533,7 +458,6 @@ fn capture_session(
 
         let wait = unsafe { WaitForSingleObject(setup.event, CAPTURE_WAIT_MS) };
         if wait != WAIT_OBJECT_0 {
-            report_process_silence(source, process_capture_health, events);
             if last_default_check.elapsed() >= Duration::from_secs(1) {
                 if default_device_changed(source, setup.endpoint_id.as_deref())? {
                     bail!("默认音频设备已改变");
@@ -606,9 +530,6 @@ fn capture_session(
                 unsafe { decode_mono(data, frames as usize, &setup.format) }
             };
             unsafe { setup.capture.ReleaseBuffer(frames)? };
-            if contains_audible_audio(&samples) {
-                report_process_audio_resumed(source, process_capture_health, events);
-            }
             if packet_sink
                 .packets
                 .send(AudioPacket {
@@ -633,7 +554,6 @@ fn capture_session(
                 return Ok(());
             }
         }
-        report_process_silence(source, process_capture_health, events);
         if last_default_check.elapsed() >= Duration::from_secs(1) {
             if default_device_changed(source, setup.endpoint_id.as_deref())? {
                 bail!("默认音频设备已改变");
@@ -1549,56 +1469,6 @@ mod tests {
         assert!(!health.observe_failure(started + Duration::from_secs(20)));
         assert!(!health.observe_failure(started + Duration::from_secs(34)));
         assert!(health.observe_failure(started + Duration::from_secs(35)));
-    }
-
-    #[test]
-    fn prolonged_silence_requires_three_unpaused_minutes_and_does_not_repeat() {
-        let started = Instant::now();
-        let mut health = ProcessCaptureHealth::default();
-
-        assert!(!health.observe_silence(started));
-        assert!(!health.observe_silence(started + Duration::from_secs(179)));
-        assert!(health.observe_silence(started + PROCESS_SILENCE_REMINDER_DELAY));
-        assert!(!health.observe_silence(started + Duration::from_secs(600)));
-    }
-
-    #[test]
-    fn audible_audio_rearms_the_silence_reminder() {
-        let started = Instant::now();
-        let mut health = ProcessCaptureHealth::default();
-
-        assert!(!health.observe_silence(started));
-        assert!(health.observe_silence(started + PROCESS_SILENCE_REMINDER_DELAY));
-        assert!(health.observe_audible());
-        assert!(!health.observe_audible());
-        assert!(!health.observe_silence(started + Duration::from_secs(240)));
-        assert!(health.observe_silence(started + Duration::from_secs(420)));
-    }
-
-    #[test]
-    fn pause_and_capture_failure_restart_the_silence_timer() {
-        let started = Instant::now();
-        let mut health = ProcessCaptureHealth::default();
-
-        assert!(!health.observe_silence(started));
-        health.suspend_silence_timer();
-        assert!(!health.observe_silence(started + Duration::from_secs(170)));
-        assert!(!health.observe_silence(started + Duration::from_secs(349)));
-        assert!(health.observe_silence(started + Duration::from_secs(350)));
-
-        assert!(health.observe_audible());
-        assert!(!health.observe_silence(started + Duration::from_secs(400)));
-        assert!(!health.observe_failure(started + Duration::from_secs(500)));
-        assert!(!health.observe_healthy());
-        assert!(!health.observe_silence(started + Duration::from_secs(500)));
-        assert!(!health.observe_silence(started + Duration::from_secs(679)));
-        assert!(health.observe_silence(started + Duration::from_secs(680)));
-    }
-
-    #[test]
-    fn audible_threshold_ignores_digital_silence_but_accepts_real_signal() {
-        assert!(!contains_audible_audio(&[0.0, 0.0005, -0.001]));
-        assert!(contains_audible_audio(&[0.0, -0.0011]));
     }
 
     #[test]

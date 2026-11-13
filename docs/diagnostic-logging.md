@@ -73,6 +73,12 @@ per-packet audio, and ordinary polling must not be logged. Transition-only
 logging keeps the files useful for `rg` and avoids turning one incident into
 thousands of repetitive records.
 
+The recording worker owns silence and audio-resumed transitions across the
+selected application and enabled microphone, using accepted packets before
+AEC. WASAPI capture threads retain capture-failure and recovery diagnostics.
+Silence transitions keep the same event names and session identifiers; source
+samples and measured audio content are never logged.
+
 Opaque correlation fields connect a sequence without exposing content:
 
 - `session_id` for one active recording;
