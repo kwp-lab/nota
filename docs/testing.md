@@ -232,6 +232,10 @@ Automated client coverage must include:
   disable behavior, failed-switch rollback, authoritative snapshot recovery,
   source-epoch filtering, microphone-only buffer reset, AEC reconvergence, and
   pause-state inheritance without changing the meeting-audio scope;
+- AEC processing with deterministic synthetic audio through convergence,
+  repeated render-buffer overruns, and subsequent normal processing. Resetting
+  the converged filter from 13 partitions to 12 must not panic, and capture
+  output must remain finite;
 
 Server-side automated coverage must include:
 

@@ -312,6 +312,15 @@ flowchart LR
     C --> T["Update tray icon on main thread"]
 ```
 
+## AEC Filter Resets
+
+Echo cancellation uses Sonora 0.2 or later within the locked compatible
+dependency series. A render-buffer overrun or echo-path change may reset a
+converged filter from 13 partitions to its 12-partition initial size. Shrinking
+must preserve the retained partitions without attempting to clear an invalid
+reversed range; only newly added partitions are cleared when the filter grows.
+Recording continues through these resets with AEC enabled.
+
 ## Live Microphone Switching
 
 An active recording may replace or disable only its microphone source. The
