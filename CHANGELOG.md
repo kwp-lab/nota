@@ -26,6 +26,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Fixed prolonged-silence reminders appearing while only the local microphone
+  was active. Either the selected application or an enabled microphone now
+  resets the silence timer and dismisses an existing silence reminder.
+- Fixed recording crashes when echo cancellation reset a converged filter
+  from 13 partitions to 12 after a render-buffer overrun or echo-path change.
 - Fixed audio imports failing after reaching 100% when a resampled file ended
   on an exact 4,096-frame block boundary, including affected M4A recordings.
 

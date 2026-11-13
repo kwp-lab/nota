@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:30a8310e-8b01-43a9-a4ca-542abf91333f",
+  "serialNumber": "urn:uuid:ee0e047f-c707-43f4-a673-c169cd15052d",
   "version": 1,
   "metadata": {
     "component": {
@@ -4229,127 +4229,127 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora-aec3@0.1.0",
+      "bom-ref": "pkg:cargo/sonora-aec3@0.2.0",
       "name": "sonora-aec3",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora-aec3@0.1.0",
+      "purl": "pkg:cargo/sonora-aec3@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora-aec3/0.1.0"
+          "url": "https://crates.io/crates/sonora-aec3/0.2.0"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora-agc2@0.1.0",
+      "bom-ref": "pkg:cargo/sonora-agc2@0.2.0",
       "name": "sonora-agc2",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora-agc2@0.1.0",
+      "purl": "pkg:cargo/sonora-agc2@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora-agc2/0.1.0"
+          "url": "https://crates.io/crates/sonora-agc2/0.2.0"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora-common-audio@0.1.0",
+      "bom-ref": "pkg:cargo/sonora-common-audio@0.2.0",
       "name": "sonora-common-audio",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora-common-audio@0.1.0",
+      "purl": "pkg:cargo/sonora-common-audio@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora-common-audio/0.1.0"
+          "url": "https://crates.io/crates/sonora-common-audio/0.2.0"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora-fft@0.1.0",
+      "bom-ref": "pkg:cargo/sonora-fft@0.2.0",
       "name": "sonora-fft",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora-fft@0.1.0",
+      "purl": "pkg:cargo/sonora-fft@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora-fft/0.1.0"
+          "url": "https://crates.io/crates/sonora-fft/0.2.0"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora-ns@0.1.0",
+      "bom-ref": "pkg:cargo/sonora-ns@0.2.0",
       "name": "sonora-ns",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora-ns@0.1.0",
+      "purl": "pkg:cargo/sonora-ns@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora-ns/0.1.0"
+          "url": "https://crates.io/crates/sonora-ns/0.2.0"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora-simd@0.1.0",
+      "bom-ref": "pkg:cargo/sonora-simd@0.2.0",
       "name": "sonora-simd",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora-simd@0.1.0",
+      "purl": "pkg:cargo/sonora-simd@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora-simd/0.1.0"
+          "url": "https://crates.io/crates/sonora-simd/0.2.0"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "pkg:cargo/sonora@0.1.0",
+      "bom-ref": "pkg:cargo/sonora@0.2.0",
       "name": "sonora",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:cargo/sonora@0.1.0",
+      "purl": "pkg:cargo/sonora@0.2.0",
       "externalReferences": [
         {
           "type": "website",
-          "url": "https://crates.io/crates/sonora/0.1.0"
+          "url": "https://crates.io/crates/sonora/0.2.0"
         }
       ]
     },

@@ -712,12 +712,12 @@ limitations under the License.
 -------------------------------------------------------------------------------
 BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License (BSD-3-Clause)
 Used by:
-- sonora-agc2 0.1.0
-- sonora-common-audio 0.1.0
-- sonora-fft 0.1.0
-- sonora-ns 0.1.0
-- sonora-simd 0.1.0
-- sonora 0.1.0
+- sonora-agc2 0.2.0
+- sonora-common-audio 0.2.0
+- sonora-fft 0.2.0
+- sonora-ns 0.2.0
+- sonora-simd 0.2.0
+- sonora 0.2.0
 
 Copyright (c) 2011, The WebRTC Project Authors. All rights reserved.
 Copyright (c) 2016, Arun Raghavan and contributors. All rights reserved.
@@ -812,7 +812,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License (BSD-3-Clause)
 Used by:
 - alloc-stdlib 0.2.4
-- sonora-aec3 0.1.0
+- sonora-aec3 0.2.0
 
 Copyright (c) &lt;year&gt; &lt;owner&gt;. 
 

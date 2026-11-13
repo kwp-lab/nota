@@ -242,34 +242,43 @@ The audio layer reports two conditions that Nota can verify:
   capture cannot be rebuilt continuously for 15 seconds. A single
   capture-session failure begins the grace period; a successful restart clears
   it.
-- **Prolonged silence:** while an application capture is running and not
-  paused, no sample peak exceeds `0.001` (approximately `-60 dBFS`) for three
-  continuous minutes. The timer restarts after pause, capture reconstruction,
-  or audible audio. This is a reminder only; silence is not evidence that the
-  meeting ended.
+- **Prolonged silence:** while an application capture is healthy and recording
+  is not paused, neither the selected application nor an enabled, healthy
+  microphone has a sample peak above `0.001` (approximately `-60 dBFS`) for
+  three continuous minutes. The recording worker checks admitted source
+  packets before alignment, AEC, and mixing, after rejecting obsolete
+  microphone epochs. The timer restarts after pause, application-capture
+  reconstruction, microphone switching, or audible audio from either source.
+  Disabled or disconnected microphones do not contribute activity. This is a
+  reminder only; silence is not evidence that the meeting ended.
 
 When either threshold expires, the controller stores a session-scoped pending
 decision, shows a Tauri always-on-top prompt, and changes the tray state. Nota
 must not stop recording without an explicit user decision. Capture recovery
-automatically dismisses an interruption prompt; audible audio automatically
-dismisses a silence prompt. Choosing **Continue** clears only the current UI
-decision. The same uninterrupted condition does not generate another prompt:
+automatically dismisses an interruption prompt; audible audio from either
+active source automatically dismisses a silence prompt, including microphone
+audio during application-capture reconstruction. Microphone activity does not
+dismiss a capture-interruption prompt. Choosing **Continue** clears only the
+current UI decision. The same uninterrupted condition does not generate another prompt:
 capture must recover before another interruption reminder, and audible audio
 must return before another silence reminder.
 
 ```mermaid
 flowchart TD
-    A["Application capture running"] --> B{"Capture session healthy?"}
+    A["Application recording"] --> E{"Recording paused?"}
+    E -- "Yes" --> F["Clear silence timer and discard paused packets"]
+    F --> A
+    E -- "No" --> P["Recording worker admits application and current microphone packets"]
+    P --> Q{"Either active source has a peak above 0.001 before AEC?"}
+    Q -- "Yes" --> H["Clear and re-arm silence reminder; dismiss an existing silence prompt"]
+    H --> B{"Application capture healthy?"}
+    Q -- "No" --> B
     B -- "No" --> C["Retry capture and clear silence timer"]
     C -->|"recovers"| A
     C -->|"fails for 15 seconds"| D["Show capture interruption reminder"]
-    B -- "Yes" --> E{"Recording paused?"}
-    E -- "Yes" --> F["Do not count silence"]
-    E -- "No" --> G{"Peak above 0.001?"}
-    G -- "Yes" --> H["Clear and re-arm silence reminder"]
-    H --> A
-    G -- "No for less than 3 minutes" --> A
-    G -- "No for 3 minutes" --> I["Show prolonged-silence reminder"]
+    B -- "Yes" --> G{"Both active sources continuously silent?"}
+    G -- "Less than 3 minutes" --> A
+    G -- "3 minutes" --> I["Show prolonged-silence reminder"]
     D --> J{"User decision"}
     I --> J
     J -- "Continue" --> A
@@ -311,6 +320,15 @@ flowchart LR
     B --> C
     C --> T["Update tray icon on main thread"]
 ```
+
+## AEC Filter Resets
+
+Echo cancellation uses Sonora 0.2 or later within the locked compatible
+dependency series. A render-buffer overrun or echo-path change may reset a
+converged filter from 13 partitions to its 12-partition initial size. Shrinking
+must preserve the retained partitions without attempting to clear an invalid
+reversed range; only newly added partitions are cleared when the filter grows.
+Recording continues through these resets with AEC enabled.
 
 ## Live Microphone Switching
 

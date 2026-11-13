@@ -241,13 +241,13 @@ details for reciprocal licenses are in `THIRD_PARTY_SOURCES.md`.
 | smallvec | 1.15.2 | MIT OR Apache-2.0 |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 |
 | softbuffer | 0.4.8 | MIT OR Apache-2.0 |
-| sonora-aec3 | 0.1.0 | BSD-3-Clause |
-| sonora-agc2 | 0.1.0 | BSD-3-Clause |
-| sonora-common-audio | 0.1.0 | BSD-3-Clause |
-| sonora-fft | 0.1.0 | BSD-3-Clause |
-| sonora-ns | 0.1.0 | BSD-3-Clause |
-| sonora-simd | 0.1.0 | BSD-3-Clause |
-| sonora | 0.1.0 | BSD-3-Clause |
+| sonora-aec3 | 0.2.0 | BSD-3-Clause |
+| sonora-agc2 | 0.2.0 | BSD-3-Clause |
+| sonora-common-audio | 0.2.0 | BSD-3-Clause |
+| sonora-fft | 0.2.0 | BSD-3-Clause |
+| sonora-ns | 0.2.0 | BSD-3-Clause |
+| sonora-simd | 0.2.0 | BSD-3-Clause |
+| sonora | 0.2.0 | BSD-3-Clause |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
 | strength_reduce | 0.2.4 | MIT OR Apache-2.0 |
 | string_cache | 0.9.0 | MIT OR Apache-2.0 |

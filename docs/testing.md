@@ -225,13 +225,21 @@ Automated client coverage must include:
   transient-recovery reset, automatic prompt dismissal after successful
   recovery, one alert per uninterrupted failure, session-scoped stale-action
   rejection, and explicit continue/stop actions without capture-scope mutation;
-- selected-application silence using the `0.001` peak threshold and a continuous
-  three-minute delay, pause/rebuild timer reset, audible-audio re-arming,
-  one reminder per silent period, and reason-specific prompt rendering;
+- selected-application recording silence using the `0.001` peak threshold and
+  a continuous three-minute delay only when both the application and enabled,
+  healthy microphone remain silent; microphone-only, application-only, and
+  alternating speech prevent reminders. Cover disabled/disconnected microphone
+  exclusion, pause/rebuild/switch timer reset, either-source dismissal and
+  re-arming, microphone recovery during application reconstruction, one reminder
+  per silent period, and reason-specific prompt rendering;
 - active-recording microphone selection, visible switching state, session-only
   disable behavior, failed-switch rollback, authoritative snapshot recovery,
   source-epoch filtering, microphone-only buffer reset, AEC reconvergence, and
   pause-state inheritance without changing the meeting-audio scope;
+- AEC processing with deterministic synthetic audio through convergence,
+  repeated render-buffer overruns, and subsequent normal processing. Resetting
+  the converged filter from 13 partitions to 12 must not panic, and capture
+  output must remain finite;
 
 Server-side automated coverage must include:
 

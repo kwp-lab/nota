@@ -74,10 +74,11 @@ describe("CapturePromptWindow", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "应用已持续一段时间没有声音",
+        name: "录音音源已持续一段时间没有声音",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/连续 3 分钟未检测到/)).toBeInTheDocument();
+    expect(screen.getByText(/或已启用麦克风的有效声音/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续录音" })).toBeInTheDocument();
     expect(screen.queryByText(/会议已结束/)).not.toBeInTheDocument();
   });
@@ -97,7 +98,7 @@ describe("CapturePromptWindow", () => {
     render(<CapturePromptWindow />);
     expect(
       await screen.findByRole("heading", {
-        name: "应用已持续一段时间没有声音",
+        name: "录音音源已持续一段时间没有声音",
       }),
     ).toBeInTheDocument();
 

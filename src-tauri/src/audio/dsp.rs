@@ -750,6 +750,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn aec_continues_after_render_overruns_reset_converged_filters() {
+        let mut processor = create_aec();
+        let mut render = [0.0f32; FRAME_SAMPLES];
+        let mut capture = [0.0f32; FRAME_SAMPLES];
+        let mut render_output = [0.0f32; FRAME_SAMPLES];
+        let mut capture_output = [0.0f32; FRAME_SAMPLES];
+        let mut noise_state = 12_345u32;
+
+        for _ in 0..600 {
+            for (render_sample, capture_sample) in render.iter_mut().zip(capture.iter_mut()) {
+                noise_state = noise_state
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(1_013_904_223);
+                *render_sample = (noise_state as f32 / u32::MAX as f32 - 0.5) * 0.2;
+                *capture_sample = *render_sample * 0.4;
+            }
+            processor
+                .process_render_f32(&[&render], &mut [&mut render_output])
+                .unwrap();
+            processor
+                .process_capture_f32(&[&capture], &mut [&mut capture_output])
+                .unwrap();
+        }
+
+        for burst_length in 1..=120 {
+            for _ in 0..burst_length {
+                processor
+                    .process_render_f32(&[&render], &mut [&mut render_output])
+                    .unwrap();
+            }
+            processor
+                .process_capture_f32(&[&capture], &mut [&mut capture_output])
+                .unwrap();
+            assert!(capture_output.iter().all(|sample| sample.is_finite()));
+        }
+
+        for _ in 0..100 {
+            processor
+                .process_render_f32(&[&render], &mut [&mut render_output])
+                .unwrap();
+            processor
+                .process_capture_f32(&[&capture], &mut [&mut capture_output])
+                .unwrap();
+            assert!(capture_output.iter().all(|sample| sample.is_finite()));
+        }
+    }
+
+    #[test]
     fn limiter_never_clips() {
         let mut limiter = PeakLimiter::new();
         let mut values = vec![-20.0, -2.0, -1.0, 0.0, 1.0, 2.0, 20.0];
