@@ -439,8 +439,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 [0.12.0]: https://github.com/kwp-lab/nota/compare/8f70b3eeb069a74204c6b32488f28a8500a99074...v0.12.0
 [0.11.0]: https://github.com/kwp-lab/nota/compare/c08ed24def3f62e66141a27cadf9978e3101f462...8f70b3eeb069a74204c6b32488f28a8500a99074
 [0.10.0]: https://github.com/kwp-lab/nota/compare/1a2dd2af4a40c11f10b1c32759a8b24732e5ee31...c08ed24def3f62e66141a27cadf9978e3101f462
-[0.9.0]: https://github.com/kwp-lab/nota/compare/ce7c1e0a20c929faacff37529f07f68ee5f662fb...1a2dd2af4a40c11f10b1c32759a8b24732e5ee31
-[0.8.0]: https://github.com/kwp-lab/nota/compare/v0.7.0...ce7c1e0a20c929faacff37529f07f68ee5f662fb
+[0.9.0]: https://github.com/kwp-lab/nota/compare/2ef742f7f9539ae41f0f1678cb1a72ada227b6ba...1a2dd2af4a40c11f10b1c32759a8b24732e5ee31
+[0.8.0]: https://github.com/kwp-lab/nota/compare/v0.7.0...2ef742f7f9539ae41f0f1678cb1a72ada227b6ba
 [0.7.0]: https://github.com/kwp-lab/nota/compare/069d067d016282ae7a9ca24a360fcc64a7b4155b...v0.7.0
 [0.6.0]: https://github.com/kwp-lab/nota/compare/9dca2a84e556bf813f98beb0bab82ab5c5eb6295...069d067d016282ae7a9ca24a360fcc64a7b4155b
 [0.5.0]: https://github.com/kwp-lab/nota/compare/526ae588227869b930c6bd78aa54bfaa36c52a31...9dca2a84e556bf813f98beb0bab82ab5c5eb6295
