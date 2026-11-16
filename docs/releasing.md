@@ -1,7 +1,7 @@
 # Releasing Nota
 
 - Status: Accepted
-- Last updated: 2026-08-01
+- Last updated: 2026-11-16
 - Owners: Nota release maintainers
 - Related files: `CHANGELOG.md`, `package.json`, `src-tauri/Cargo.toml`,
   `src-tauri/tauri.conf.json`, `.github/workflows/release.yml`, `scripts/`
@@ -30,19 +30,24 @@ internal commands where its steps need separate names and logs.
 
 ## Prepare the version
 
-Start from an up-to-date branch and update every application manifest with one
-command:
+Start a release branch from an up-to-date `main`. Move the release's entries
+from `[Unreleased]` into a dated `CHANGELOG.md` section and update its comparison
+links before changing the version. Historical versions without tags use their
+version commits as comparison endpoints. Then update every application manifest
+with one command and regenerate the version-dependent compliance artifacts:
 
 ```powershell
-.\scripts\set-version.ps1 0.2.0
+.\scripts\set-version.ps1 -Version 0.12.0
 .\scripts\verify-version.ps1
+npm run licenses:generate
+npm run check
 ```
 
-Review and commit the manifest and lockfile changes, then run `npm run check`
-locally before merging to `main`. The repository CI workflow is manual-only;
-maintainers may dispatch it from GitHub Actions when a clean hosted Windows
-environment is useful, but pull requests and pushes do not start it
-automatically.
+Review and commit the changelog, manifest, lockfile, and compliance changes,
+then open a pull request to `main`. The PR Gate workflow runs the affected
+frontend, native, and dependency-compliance checks automatically. Wait for
+those checks before merging. The separate full CI workflow remains available
+for manual dispatch.
 
 Before tagging, produce and inspect the local release-grade assets when the
 change affects packaging or Windows integration:
@@ -59,8 +64,9 @@ same version:
 ```powershell
 git switch main
 git pull --ff-only
-git tag -a v0.2.0 -m "Nota v0.2.0"
-git push origin v0.2.0
+.\scripts\verify-version.ps1 -Tag v0.12.0
+git tag -a v0.12.0 -m "Nota v0.12.0"
+git push origin v0.12.0
 ```
 
 The release workflow will:
