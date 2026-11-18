@@ -3106,15 +3106,7 @@ pub fn run_app() {
         .interrupt_running_ai_generations()
         .expect("无法恢复上次中断的 AI 文档任务状态");
     let recorder = Arc::new(RecordingController::new(Arc::clone(&storage)));
-    let weak_recorder = Arc::downgrade(&recorder);
-    let asr = Arc::new(AsrManager::new(
-        Arc::clone(&storage),
-        Arc::new(move || {
-            weak_recorder
-                .upgrade()
-                .is_some_and(|recorder| recorder.is_active())
-        }),
-    ));
+    let asr = Arc::new(AsrManager::new(Arc::clone(&storage)));
     let ai = Arc::new(AiManager::new(Arc::clone(&storage)));
     let weak_recorder_for_import = Arc::downgrade(&recorder);
     let importer = Arc::new(

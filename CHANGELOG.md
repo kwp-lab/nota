@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- Allowed transcription of saved meetings while another meeting is recording,
+  including resumed jobs and legacy audio chunks. Local queued jobs now show
+  their waiting state instead of claiming that upload or server processing
+  has already started.
+
 ## [0.12.0] - 2026-11-16
 
 ### Added

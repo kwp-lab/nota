@@ -139,6 +139,13 @@ fields are:
 | `text`, `segments_json`, `language` | Durable result for this generation |
 | `error_message` | Bounded user-facing failure detail |
 
+Starting or resuming a local transcription stores `status=queued` and
+`progress_phase=preparing`; it does not claim an upload or remote server queue.
+Actual Provider execution updates those phases. Resume preserves remote job
+identity, Provider-private checkpoint, and completed chunks, even while a
+different recording is active. This uses existing fields and needs no schema
+migration.
+
 ### `participants`, `voiceprints`, and speaker name mappings
 
 `participants` owns the stable local display name. `voiceprints` stores

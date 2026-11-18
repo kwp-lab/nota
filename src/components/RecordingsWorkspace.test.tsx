@@ -148,6 +148,7 @@ const renderWorkspace = (
     completedAt: document.completedAt ?? document.updatedAt,
     isCurrent: true,
   }] : [],
+  recordingActive = false,
 ) => {
   const actions = {
     onSelect: vi.fn(),
@@ -184,7 +185,7 @@ const renderWorkspace = (
       transcript={document}
       transcriptionVersions={transcriptionVersions}
       transcriptLoading={false}
-      recordingActive={false}
+      recordingActive={recordingActive}
       audioImport={null}
       hasProvider
       activeProviderKind={activeProviderKind}
@@ -208,6 +209,107 @@ afterEach(() => {
 });
 
 describe("RecordingsWorkspace", () => {
+  it("allows transcribing a saved meeting while another recording is active", async () => {
+    const saved = { ...completed, transcription: null };
+    const actions = renderWorkspace(
+      [saved], saved.id, null, "openAiCompatible", [], true, [], true,
+    );
+
+    expect(screen.getByText("录音仍在进行")).toBeInTheDocument();
+    const start = screen.getByRole("button", { name: "开始转写" });
+    expect(start).toBeEnabled();
+    fireEvent.click(start);
+    await waitFor(() => {
+      expect(actions.onStartTranscription).toHaveBeenCalledWith(saved.id, null);
+    });
+  });
+
+  it("allows resuming an interrupted saved meeting during another recording", async () => {
+    const actions = renderWorkspace(
+      [failed], failed.id, null, "funAsr", [], true, [], true,
+    );
+    expect(screen.getByText("录音仍在进行")).toBeInTheDocument();
+    const resume = screen.getByRole("button", { name: "继续转写" });
+    expect(resume).toBeEnabled();
+    fireEvent.click(resume);
+    await waitFor(() => {
+      expect(actions.onResumeTranscription).toHaveBeenCalledWith(failed.id);
+    });
+  });
+
+  it("treats an older queued upload phase as a local wait", async () => {
+    const queued: RecordingItem = {
+      ...completed,
+      transcription: {
+        ...completed.transcription!,
+        protocol: "dashscope_filetrans_v1",
+        status: "queued",
+        progressPhase: "uploading",
+        progressCurrent: 0,
+        progressTotal: 0,
+        progressUnit: "bytes",
+      },
+    };
+    renderWorkspace([queued], queued.id, null);
+    await waitFor(() => {
+      expect(screen.getByText("任务已加入本地队列，等待开始处理")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/上传录音/)).not.toBeInTheDocument();
+  });
+
+  it.each(["nota_batch_v1", "dashscope_filetrans_v1", "legacy_chunks"] as const)(
+    "shows a locally queued %s task without claiming upload or server progress",
+    async (protocol) => {
+      const queued: RecordingItem = {
+        ...completed,
+        transcription: {
+          ...completed.transcription!,
+          protocol,
+          status: "queued",
+          progressPhase: "preparing",
+          progressCurrent: 4 * 1024 * 1024,
+          progressTotal: 8 * 1024 * 1024,
+          progressUnit: "bytes",
+        },
+      };
+      renderWorkspace([queued], queued.id, null);
+      await waitFor(() => {
+        expect(screen.getByText("任务已加入本地队列，等待开始处理")).toBeInTheDocument();
+      });
+      const progress = screen.getByRole("progressbar").parentElement!;
+      expect(within(progress).getByText("排队中")).toBeInTheDocument();
+      expect(screen.queryByText(/已上传/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/上传录音/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/50%/)).not.toBeInTheDocument();
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+    },
+  );
+
+  it.each(["nota_batch_v1", "dashscope_filetrans_v1"] as const)(
+    "keeps remote queue progress distinct for %s",
+    async (protocol) => {
+      const queued: RecordingItem = {
+        ...completed,
+        transcription: {
+          ...completed.transcription!,
+          protocol,
+          status: protocol === "nota_batch_v1" ? "queued" : "transcribing",
+          progressPhase: "queued",
+          progressCurrent: 0,
+          progressTotal: 3,
+          progressUnit: "steps",
+        },
+      };
+      renderWorkspace([queued], queued.id, null);
+      await waitFor(() => {
+        expect(screen.getByText("录音已上传，等待服务器处理")).toBeInTheDocument();
+      });
+      const progress = screen.getByRole("progressbar").parentElement!;
+      expect(within(progress).getByText("服务器排队")).toBeInTheDocument();
+      expect(screen.queryByText(/任务已加入本地队列/)).not.toBeInTheDocument();
+    },
+  );
+
   it("places the recording-list toggle before the title and names its next action", async () => {
     const actions = renderWorkspace();
     await waitFor(() => expect(actions.onPreparePlayback).toHaveBeenCalled());

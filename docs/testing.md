@@ -177,6 +177,12 @@ Automated client coverage must include:
   generation key, preservation of completed results, current-version pointer
   updates, and completed-version selection;
 - persistence of remote job identity and generic progress;
+- saved-recording transcription controls remaining available during another
+  active recording, with the ASR manager independent of capture state;
+- new and resumed local jobs using queued/preparing across all three Provider
+  protocols, duplicate rejection, and remote checkpoint preservation;
+- local queue presentation without stale upload percentages or server-queue
+  claims, while retaining actual upload and server processing presentation;
 - FunASR manual speaker-count defaults, 1/64 boundaries, invalid input,
   cancellation, retranscription, and recovery from the persisted snapshot;
 - automatic transcription always using automatic speaker detection and the

@@ -214,14 +214,20 @@ const batchPhaseLabels = {
   finalizing: "整理结果",
 } as const;
 
-const transcriptionLabel = (transcription: TranscriptionSummary) =>
-  transcription.protocol !== "legacy_chunks"
-  && processingStatuses.includes(transcription.status)
-  && transcription.progressPhase
+const isLocallyQueued = (transcription: TranscriptionSummary) =>
+  transcription.status === "queued" && transcription.progressPhase !== "queued";
+
+const transcriptionLabel = (transcription: TranscriptionSummary) => {
+  if (isLocallyQueued(transcription)) return statusLabels.queued;
+  return transcription.protocol !== "legacy_chunks"
+    && processingStatuses.includes(transcription.status)
+    && transcription.progressPhase
     ? batchPhaseLabels[transcription.progressPhase]
     : statusLabels[transcription.status];
+};
 
 const transcriptionProgress = (transcription: TranscriptionSummary) => {
+  if (isLocallyQueued(transcription)) return "任务已加入本地队列，等待开始处理";
   if (transcription.protocol === "legacy_chunks") {
     return transcription.totalChunks
       ? `已完成 ${transcription.completedChunks} / ${transcription.totalChunks} 个分块`
@@ -240,6 +246,7 @@ const transcriptionProgress = (transcription: TranscriptionSummary) => {
 };
 
 const transcriptionProgressSuffix = (transcription: TranscriptionSummary) => {
+  if (isLocallyQueued(transcription)) return "";
   if (!processingStatuses.includes(transcription.status)) return "";
   if (transcription.protocol !== "legacy_chunks") {
     if (transcription.progressTotal <= 0) return "";
@@ -1101,14 +1108,18 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                 <progress
                   max={Math.max(
                     1,
-                    transcription!.protocol !== "legacy_chunks"
-                      ? transcription!.progressTotal
-                      : transcription!.totalChunks,
+                    isLocallyQueued(transcription!)
+                      ? 1
+                      : transcription!.protocol !== "legacy_chunks"
+                        ? transcription!.progressTotal
+                        : transcription!.totalChunks,
                   )}
                   value={
-                    transcription!.protocol !== "legacy_chunks"
-                      ? transcription!.progressCurrent
-                      : transcription!.completedChunks
+                    isLocallyQueued(transcription!)
+                      ? 0
+                      : transcription!.protocol !== "legacy_chunks"
+                        ? transcription!.progressCurrent
+                        : transcription!.completedChunks
                   }
                 />
               </div>

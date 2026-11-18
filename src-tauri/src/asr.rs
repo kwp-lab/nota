@@ -111,22 +111,14 @@ pub struct AsrManager {
 }
 
 impl AsrManager {
-    pub fn new(storage: Arc<Storage>, is_recording: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+    pub fn new(storage: Arc<Storage>) -> Self {
         let (sender, receiver) = unbounded();
         let cancellations = Arc::new(Mutex::new(HashMap::new()));
         let worker_storage = Arc::clone(&storage);
         let worker_cancellations = Arc::clone(&cancellations);
-        let worker_recording = Arc::clone(&is_recording);
         std::thread::Builder::new()
             .name("nota-asr-worker".into())
-            .spawn(move || {
-                worker_loop(
-                    receiver,
-                    worker_storage,
-                    worker_cancellations,
-                    worker_recording,
-                )
-            })
+            .spawn(move || worker_loop(receiver, worker_storage, worker_cancellations))
             .expect("无法启动 Nota 转写工作线程");
         Self {
             storage,
@@ -361,7 +353,6 @@ fn worker_loop(
     receiver: Receiver<TranscriptionJob>,
     storage: Arc<Storage>,
     cancellations: Arc<Mutex<HashMap<String, Arc<Cancellation>>>>,
-    is_recording: Arc<dyn Fn() -> bool + Send + Sync>,
 ) {
     while let Ok(job) = receiver.recv() {
         let started_at = Instant::now();
@@ -384,7 +375,7 @@ fn worker_loop(
                     cloud_continues: AtomicBool::new(false),
                 })
             });
-        let result = process_job(&job, &storage, cancellation.as_ref(), is_recording.as_ref());
+        let result = process_job(&job, &storage, cancellation.as_ref());
         if let Err(error) = result {
             let cancelled = cancellation.requested.load(Ordering::Acquire);
             let cloud_continues = cancellation.cloud_continues.load(Ordering::Acquire);
@@ -467,12 +458,7 @@ fn process_job(
     job: &TranscriptionJob,
     storage: &Arc<Storage>,
     cancellation: &Cancellation,
-    is_recording: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<()> {
-    while is_recording() {
-        ensure_not_cancelled(&cancellation.requested)?;
-        std::thread::sleep(Duration::from_millis(250));
-    }
     ensure_not_cancelled(&cancellation.requested)?;
 
     let recording = storage.find_recording(&job.recording_id)?;
@@ -546,10 +532,6 @@ fn process_job(
 
     loop {
         ensure_not_cancelled(&cancellation.requested)?;
-        while is_recording() {
-            ensure_not_cancelled(&cancellation.requested)?;
-            std::thread::sleep(Duration::from_millis(250));
-        }
         let wanted = if chunk_index == 0 {
             CHUNK_SAMPLES
         } else {
@@ -564,10 +546,6 @@ fn process_job(
         samples.extend_from_slice(&fresh);
         if samples.is_empty() {
             break;
-        }
-        while is_recording() {
-            ensure_not_cancelled(&cancellation.requested)?;
-            std::thread::sleep(Duration::from_millis(250));
         }
         let is_last = reader.finished();
         let start_ms = chunk_start_ms(chunk_index);

@@ -187,6 +187,19 @@ terms:
 
 ## Cancellation, Interruption, and Resume
 
+Transcription requests for saved recordings can run while another recording is
+active. The ASR manager keeps one sequential worker and rejects duplicate jobs
+for the same recording, but does not gate dispatch, legacy decoding, or legacy
+requests on the current capture state. Audio capture and transcription use
+separate files and worker threads.
+
+New and resumed local jobs use `status=queued` and
+`progress_phase=preparing` until dispatched. The UI displays this as a local
+wait, including older queued rows whose phase still says `uploading`.
+`progress_phase=queued` continues to mean an acknowledged server queue.
+Resuming does not clear remote job identities, Provider-private checkpoints,
+completed legacy chunks, or the generation snapshot.
+
 User cancellation:
 
 1. sets the local cancellation flag;

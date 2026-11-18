@@ -1938,14 +1938,7 @@ impl Storage {
             AsrProviderKind::OpenAiCompatible => TranscriptionProtocol::LegacyChunks,
             AsrProviderKind::DashScope => TranscriptionProtocol::DashScopeFileTransV1,
         };
-        let progress_phase = if matches!(
-            protocol,
-            TranscriptionProtocol::NotaBatchV1 | TranscriptionProtocol::DashScopeFileTransV1
-        ) {
-            TranscriptionProgressPhase::Uploading
-        } else {
-            TranscriptionProgressPhase::Preparing
-        };
+        let progress_phase = TranscriptionProgressPhase::Preparing;
         let idempotency_key = uuid::Uuid::new_v4().to_string();
         let mut connection = self.connection.lock();
         let transaction = connection.transaction()?;
@@ -2039,10 +2032,7 @@ impl Storage {
         connection.execute(
             "UPDATE transcriptions
              SET status = 'queued',
-                 progress_phase = CASE
-                   WHEN protocol IN ('nota_batch_v1', 'dashscope_filetrans_v1') THEN 'queued'
-                   ELSE 'preparing'
-                 END,
+                 progress_phase = 'preparing',
                  error_message = NULL, updated_at = ?2
              WHERE recording_id = ?1 AND generation = ?3",
             params![recording_id, Utc::now().to_rfc3339(), generation],
@@ -5590,6 +5580,112 @@ mod tests {
         assert_eq!(summary.completed_chunks, 0);
         assert_eq!(summary.total_chunks, 0);
 
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_transcription_queue_does_not_claim_upload_or_remote_queue_progress() {
+        let (root, storage) = test_storage();
+        let base_provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Keep))
+            .unwrap();
+        for kind in [
+            AsrProviderKind::FunAsr,
+            AsrProviderKind::DashScope,
+            AsrProviderKind::OpenAiCompatible,
+        ] {
+            let mut provider = base_provider.clone();
+            provider.kind = kind;
+            provider.capabilities = kind.capabilities();
+            let recording_id = format!("queue-{}", kind.as_str());
+            storage
+                .insert_recording(&RecordingItem {
+                    id: recording_id.clone(),
+                    title: "Saved meeting".into(),
+                    path: storage
+                        .paths
+                        .default_recordings
+                        .join(format!("{recording_id}.ogg"))
+                        .to_string_lossy()
+                        .into_owned(),
+                    created_at: "2026-11-18T00:00:00Z".into(),
+                    duration_ms: 1_000,
+                    size_bytes: 100,
+                    recovered: false,
+                    origin: RecordingOrigin::Captured,
+                    source_file_name: None,
+                    source_format: None,
+                    imported_at: None,
+                    transcription: None,
+                })
+                .unwrap();
+            let generation = storage
+                .begin_transcription(&recording_id, &provider, None)
+                .unwrap();
+            let summary = storage.transcription_summary(&recording_id).unwrap();
+            assert_eq!(summary.status, TranscriptionStatus::Queued);
+            assert_eq!(
+                summary.progress_phase,
+                Some(TranscriptionProgressPhase::Preparing)
+            );
+            assert_eq!(summary.progress_current, 0);
+            assert!(
+                storage
+                    .begin_transcription(&recording_id, &provider, None)
+                    .is_err()
+            );
+
+            storage
+                .set_transcription_provider_checkpoint(
+                    &recording_id,
+                    generation,
+                    Some("existing-remote-job"),
+                    r#"{"version":1,"stage":"running"}"#,
+                )
+                .unwrap();
+            storage
+                .set_batch_transcription_progress(
+                    &recording_id,
+                    generation,
+                    TranscriptionStatus::Transcribing,
+                    TranscriptionProgressPhase::Transcribing,
+                    1,
+                    3,
+                    TranscriptionProgressUnit::Steps,
+                )
+                .unwrap();
+            storage
+                .set_transcription_error(
+                    &recording_id,
+                    generation,
+                    TranscriptionStatus::Interrupted,
+                    "Interrupted for test",
+                )
+                .unwrap();
+            assert_eq!(
+                storage.resume_transcription(&recording_id).unwrap(),
+                generation
+            );
+            let summary = storage.transcription_summary(&recording_id).unwrap();
+            assert_eq!(summary.status, TranscriptionStatus::Queued);
+            assert_eq!(
+                summary.progress_phase,
+                Some(TranscriptionProgressPhase::Preparing)
+            );
+            let execution = storage
+                .transcription_execution_for_generation(&recording_id, generation)
+                .unwrap();
+            assert_eq!(
+                execution.remote_job_id.as_deref(),
+                Some("existing-remote-job")
+            );
+            assert_eq!(
+                execution.provider_state_json,
+                r#"{"version":1,"stage":"running"}"#
+            );
+            assert!(storage.resume_transcription(&recording_id).is_err());
+        }
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }

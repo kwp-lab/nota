@@ -11,7 +11,8 @@
   [`0001-whole-meeting-funasr-jobs.md`](decisions/0001-whole-meeting-funasr-jobs.md),
   [`0010-direct-dashscope-file-transcription.md`](decisions/0010-direct-dashscope-file-transcription.md),
   [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md),
-  [`0008-local-privacy-safe-diagnostic-logs.md`](decisions/0008-local-privacy-safe-diagnostic-logs.md)
+  [`0008-local-privacy-safe-diagnostic-logs.md`](decisions/0008-local-privacy-safe-diagnostic-logs.md),
+  [`0015-transcribe-saved-meetings-during-recording.md`](decisions/0015-transcribe-saved-meetings-during-recording.md)
 
 ## Purpose
 
@@ -198,10 +199,32 @@ one background worker thread and a queue, so desktop-side transcription jobs are
 processed sequentially. A per-recording cancellation registry prevents the
 same recording from being enqueued twice.
 
-If transcription is requested while recording is active, the ASR worker waits
-until recording stops. On application startup, locally queued, preparing, or
+Transcription of a saved recording runs independently of an active recording.
+The ASR manager does not receive the recording controller or a recording-state
+callback. All three Provider protocols, resumed jobs, and legacy chunk decoding
+and requests may proceed while a different meeting is recording. Requests read
+the indexed, committed recording file; they do not receive the active capture
+buffer or recovery file. Recording finalization commits the Ogg before adding
+its index entry.
+
+Local ASR enqueue and resume persist `status=queued` with
+`progress_phase=preparing`. Provider dispatch supplies subsequent upload and
+remote progress. A local wait is distinct from a server queue, which uses
+`progress_phase=queued`. On application startup, locally queued, preparing, or
 transcribing records are marked `interrupted`; the user can explicitly resume
 them.
+
+```mermaid
+flowchart LR
+    A["Record current meeting"] --> B["Finalize and commit its Ogg"]
+    B --> C["Index saved recording"]
+    C --> D["Explicit transcription request or enabled auto-transcription"]
+    D --> E["Local ASR queue: queued / preparing"]
+    E --> F["Single ASR worker dispatches saved file"]
+    F --> G["Provider upload, server queue, and processing"]
+    G --> H["Commit transcript for that recording and generation"]
+    A -. "runs independently of the ASR worker" .-> F
+```
 
 The audio import manager owns one sequential, cancellable batch. Recording
 start rejects while import is active, and import start rejects while recording
