@@ -11,7 +11,6 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { useSettingsController } from "./hooks/useSettingsController";
 import { AiDocumentsSettingsPage } from "./pages/AiDocumentsSettingsPage";
 import { RecordingSettingsPage } from "./pages/RecordingSettingsPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -44,7 +43,7 @@ const navigation: Array<{
 ];
 
 export function SettingsWorkspace(props: SettingsWorkspaceProps) {
-  const controller = useSettingsController(props.model, props.actions);
+  const controller = props.controller;
   const [editorDirty, setEditorDirty] = useState(false);
   const [asrReturnRoute, setAsrReturnRoute] = useState<"setup" | "transcription">("transcription");
   const activeRoute = parentSettingsRoute(props.route);

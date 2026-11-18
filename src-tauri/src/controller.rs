@@ -1406,9 +1406,13 @@ fn stop_in_background(app: &AppHandle, recorder: Arc<RecordingController>) {
 }
 
 #[tauri::command]
-async fn list_capture_targets() -> std::result::Result<Vec<CaptureTarget>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+async fn list_capture_targets(
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<CaptureTarget>, String> {
+    let hidden_executables = command_result(state.storage.settings())?.hidden_capture_executables;
+    tauri::async_runtime::spawn_blocking(move || {
         let mut targets = command_result(enumerate_capture_targets())?;
+        targets.retain(|target| !target.is_hidden(&hidden_executables));
         attach_capture_target_icons(&mut targets);
         Ok(targets)
     })
@@ -3309,6 +3313,7 @@ mod settings_tests {
             auto_transcribe: false,
             auto_transcribe_hotword_list_id: None,
             active_llm_provider_id: None,
+            hidden_capture_executables: Vec::new(),
         }
     }
 

@@ -3,6 +3,7 @@ import type { AecMode } from "../../../types";
 import type { SettingsController } from "../hooks/useSettingsController";
 import { SelectControl, SettingsCard, SettingsPageHeader, SettingsSection } from "../SettingsPrimitives";
 import type { SettingsModel } from "../types";
+import { HiddenCaptureTargetsSettings } from "./HiddenCaptureTargetsSettings";
 
 export function RecordingSettingsPage(props: {
   model: SettingsModel;
@@ -50,6 +51,7 @@ export function RecordingSettingsPage(props: {
           </SelectControl>
         </SettingsCard>
       </SettingsSection>
+      <HiddenCaptureTargetsSettings model={props.model} controller={props.controller} />
       <SettingsSection title="文件">
         <SettingsCard
           icon={<Folder size={17} />}

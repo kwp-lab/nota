@@ -1,9 +1,11 @@
 import type {
   AppSettings,
   AsrProvider,
+  CaptureTarget,
   LlmProvider,
 } from "../../types";
 import type { ToastTone } from "../ToastRegion";
+import type { SettingsController } from "./hooks/useSettingsController";
 
 export type SettingsRoute =
   | "setup"
@@ -24,6 +26,7 @@ export interface SettingsModel {
   microphoneCount: number;
   appVersion: string;
   recordingActive: boolean;
+  captureTargets: CaptureTarget[];
 }
 
 export interface SettingsActions {
@@ -37,6 +40,7 @@ export interface SettingsActions {
 }
 
 export interface SettingsWorkspaceProps {
+  controller: SettingsController;
   route: SettingsRoute;
   onRouteChange: (route: SettingsRoute) => void;
   model: SettingsModel;

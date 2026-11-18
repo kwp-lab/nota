@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { api, type UnlistenFn } from "./api";
 import {
+  captureTargetExecutableName,
+  isCaptureTargetHidden,
   preferenceForTarget,
   resolveCaptureTarget,
   type CaptureTargetPreference,
@@ -32,6 +34,7 @@ import {
   SettingsWorkspace,
   type SettingsRoute,
 } from "./components/settings";
+import { useSettingsController } from "./components/settings/hooks/useSettingsController";
 import { VoiceprintsWorkspace } from "./components/VoiceprintsWorkspace";
 import { HotwordLibraryWorkspace } from "./components/HotwordLibraryWorkspace";
 import {
@@ -88,6 +91,7 @@ const defaultSettings: AppSettings = {
   voiceprintProviderId: null,
   autoTranscribe: false,
   activeLlmProviderId: null,
+  hiddenCaptureExecutables: [],
 };
 
 const formatElapsed = (milliseconds: number) => {
@@ -159,6 +163,10 @@ export default function App() {
   const [settingsEditorDirty, setSettingsEditorDirty] = useState(false);
   const targetIdRef = useRef("");
   const targetPreferenceRef = useRef<CaptureTargetPreference | null>(null);
+  const hiddenExecutablesRef = useRef<string[]>([]);
+  const captureTargetsRevisionRef = useRef(0);
+  const captureSelectionClearedRef = useRef(false);
+  const settingsLoadedRef = useRef(false);
   const refreshTargetsPromiseRef = useRef<Promise<CaptureTarget[]> | null>(null);
   const requestStartRef = useRef<(mode?: StartRequestMode) => void>(() => undefined);
   const lastCompletedSessionRef = useRef<string | null>(null);
@@ -318,12 +326,17 @@ export default function App() {
   }, []);
 
   const applyCaptureTargets = useCallback((nextTargets: CaptureTarget[]) => {
-    const selected = resolveCaptureTarget(
-      nextTargets,
-      targetIdRef.current,
-      targetPreferenceRef.current,
+    const visibleTargets = nextTargets.filter(
+      (target) => !isCaptureTargetHidden(target, hiddenExecutablesRef.current),
     );
-    setTargets(nextTargets);
+    const selected = captureSelectionClearedRef.current && !targetPreferenceRef.current
+      ? undefined
+      : resolveCaptureTarget(
+        visibleTargets,
+        targetIdRef.current,
+        targetPreferenceRef.current,
+      );
+    setTargets(visibleTargets);
     targetIdRef.current = selected?.id ?? "";
     setTargetId(selected?.id ?? "");
     if (selected) {
@@ -332,17 +345,42 @@ export default function App() {
     return selected;
   }, []);
 
+  const applySettings = useCallback((next: AppSettings) => {
+    if (
+      next.hiddenCaptureExecutables.length !== hiddenExecutablesRef.current.length ||
+      next.hiddenCaptureExecutables.some((name, index) => name !== hiddenExecutablesRef.current[index])
+    ) captureTargetsRevisionRef.current++;
+    hiddenExecutablesRef.current = next.hiddenCaptureExecutables;
+    const preference = targetPreferenceRef.current;
+    if (preference && isCaptureTargetHidden(preference, next.hiddenCaptureExecutables)) {
+      targetPreferenceRef.current = null;
+      targetIdRef.current = "";
+      captureSelectionClearedRef.current = true;
+      setTargetId("");
+    }
+    setTargets((current) => current.filter(
+      (target) => !isCaptureTargetHidden(target, next.hiddenCaptureExecutables),
+    ));
+    setSettings(next);
+  }, []);
+
   const refreshTargets = useCallback(() => {
     if (refreshTargetsPromiseRef.current) {
       return refreshTargetsPromiseRef.current;
     }
     setTargetsRefreshing(true);
-    const request = api
-      .listCaptureTargets()
-      .then((nextTargets) => {
-        applyCaptureTargets(nextTargets);
-        return nextTargets;
-      })
+    const request = (async () => {
+      let revision: number;
+      let nextTargets: CaptureTarget[];
+      do {
+        revision = captureTargetsRevisionRef.current;
+        nextTargets = await api.listCaptureTargets();
+      } while (revision !== captureTargetsRevisionRef.current);
+      applyCaptureTargets(nextTargets);
+      return nextTargets.filter(
+        (target) => !isCaptureTargetHidden(target, hiddenExecutablesRef.current),
+      );
+    })()
       .finally(() => {
         refreshTargetsPromiseRef.current = null;
         setTargetsRefreshing(false);
@@ -367,7 +405,7 @@ export default function App() {
     let unlistenAsr: UnlistenFn | undefined;
     let unlistenImport: UnlistenFn | undefined;
     void Promise.all([
-      refreshTargets(),
+      api.listCaptureTargets(),
       refreshDevices(),
       api.getSettings(),
       api.getSnapshot(),
@@ -380,9 +418,10 @@ export default function App() {
     ])
       .then(async ([targetList, deviceList, savedSettings, current, version, savedProviders, savedLlmProviders, savedParticipants, savedImport, savedHotwordLists]) => {
         if (!mounted) return;
+        applySettings(savedSettings);
+        settingsLoadedRef.current = true;
         applyCaptureTargets(targetList);
         setDevices(deviceList);
-        setSettings(savedSettings);
         if (!savedSettings.firstRunComplete) {
           setSettingsRoute("setup");
           setPage("settings");
@@ -441,6 +480,7 @@ export default function App() {
     };
   }, [
     applyCaptureTargets,
+    applySettings,
     applySnapshot,
     applyAudioImportSnapshot,
     refreshDevices,
@@ -571,11 +611,13 @@ export default function App() {
   );
 
   const sourceDescription =
-    captureMode === "process"
-      ? selectedTarget?.displayName ?? "未选择应用"
-      : renderDeviceId === "default"
-        ? `全部系统声音 · ${defaultRenderLabel}`
-        : `全部系统声音 · ${renderDevices.find((device) => device.id === renderDeviceId)?.name ?? ""}`;
+    isActive(snapshot.state)
+      ? snapshot.system.label
+      : captureMode === "process"
+        ? selectedTarget?.displayName ?? "未选择应用"
+        : renderDeviceId === "default"
+          ? `全部系统声音 · ${defaultRenderLabel}`
+          : `全部系统声音 · ${renderDevices.find((device) => device.id === renderDeviceId)?.name ?? ""}`;
 
   const selectTarget = (
     nextTargetId: string,
@@ -586,6 +628,7 @@ export default function App() {
       targets.find((candidate) => candidate.id === nextTargetId);
     targetIdRef.current = nextTargetId;
     targetPreferenceRef.current = target ? preferenceForTarget(target) : null;
+    captureSelectionClearedRef.current = !target;
     setTargetId(nextTargetId);
   };
 
@@ -614,15 +657,19 @@ export default function App() {
 
       if (requestedMode === "process") {
         const refreshedTargets = await refreshTargets();
-        const target = resolveCaptureTarget(
-          refreshedTargets,
-          targetIdRef.current,
-          targetPreferenceRef.current,
-        );
+        const target = captureSelectionClearedRef.current && !targetPreferenceRef.current
+          ? undefined
+          : resolveCaptureTarget(
+            refreshedTargets,
+            targetIdRef.current,
+            targetPreferenceRef.current,
+          );
         if (!target) {
           showToast(
             "warning",
-            "没有找到可录制的应用。请启动会议应用后刷新并选择录音来源。",
+            captureSelectionClearedRef.current
+              ? "请选择录音来源后再开始录音。"
+              : "没有找到可录制的应用。请启动会议应用后刷新并选择录音来源。",
           );
           return;
         }
@@ -645,9 +692,7 @@ export default function App() {
     try {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected !== "string") return;
-      const next = { ...settings, outputDirectory: selected };
-      await api.saveSettings(next);
-      setSettings(next);
+      await settingsController.savePatch({ outputDirectory: selected });
     } catch (error) {
       showError(error);
     }
@@ -701,10 +746,8 @@ export default function App() {
   };
 
   const setVoiceprintProvider = async (id: string | null) => {
-    const next = { ...settings, voiceprintProviderId: id };
     try {
-      await api.saveSettings(next);
-      setSettings(next);
+      await settingsController.savePatch({ voiceprintProviderId: id });
       showToast("success", id ? "声纹提取服务已更新" : "已清除声纹提取服务");
     } catch (error) {
       showError(error);
@@ -863,9 +906,10 @@ export default function App() {
     microphoneCount: micDevices.length,
     appVersion,
     recordingActive: isActive(snapshot.state),
-  }), [appVersion, llmProviders, micDevices.length, providers, settings, snapshot.state]);
+    captureTargets: targets,
+  }), [appVersion, llmProviders, micDevices.length, providers, settings, snapshot.state, targets]);
   const settingsActions = useMemo(() => ({
-    onSettingsChange: setSettings,
+    onSettingsChange: applySettings,
     onAsrProvidersChange: setProviders,
     onLlmProvidersChange: setLlmProviders,
     onFirstRunComplete: () => {
@@ -875,7 +919,33 @@ export default function App() {
     onEditorDirtyChange: setSettingsEditorDirty,
     onToast: showToast,
     onError: showError,
-  }), [showError, showToast]);
+  }), [applySettings, showError, showToast]);
+  const settingsController = useSettingsController(settingsModel, settingsActions);
+
+  useEffect(() => {
+    if (settingsLoadedRef.current && !settingsController.savingPreferences) {
+      void refreshTargets().catch(showError);
+    }
+  }, [refreshTargets, settings.hiddenCaptureExecutables, settingsController.savingPreferences, showError]);
+
+  const hideCaptureTarget = async (target: CaptureTarget) => {
+    const executable = captureTargetExecutableName(target).toLowerCase();
+    try {
+      await settingsController.setCaptureTargetHidden(executable, true);
+      showToast("success", `已隐藏 ${executable}`, {
+        durationMs: 8_000,
+        action: {
+          label: "撤销",
+          onClick: () => {
+            void settingsController.setCaptureTargetHidden(executable, false)
+              .catch(() => undefined);
+          },
+        },
+      });
+    } catch {
+      return;
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -1008,6 +1078,16 @@ export default function App() {
                         unavailableTarget={targetPreferenceRef.current}
                         refreshing={targetsRefreshing}
                         onValueChange={selectTarget}
+                        hiddenCount={settings.hiddenCaptureExecutables.length}
+                        onHide={hideCaptureTarget}
+                        onManageHidden={() => {
+                          setSettingsRoute("recording");
+                          setPage("settings");
+                          window.requestAnimationFrame(() => {
+                            document.getElementById("hidden-capture-executables")?.scrollIntoView();
+                            document.getElementById("hidden-capture-executable")?.focus();
+                          });
+                        }}
                         onOpenChange={(open) => {
                           if (open) void refreshTargets().catch(() => undefined);
                         }}
@@ -1049,9 +1129,8 @@ export default function App() {
                       value={settings.microphoneEnabled ? micDeviceId : "off"}
                       onChange={(e) => {
                         const enabled = e.target.value !== "off";
-                        const next = { ...settings, microphoneEnabled: enabled };
-                        setSettings(next);
-                        void api.saveSettings(next);
+                        void settingsController.savePatch({ microphoneEnabled: enabled })
+                          .catch(() => undefined);
                         if (enabled) setMicDeviceId(e.target.value);
                       }}
                     >
@@ -1137,12 +1216,9 @@ export default function App() {
                 <select
                   value={settings.autoTranscribeHotwordListId ?? ""}
                   onChange={(event) => {
-                    const next = {
-                      ...settings,
+                    void settingsController.savePatch({
                       autoTranscribeHotwordListId: event.target.value || null,
-                    };
-                    setSettings(next);
-                    void api.saveSettings(next).catch(showError);
+                    }).catch(() => undefined);
                   }}
                 >
                   <option value="">不使用热词</option>
@@ -1375,6 +1451,7 @@ export default function App() {
 
         {page === "settings" && (
           <SettingsWorkspace
+            controller={settingsController}
             route={settingsRoute}
             onRouteChange={setSettingsRoute}
             model={settingsModel}

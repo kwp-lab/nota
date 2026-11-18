@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../../../api";
 import { llmProviderReady } from "../../../llm";
+import { normalizeCaptureExecutable } from "../../../captureTargets";
 import type {
   AiTemplate,
   AppSettings,
@@ -122,6 +123,23 @@ export function useSettingsController(model: SettingsModel, actions: SettingsAct
       () => api.setActiveAsrProvider(id),
     ), [enqueue]);
 
+  const setCaptureTargetHidden = useCallback((executable: string, hidden: boolean) => {
+    const name = normalizeCaptureExecutable(executable);
+    return enqueue(
+      (current) => ({
+        ...current,
+        hiddenCaptureExecutables: hidden
+          ? [...new Set([...current.hiddenCaptureExecutables, name])].sort()
+          : current.hiddenCaptureExecutables.filter((candidate) => candidate !== name),
+      }),
+      async (next) => {
+        await api.saveSettings(next);
+        return next;
+      },
+      "settings",
+    );
+  }, [enqueue]);
+
   const setActiveLlmProvider = useCallback((id: string | null) =>
     enqueue(
       (current) => ({ ...current, activeLlmProviderId: id }),
@@ -206,6 +224,7 @@ export function useSettingsController(model: SettingsModel, actions: SettingsAct
     savingPreferences,
     preferenceError,
     savePatch,
+    setCaptureTargetHidden,
     setActiveAsrProvider,
     setActiveLlmProvider,
     chooseOutputDirectory: () => chooseDirectory("outputDirectory"),
@@ -234,6 +253,7 @@ export function useSettingsController(model: SettingsModel, actions: SettingsAct
     saveAsrProvider,
     saveLlmProvider,
     savePatch,
+    setCaptureTargetHidden,
     savingPreferences,
     setActiveAsrProvider,
     setActiveLlmProvider,

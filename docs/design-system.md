@@ -168,12 +168,22 @@ page-specific CSS.
 
 ### Capture Target Select
 
-The application capture picker uses a Radix select primitive so its custom
-visual treatment retains listbox keyboard navigation, focus management, and
-typeahead behavior. The closed trigger remains one line and shows the selected
-application icon beside the existing executable/title label. The portalled
-list shows the window title as Body text and the executable filename as Caption
-metadata; both must truncate without displacing the icon or selected marker.
+The application capture picker uses an anchored, non-modal dialog opened by
+a button with `aria-haspopup="dialog"` and expanded state. Each application
+row contains separate selection and hide buttons, never an interactive
+control nested in a listbox option. Arrow keys, Home/End, and title/filename
+typeahead move among selection buttons; Tab reaches the independent hide
+actions and management footer. Escape and selection restore trigger focus;
+outside clicks or focus leaving the panel dismiss it without stealing focus.
+Removing a row moves focus to a remaining row or the management footer.
+
+The closed trigger remains one line and shows the selected application icon
+beside the executable/title label. The portalled list shows the window title
+as Body text and the executable filename as Caption metadata; both truncate
+without displacing the icon, selected marker, or compact hide button. The
+footer always exposes “管理已隐藏应用（N）”, including when no candidate remains.
+Hide buttons have accessible names and `AppTooltip`. Successful hiding uses
+the existing toast action treatment for an eight-second undo opportunity.
 
 Application icons use the existing 20 px icon role with a subtle structural
 border. They are decorative to assistive technology. When Windows cannot
@@ -182,6 +192,13 @@ empty or broken image. A target that stops running retains its last in-memory
 icon and appends “（未运行）”; this visual state must not select another target.
 The picker must continue to expose a visible focus ring, an accessible label,
 and distinct highlighted, selected, empty, and refreshing states.
+
+Recording and saving settings includes an “已隐藏的录音来源” section with
+filename entry, current-application suggestions, validation feedback, and
+per-name restore buttons. It uses existing input, compact button, settings
+card, helper-text and error roles without introducing new visual tokens.
+Copy explains that matching covers all same-name processes and affects only
+the specified-application list, not system-audio capture.
 
 ### Settings Center
 

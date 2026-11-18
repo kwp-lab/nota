@@ -33,6 +33,7 @@ const testState = vi.hoisted(() => ({
   transcript: null as TranscriptDocument | null,
   firstRunComplete: true,
   autoTranscribe: false,
+  hiddenCaptureExecutables: [] as string[],
   activeAsrProviderId: null as string | null,
   voiceprintProviderId: null as string | null,
   providers: [] as Array<{
@@ -88,6 +89,7 @@ vi.mock("./api", () => ({
       autoTranscribe: testState.autoTranscribe,
       aiDocumentsDirectory: "C:\\Users\\tester\\Documents\\Nota\\AI Documents",
       activeLlmProviderId: null,
+      hiddenCaptureExecutables: testState.hiddenCaptureExecutables,
     })),
     getSnapshot: vi.fn(async () => testState.snapshot),
     listRecordings: vi.fn(async () => testState.recordings),
@@ -202,6 +204,7 @@ vi.mock("./api", () => ({
     pauseRecording: vi.fn(async () => snapshot("paused")),
     resumeRecording: vi.fn(async () => snapshot("recording")),
     stopRecording: vi.fn(async () => snapshot("completed")),
+    switchCaptureSource: vi.fn(),
     setMicrophoneEnabled: vi.fn(async (microphone) => ({
       ...snapshot("recording"),
       microphone: {
@@ -324,6 +327,7 @@ describe("Nota UI states", () => {
     testState.transcript = null;
     testState.firstRunComplete = true;
     testState.autoTranscribe = false;
+    testState.hiddenCaptureExecutables = [];
     testState.activeAsrProviderId = null;
     testState.voiceprintProviderId = null;
     testState.providers = [];
@@ -914,13 +918,134 @@ describe("Nota UI states", () => {
     );
   });
 
+  it("filters persisted hidden sources before choosing the initial application", async () => {
+    testState.hiddenCaptureExecutables = ["zoom.exe"];
+    testState.targets.push({
+      ...testState.targets[0],
+      id: "process:84",
+      processId: 84,
+      displayName: "腾讯会议",
+      executablePath: "C:\\Apps\\wemeetapp.exe",
+    });
+    render(<App />);
+    const source = screen.getByRole("button", { name: "录音来源" });
+    await waitFor(() => expect(source).toHaveTextContent("[wemeetapp.exe]: 腾讯会议"));
+    fireEvent.click(source);
+    expect(screen.queryByRole("button", { name: "[Zoom.exe]: Zoom" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "管理已隐藏应用（1）" })).toBeInTheDocument();
+  });
+
+  it("hides all matching processes, clears selection, and supports undo without switching sources", async () => {
+    testState.targets.push(
+      { ...testState.targets[0], id: "process:43", processId: 43, executablePath: "D:\\Other\\ZOOM.EXE" },
+      { ...testState.targets[0], id: "process:84", processId: 84, executablePath: "C:\\Other.exe" },
+    );
+    render(<App />);
+    const source = screen.getByRole("button", { name: "录音来源" });
+    await waitFor(() => expect(source).toHaveTextContent("[Zoom.exe]: Zoom"));
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole("button", { name: "隐藏 Zoom.exe" }));
+    await screen.findByText("已隐藏 zoom.exe");
+    expect(source).toHaveTextContent("请选择要录制的应用");
+    expect(screen.getByRole("button", { name: "开始录音" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "隐藏 ZOOM.EXE" })).not.toBeInTheDocument();
+    expect(api.saveSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hiddenCaptureExecutables: ["zoom.exe"] }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => expect(api.saveSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hiddenCaptureExecutables: [] }),
+    ));
+    await screen.findByRole("button", { name: "[Zoom.exe]: Zoom" });
+    expect(source).toHaveTextContent("请选择要录制的应用");
+    await act(async () => testState.requestStart?.("process"));
+    expect(await screen.findByText("请选择录音来源后再开始录音。")).toBeInTheDocument();
+    expect(api.startRecording).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "[Other.exe]: Zoom" }));
+    await act(async () => testState.requestStart?.("process"));
+    expect(api.startRecording).toHaveBeenCalledWith(expect.objectContaining({
+      capture: { kind: "process", targetId: "process:84" },
+    }));
+  });
+
+  it("rolls back a failed hide and keeps the source selection explicit", async () => {
+    vi.mocked(api.saveSettings).mockRejectedValueOnce(new Error("disk full"));
+    render(<App />);
+    const source = screen.getByRole("button", { name: "录音来源" });
+    await waitFor(() => expect(source).toHaveTextContent("[Zoom.exe]: Zoom"));
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole("button", { name: "隐藏 Zoom.exe" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
+    await screen.findByRole("button", { name: "[Zoom.exe]: Zoom" });
+    expect(source).toHaveTextContent("请选择要录制的应用");
+    expect(screen.queryByText("已隐藏 zoom.exe")).not.toBeInTheDocument();
+  });
+
+  it("does not reintroduce a hidden source from an older in-flight refresh", async () => {
+    render(<App />);
+    const source = screen.getByRole("button", { name: "录音来源" });
+    await waitFor(() => expect(source).toHaveTextContent("[Zoom.exe]: Zoom"));
+    fireEvent.click(source);
+    await screen.findByRole("button", { name: "[Zoom.exe]: Zoom" });
+    let finishRefresh!: (targets: typeof testState.targets) => void;
+    vi.mocked(api.listCaptureTargets).mockImplementationOnce(() => new Promise((resolve) => {
+      finishRefresh = resolve;
+    }));
+    act(() => window.dispatchEvent(new Event("focus")));
+    fireEvent.click(screen.getByRole("button", { name: "隐藏 Zoom.exe" }));
+    await screen.findByText("已隐藏 zoom.exe");
+    await act(async () => finishRefresh(testState.targets));
+    await waitFor(() => expect(source).toHaveAttribute("aria-busy", "false"));
+    expect(screen.queryByRole("button", { name: "[Zoom.exe]: Zoom" })).not.toBeInTheDocument();
+    expect(source).toHaveTextContent("请选择要录制的应用");
+  });
+
+  it("keeps the active recording untouched when its source is hidden", async () => {
+    testState.snapshot = snapshot("recording");
+    render(<App />);
+    await screen.findByRole("heading", { name: "会议录音进行中" });
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "进程文件名" }), {
+      target: { value: "zoom.exe" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加到隐藏名单" }));
+    const restore = await screen.findByRole("button", { name: "恢复显示 zoom.exe" });
+    await waitFor(() => expect(restore).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "录音" }));
+    expect(screen.getByRole("button", { name: "停止并保存" })).toBeInTheDocument();
+    expect(api.stopRecording).not.toHaveBeenCalled();
+    expect(api.switchCaptureSource).not.toHaveBeenCalled();
+    expect(api.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("shares the settings write queue between the picker and the settings page", async () => {
+    render(<App />);
+    const source = screen.getByRole("button", { name: "录音来源" });
+    await waitFor(() => expect(source).toHaveTextContent("[Zoom.exe]: Zoom"));
+    fireEvent.click(source);
+    let finishSave!: () => void;
+    vi.mocked(api.saveSettings).mockImplementationOnce(() => new Promise((resolve) => {
+      finishSave = resolve;
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "隐藏 Zoom.exe" }));
+    fireEvent.click(screen.getByRole("button", { name: "管理已隐藏应用（1）" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "回声消除" }), {
+      target: { value: "off" },
+    });
+    expect(api.saveSettings).toHaveBeenCalledTimes(1);
+    await act(async () => finishSave());
+    await waitFor(() => expect(api.saveSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hiddenCaptureExecutables: ["zoom.exe"], aecMode: "off" }),
+    ));
+  });
+
   it("refreshes applications when the window regains focus", async () => {
     render(<App />);
-    const source = await screen.findByRole("combobox", { name: "录音来源" });
+    const source = await screen.findByRole("button", { name: "录音来源" });
     expect(source).toHaveTextContent("[Zoom.exe]: Zoom");
     fireEvent.click(source);
     expect(
-      await screen.findByRole("option", { name: "[Zoom.exe]: Zoom" }),
+      await screen.findByRole("button", { name: "[Zoom.exe]: Zoom" }),
     ).toBeInTheDocument();
     testState.targets = [
       {
@@ -938,7 +1063,7 @@ describe("Nota UI states", () => {
 
     act(() => window.dispatchEvent(new Event("focus")));
     expect(
-      await screen.findByRole("option", {
+      await screen.findByRole("button", {
         name: "[wemeetapp.exe]: 腾讯会议",
       }),
     ).toBeInTheDocument();
@@ -946,7 +1071,7 @@ describe("Nota UI states", () => {
 
   it("rebinds the selected application after its process id changes", async () => {
     render(<App />);
-    const source = await screen.findByRole("combobox", { name: "录音来源" });
+    const source = await screen.findByRole("button", { name: "录音来源" });
     expect(source).toHaveTextContent("[Zoom.exe]: Zoom");
     testState.targets = [
       {

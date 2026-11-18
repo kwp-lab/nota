@@ -78,6 +78,41 @@ flowchart LR
 | Configured ASR service | Model inference and server-side processing | Local recording ownership |
 | Configured LLM provider | Explicitly requested text generation | Local Markdown, SQLite, or recording ownership |
 
+### Recording Source Visibility
+
+`App` owns one settings controller for both the recorder and Settings.
+Preference mutations share its serialized write queue across navigation;
+pending filename additions/removals are applied to the latest confirmed
+settings instead of restoring an old whole-list snapshot.
+
+Rust stores `hiddenCaptureExecutables` in local SQLite and filters capture
+candidates by case-insensitive executable basename before attaching icons.
+The frontend also filters responses against the current list, and retries an
+enumeration if that list changed while the request was in flight. Startup
+loads settings before reconciling the initial selection.
+
+Hiding the selected executable clears the next-recording selection and
+suppresses the usual first-candidate default until the user explicitly
+selects a source. Undo/restore makes matching candidates available again
+without selecting one. An active recorder retains its original capture
+source and uses its authoritative snapshot label. Visibility preferences do
+not participate in capture setup, ongoing recovery, source rebinding, or
+system-wide audio mixing.
+
+```mermaid
+flowchart TD
+    A[Hide in picker or add / restore in Settings] --> B[Shared settings mutation queue]
+    B --> C[Update visible candidates and clear any hidden selection]
+    B --> D[Rust validates and atomically saves local settings]
+    D -->|Success| E[Refresh candidates using saved filename filters]
+    D -->|Failure| F[Roll back preferences and show the error]
+    F --> E
+    E --> G[Apply response only against current visibility preferences]
+    G --> H[Explicitly choose the next recording source]
+    D -->|Hide succeeds| I[Toast offers removal of that one hidden name]
+    I -->|Undo| B
+```
+
 ### Recording Detail Presentation
 
 `RecordingsWorkspace` owns selected-record presentation, native audio playback,

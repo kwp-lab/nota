@@ -260,6 +260,26 @@ Server-side automated coverage must include:
 
 ## Settings Center Regression Matrix
 
+Recording-source visibility coverage includes:
+
+- normalized, case-insensitive filename matching across PID/path changes;
+  invalid names and duplicates; SQLite persistence, restore, and legacy
+  defaults without a migration;
+- independent selection/hide buttons, arrow/typeahead navigation, Escape,
+  outside dismissal, focus restoration, and the always-available manager;
+- initial saved filters before default selection, hiding all matching
+  processes, explicit re-selection after hiding (including shortcut starts),
+  and single-name undo;
+- failed-save rollback with draft retention, in-flight enumeration races,
+  and the shared settings queue across recorder/Settings navigation;
+- active recording continuity while changing visibility from Settings.
+
+Browser acceptance also checks long titles and filenames, empty and fully
+hidden lists, keyboard-only hide/restore, no horizontal overflow at 1280×800
+and 980×640, and usable controls at 125% display scaling. Browser tests using
+mock IPC verify presentation only; SQLite durability and capture invariants
+require Rust tests and the relevant Windows acceptance scenarios.
+
 Automated coverage for Settings must include:
 
 - category navigation, parent-category highlighting on management routes,

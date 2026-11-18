@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added persistent hiding of recording-source applications by executable
+  filename, with inline hide actions, undo, and add/restore management in
+  Recording and saving settings. Hiding a source never interrupts an active
+  recording or changes the scope of system-audio capture.
+
 ### Fixed
 
 - Allowed transcription of saved meetings while another meeting is recording,

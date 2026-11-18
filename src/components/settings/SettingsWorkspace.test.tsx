@@ -9,6 +9,7 @@ import type {
 } from "../../types";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import type { SettingsRoute } from "./types";
+import { useSettingsController } from "./hooks/useSettingsController";
 
 const mocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -73,6 +74,7 @@ const settings: AppSettings = {
   voiceprintProviderId: null,
   autoTranscribe: false,
   activeLlmProviderId: "llm",
+  hiddenCaptureExecutables: [],
 };
 
 const asrProvider: AsrProvider = {
@@ -157,18 +159,22 @@ function Harness(props: HarnessProps) {
     onError: props.onError ?? vi.fn(),
   }), [props.onError, props.onFirstRunComplete]);
 
+  const model = {
+    settings: currentSettings,
+    asrProviders,
+    llmProviders,
+    microphoneCount: 1,
+    appVersion: "0.8.0",
+    recordingActive: false,
+    captureTargets: [],
+  };
+  const controller = useSettingsController(model, actions);
   return (
     <SettingsWorkspace
+      controller={controller}
       route={route}
       onRouteChange={setRoute}
-      model={{
-        settings: currentSettings,
-        asrProviders,
-        llmProviders,
-        microphoneCount: 1,
-        appVersion: "0.8.0",
-        recordingActive: false,
-      }}
+      model={model}
       actions={actions}
     />
   );
@@ -212,6 +218,48 @@ afterEach(() => {
 });
 
 describe("SettingsWorkspace navigation and preferences", () => {
+  it("adds normalized hidden names and restores them through ordinary settings", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("combobox", { name: "进程文件名" });
+    fireEvent.change(input, { target: { value: "  CHROME.EXE  " } });
+    fireEvent.click(screen.getByRole("button", { name: "添加到隐藏名单" }));
+    const restore = await screen.findByRole("button", { name: "恢复显示 chrome.exe" });
+    await waitFor(() => expect(restore).toBeEnabled());
+    expect(mocks.saveSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hiddenCaptureExecutables: ["chrome.exe"] }),
+    );
+    expect(input).toHaveValue("");
+    fireEvent.click(restore);
+    await waitFor(() => expect(mocks.saveSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hiddenCaptureExecutables: [] }),
+    ));
+    expect(screen.queryByRole("button", { name: "恢复显示 chrome.exe" })).not.toBeInTheDocument();
+  });
+
+  it("rejects paths, wildcards, and duplicate hidden names before saving", async () => {
+    render(<Harness initialSettings={{ ...settings, hiddenCaptureExecutables: ["chrome.exe"] }} />);
+    const input = screen.getByRole("combobox", { name: "进程文件名" });
+    for (const name of ["C:\\chrome.exe", "*.exe", "CHROME.EXE"]) {
+      fireEvent.change(input, { target: { value: name } });
+      fireEvent.click(screen.getByRole("button", { name: "添加到隐藏名单" }));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+    }
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    expect(input).toHaveValue("CHROME.EXE");
+  });
+
+  it("preserves a hidden-name draft and rolls back the list when saving fails", async () => {
+    mocks.saveSettings.mockRejectedValueOnce(new Error("disk full"));
+    render(<Harness />);
+    const input = screen.getByRole("combobox", { name: "进程文件名" });
+    fireEvent.change(input, { target: { value: "chrome.exe" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加到隐藏名单" }));
+    await waitFor(() => expect(input).toBeEnabled());
+    expect(input).toHaveValue("chrome.exe");
+    expect(screen.queryByRole("button", { name: "恢复显示 chrome.exe" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("disk full"))).toBe(true);
+  });
+
   it("shows one category at a time and keeps the parent category selected on manager pages", async () => {
     render(<Harness />);
     expect(screen.getByRole("heading", { name: "录音与保存" })).toBeInTheDocument();

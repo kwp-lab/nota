@@ -46,6 +46,23 @@ replace it.
 
 SQLite uses WAL mode, foreign keys, and secure deletion.
 
+### Recording source visibility preferences
+
+The existing `settings` key/value table stores `hidden_capture_executables`
+as a JSON array of normalized executable filenames. No schema migration is
+required. Databases and IPC settings without this field default to an empty
+list. Writes trim surrounding whitespace, lowercase, deduplicate and sort
+names; a nonempty filename ending in `.exe` is required. Paths, wildcards,
+control characters and invalid Windows filename characters are rejected
+before any preference in that settings write is changed.
+
+These preferences remain until explicitly restored by the user, survive
+process/application restarts, and apply to all paths and process IDs sharing
+a filename. They filter candidate discovery only. They never delete media,
+change an active capture source, or exclude an application's audio from
+system-wide recording. The frontend receives typed settings; SQLite access
+remains in Rust.
+
 ### `recordings`
 
 Owns the durable recording identity, title, path, creation time, duration,

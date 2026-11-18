@@ -17,6 +17,20 @@ pub struct CaptureTarget {
     pub priority: i32,
 }
 
+impl CaptureTarget {
+    pub fn is_hidden(&self, hidden_executables: &[String]) -> bool {
+        let executable = self
+            .executable_path
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or_default()
+            .to_lowercase();
+        hidden_executables
+            .iter()
+            .any(|hidden| hidden.to_lowercase() == executable)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioDevice {
@@ -285,6 +299,8 @@ pub struct AppSettings {
     pub auto_transcribe_hotword_list_id: Option<String>,
     #[serde(default)]
     pub active_llm_provider_id: Option<String>,
+    #[serde(default)]
+    pub hidden_capture_executables: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1147,10 +1163,33 @@ pub struct AiGenerationEvent {
 #[cfg(test)]
 mod tests {
     use super::{
-        AecMode, CapturePrompt, CapturePromptKind, CaptureSelection, DeviceSelection,
-        RecordingSnapshot, StartRecordingRequest,
+        AecMode, CapturePrompt, CapturePromptKind, CaptureSelection, CaptureTarget,
+        DeviceSelection, RecordingSnapshot, StartRecordingRequest,
     };
     use serde_json::json;
+
+    #[test]
+    fn hidden_capture_matching_uses_only_the_case_insensitive_executable_name() {
+        let mut target: CaptureTarget = serde_json::from_value(json!({
+            "id": "process:42",
+            "kind": "process",
+            "displayName": "A changing window title",
+            "processId": 42,
+            "executablePath": "C:\\Apps\\Meeting.EXE",
+            "iconDataUrl": null,
+            "browser": false,
+            "priority": 0
+        }))
+        .unwrap();
+        let hidden = vec!["meeting.exe".into()];
+        assert!(target.is_hidden(&hidden));
+        target.process_id = 84;
+        target.executable_path = "D:/Another/MEETING.exe".into();
+        assert!(target.is_hidden(&hidden));
+        target.executable_path = "C:\\Apps\\OtherMeeting.exe".into();
+        assert!(!target.is_hidden(&hidden));
+        assert!(!target.is_hidden(&[]));
+    }
 
     #[test]
     fn process_start_request_accepts_frontend_camel_case_fields() {

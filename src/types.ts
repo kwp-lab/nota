@@ -149,6 +149,7 @@ export interface AppSettings {
   autoTranscribe: boolean;
   autoTranscribeHotwordListId?: string | null;
   activeLlmProviderId: string | null;
+  hiddenCaptureExecutables: string[];
 }
 
 export type AsrProviderKind = "funAsr" | "openAiCompatible" | "dashScope";

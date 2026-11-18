@@ -19,6 +19,23 @@ export const captureTargetLabel = (
     : target.displayName;
 };
 
+export const normalizeCaptureExecutable = (value: string) => {
+  const name = value.trim().toLowerCase();
+  if (
+    name.length <= 4 ||
+    !name.endsWith(".exe") ||
+    /[\\/:*?"<>|\u0000-\u001f\u007f-\u009f]/.test(name)
+  ) {
+    throw new Error("请输入完整的进程文件名（例如 chrome.exe），不要包含路径或通配符");
+  }
+  return name;
+};
+
+export const isCaptureTargetHidden = (
+  target: Pick<CaptureTarget, "executablePath">,
+  hiddenExecutables: string[],
+) => hiddenExecutables.includes(captureTargetExecutableName(target).toLowerCase());
+
 const normalizeExecutablePath = (path: string) =>
   path.replaceAll("/", "\\").toLocaleLowerCase();
 

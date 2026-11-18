@@ -587,6 +587,11 @@ impl Storage {
         let active_llm_provider_id = self
             .setting_value(&connection, "active_llm_provider_id")?
             .filter(|value| !value.trim().is_empty());
+        let hidden_capture_executables = self
+            .setting_value(&connection, "hidden_capture_executables")?
+            .map(|value| serde_json::from_str::<Vec<String>>(&value))
+            .transpose()?
+            .unwrap_or_default();
         Ok(AppSettings {
             output_directory,
             ai_documents_directory,
@@ -601,6 +606,9 @@ impl Storage {
             auto_transcribe,
             auto_transcribe_hotword_list_id,
             active_llm_provider_id,
+            hidden_capture_executables: normalize_hidden_capture_executables(
+                &hidden_capture_executables,
+            )?,
         })
     }
 
@@ -613,7 +621,13 @@ impl Storage {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> Result<()> {
+        let hidden_capture_executables =
+            normalize_hidden_capture_executables(&settings.hidden_capture_executables)?;
         let values = [
+            (
+                "hidden_capture_executables",
+                serde_json::to_string(&hidden_capture_executables)?,
+            ),
             ("output_directory", settings.output_directory.clone()),
             (
                 "ai_documents_directory",
@@ -3800,6 +3814,26 @@ pub(crate) fn sanitize_path_component(value: &str, fallback: &str) -> String {
     }
 }
 
+fn normalize_hidden_capture_executables(executables: &[String]) -> Result<Vec<String>> {
+    let mut normalized = Vec::new();
+    for executable in executables {
+        let name = executable.trim().to_lowercase();
+        if name.len() <= 4
+            || !name.ends_with(".exe")
+            || name
+                .chars()
+                .any(|character| character.is_control() || r#"\/:*?"<>|"#.contains(character))
+        {
+            bail!("请输入完整的进程文件名（例如 chrome.exe），不要包含路径或通配符");
+        }
+        if !normalized.contains(&name) {
+            normalized.push(name);
+        }
+    }
+    normalized.sort();
+    Ok(normalized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3821,6 +3855,72 @@ mod tests {
         })
         .unwrap();
         (root, storage)
+    }
+
+    #[test]
+    fn hidden_capture_executables_are_normalized_deduplicated_and_persisted() {
+        let (root, storage) = test_storage();
+        assert!(
+            storage
+                .settings()
+                .unwrap()
+                .hidden_capture_executables
+                .is_empty()
+        );
+        let mut settings = storage.settings().unwrap();
+        settings.hidden_capture_executables =
+            vec![" Zoom.EXE ".into(), "chrome.exe".into(), "ZOOM.exe".into()];
+        storage.save_settings(&settings).unwrap();
+        let paths = storage.paths().clone();
+        drop(storage);
+        let reopened = Storage::open(paths).unwrap();
+        let mut settings = reopened.settings().unwrap();
+        assert_eq!(
+            settings.hidden_capture_executables,
+            ["chrome.exe", "zoom.exe"]
+        );
+        settings
+            .hidden_capture_executables
+            .retain(|name| name != "zoom.exe");
+        reopened.save_settings(&settings).unwrap();
+        assert_eq!(
+            reopened.settings().unwrap().hidden_capture_executables,
+            ["chrome.exe"]
+        );
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_hidden_capture_names_do_not_partially_save_other_preferences() {
+        let (root, storage) = test_storage();
+        let original = storage.settings().unwrap();
+        for name in [
+            "",
+            ".exe",
+            "Zoom",
+            "*.exe",
+            "C:\\Zoom.exe",
+            "a/b.exe",
+            "a\0.exe",
+        ] {
+            let mut settings = original.clone();
+            settings.microphone_enabled = !original.microphone_enabled;
+            settings.hidden_capture_executables = vec!["valid.exe".into(), name.into()];
+            assert!(storage.save_settings(&settings).is_err());
+            let saved = storage.settings().unwrap();
+            assert_eq!(saved.microphone_enabled, original.microphone_enabled);
+            assert!(saved.hidden_capture_executables.is_empty());
+        }
+        let mut legacy = serde_json::to_value(original).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("hiddenCaptureExecutables");
+        let legacy: AppSettings = serde_json::from_value(legacy).unwrap();
+        assert!(legacy.hidden_capture_executables.is_empty());
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

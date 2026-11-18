@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   captureTargetLabel,
+  isCaptureTargetHidden,
+  normalizeCaptureExecutable,
   preferenceForTarget,
   resolveCaptureTarget,
 } from "./captureTargets";
@@ -22,6 +24,19 @@ const target = (
 });
 
 describe("capture target reconciliation", () => {
+  it("matches hidden names across process ids, paths, and filename case", () => {
+    const hidden = ["meeting.exe"];
+    expect(isCaptureTargetHidden(target("process:1", "C:\\Apps\\Meeting.EXE"), hidden)).toBe(true);
+    expect(isCaptureTargetHidden(target("process:2", "D:/Other/meeting.exe"), hidden)).toBe(true);
+    expect(isCaptureTargetHidden(target("process:3", "C:\\OtherMeeting.exe"), hidden)).toBe(false);
+    expect(normalizeCaptureExecutable("  MEETING.EXE  ")).toBe("meeting.exe");
+  });
+
+  it.each(["", ".exe", "meeting", "*.exe", "C:\\Meeting.exe", "a/b.exe", "a\u0000.exe"])(
+    "rejects invalid hidden filename %j",
+    (name) => expect(() => normalizeCaptureExecutable(name)).toThrow("完整的进程文件名"),
+  );
+
   it("prefixes the window title with its executable name", () => {
     expect(
       captureTargetLabel(
