@@ -8,6 +8,14 @@ release/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+/output/
+/.playwright-cli/
+/.playwright-mcp/
+/playwright-report/
+/test-results/
+/scripts/native-overlay-regression/Cargo.lock
+/scripts/native-overlay-regression/target/
+/scripts/native-overlay-regression/gen/
 
 # Local runtime data
 *.db

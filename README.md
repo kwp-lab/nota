@@ -57,6 +57,7 @@ Nota gives Windows one focused recording workflow:
 | **Universal system mode** | Capture everything playing through a selected Windows output device when you need broader coverage. |
 | **Microphone + remote audio** | Align independent device clocks, apply local echo cancellation, and deliver a single mixed recording. |
 | **Live microphone switching** | Change or disable the microphone during an active recording without stopping, splitting, or replacing the current Ogg file. |
+| **Floating recording status** | A compact live waveform and elapsed timer remain above the taskbar after recording starts and the main window moves to the tray; expand the card to pause, stop and save, or reopen Nota. |
 | **Crash-safe recording** | Write to a recovery file first, validate complete Ogg pages, and recover interrupted sessions after restart. |
 | **Compact output** | Produce 48 kHz mono Ogg Opus at 64 kbps by default—typically around 30 MB per hour. |
 | **Import phone recordings** | Import MP3, M4A, WAV, or FLAC offline, normalize it to a Nota-managed Ogg copy, and use the same playback, transcription, speaker, and AI workflows. |

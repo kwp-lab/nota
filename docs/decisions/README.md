@@ -27,6 +27,7 @@ rejected alternatives, and consequences.
 | [0013](0013-configurable-trusted-dashscope-api-roots.md) | Accepted | Allow configurable trusted DashScope shared and workspace API roots |
 | [0014](0014-meeting-local-speaker-names.md) | Accepted | Default to recording/version-local names and explicitly enroll reusable people per speaker |
 | [0015](0015-transcribe-saved-meetings-during-recording.md) | Accepted | Transcribe saved meetings independently of an active recording |
+| [0016](0016-floating-recording-status.md) | Accepted | Keep persistent recording status in a separate local waveform window |
 
 ## Lifecycle
 

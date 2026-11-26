@@ -22,6 +22,7 @@ use crate::models::*;
 use crate::paths::AppPaths;
 use crate::pdf_export::{export_current_webview_pdf, validate_exported_pdf};
 use crate::process_icons::attach_capture_target_icons;
+use crate::recording_overlay::RecordingOverlay;
 use crate::state_machine::{RecordingEvent, transition};
 use crate::storage::Storage;
 use crate::voiceprints::VoiceprintManager;
@@ -55,6 +56,31 @@ const CAPTURE_PROMPT_WINDOW: &str = "capture-prompt";
 const CAPTURE_PROMPT_WIDTH: f64 = 420.0;
 const CAPTURE_PROMPT_MIN_HEIGHT: f64 = 170.0;
 const CAPTURE_PROMPT_MAX_HEIGHT: f64 = 320.0;
+
+#[derive(Default)]
+struct LevelWindow {
+    system: f32,
+    microphone: f32,
+}
+
+impl LevelWindow {
+    fn observe(&mut self, system: f32, microphone: f32) {
+        if system.is_finite() {
+            self.system = self.system.max(system.clamp(0.0, 1.0));
+        }
+        if microphone.is_finite() {
+            self.microphone = self.microphone.max(microphone.clamp(0.0, 1.0));
+        }
+    }
+
+    fn take(&mut self) -> LevelEvent {
+        let current = std::mem::take(self);
+        LevelEvent {
+            system: current.system,
+            microphone: current.microphone,
+        }
+    }
+}
 
 struct AppState {
     storage: Arc<Storage>,
@@ -418,6 +444,8 @@ impl RecordingController {
             worker: Some(worker),
             process_event_monitor,
         });
+        app.state::<RecordingOverlay>()
+            .begin(&app, &self.snapshot());
         Ok(self.snapshot())
     }
 
@@ -953,6 +981,7 @@ fn recording_worker(
     let mut system_connected;
     let mut microphone_connected;
     let mut last_emit = Instant::now();
+    let mut level_window = LevelWindow::default();
     let mut last_disk_check = Instant::now();
     let mut was_paused = false;
     let mut microphone_epoch = microphone_source_epoch.load(Ordering::Acquire);
@@ -963,6 +992,7 @@ fn recording_worker(
     while !stop.load(Ordering::Acquire) {
         let _ = tick.recv();
         if paused.load(Ordering::Acquire) {
+            level_window = LevelWindow::default();
             silence_monitor.suspend();
             let _ = drain_packets(&system_rx, |_| {});
             let _ = drain_packets(&microphone_rx, |_| {});
@@ -991,6 +1021,7 @@ fn recording_worker(
         let microphone_is_enabled = microphone_enabled.load(Ordering::Acquire);
         let current_microphone_epoch = microphone_source_epoch.load(Ordering::Acquire);
         if current_microphone_epoch != microphone_epoch {
+            level_window = LevelWindow::default();
             silence_monitor.suspend();
             mixer.switch_microphone_source(
                 request.aec_mode,
@@ -1036,6 +1067,7 @@ fn recording_worker(
             recorder.handle_silence_event(&app, target_name, event);
         }
         if !system_connected && !microphone_connected {
+            level_window = LevelWindow::default();
             let mut value = snapshot.lock();
             value.state = transition(
                 value.state,
@@ -1059,6 +1091,14 @@ fn recording_worker(
 
         let (mixed, system_level, microphone_level) =
             mixer.next_frame(system_connected, microphone_connected);
+        level_window.observe(
+            if system_connected { system_level } else { 0.0 },
+            if microphone_connected {
+                microphone_level
+            } else {
+                0.0
+            },
+        );
         if let Err(error) = writer.push_frame(&mixed) {
             failure = Some(error);
             break;
@@ -1078,13 +1118,7 @@ fn recording_worker(
             }
         }
         if last_emit.elapsed() >= Duration::from_millis(100) {
-            let _ = app.emit(
-                "recording://levels",
-                LevelEvent {
-                    system: system_level,
-                    microphone: microphone_level,
-                },
-            );
+            let _ = app.emit("recording://levels", level_window.take());
             emit_snapshot(&app, &snapshot);
             last_emit = Instant::now();
         }
@@ -1376,6 +1410,12 @@ fn emit_snapshot(app: &AppHandle, snapshot: &Arc<Mutex<RecordingSnapshot>>) {
     let value = snapshot.lock().clone();
     let _ = app.emit("recording://snapshot", value.clone());
     schedule_tray_update(app, value.state);
+    app.state::<RecordingOverlay>().sync(app, &value);
+}
+
+#[tauri::command]
+fn recording_overlay_ready(app: AppHandle, session_id: String) -> std::result::Result<(), String> {
+    command_result(app.state::<RecordingOverlay>().ready(&app, &session_id))
 }
 
 fn recording_session_fields(snapshot: &Arc<Mutex<RecordingSnapshot>>) -> Vec<Field<'static>> {
@@ -3135,6 +3175,7 @@ pub fn run_app() {
                 let _ = window.set_focus();
             }
         }))
+        .manage(RecordingOverlay::default())
         .manage(AppState {
             storage,
             recorder,
@@ -3167,6 +3208,12 @@ pub fn run_app() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            if window.label() == crate::recording_overlay::WINDOW_LABEL
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                show_main_window(window.app_handle());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             list_capture_targets,
@@ -3181,6 +3228,11 @@ pub fn run_app() {
             get_capture_prompt,
             respond_capture_prompt,
             resize_capture_prompt,
+            recording_overlay_ready,
+            crate::recording_overlay::resize_recording_overlay,
+            crate::recording_overlay::drag_recording_overlay,
+            crate::recording_overlay::nudge_recording_overlay,
+            crate::recording_overlay::show_recording_main_window,
             start_recording,
             pause_recording,
             resume_recording,
@@ -3292,6 +3344,47 @@ pub fn run_app() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+
+    #[test]
+    fn short_microphone_speech_survives_until_the_next_publication() {
+        let mut window = LevelWindow::default();
+        window.observe(0.0, 0.02);
+        for _ in 0..9 {
+            window.observe(0.0, 0.0);
+        }
+        let levels = window.take();
+        assert_eq!(levels.system, 0.0);
+        assert_eq!(levels.microphone, 0.02);
+    }
+
+    #[test]
+    fn sources_are_independent_and_published_peaks_do_not_leak_into_silence() {
+        let mut window = LevelWindow::default();
+        window.observe(0.03, 0.01);
+        window.observe(0.01, 0.02);
+        let levels = window.take();
+        assert_eq!(levels.system, 0.03);
+        assert_eq!(levels.microphone, 0.02);
+        window.observe(0.0, 0.0);
+        let silent = window.take();
+        assert_eq!(silent.system, 0.0);
+        assert_eq!(silent.microphone, 0.0);
+    }
+
+    #[test]
+    fn invalid_frame_levels_cannot_poison_later_publications() {
+        let mut window = LevelWindow::default();
+        window.observe(f32::NAN, f32::INFINITY);
+        window.observe(-0.1, 2.0);
+        let levels = window.take();
+        assert_eq!(levels.system, 0.0);
+        assert_eq!(levels.microphone, 1.0);
+    }
 }
 
 #[cfg(test)]

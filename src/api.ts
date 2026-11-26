@@ -61,6 +61,14 @@ export const api = {
     invoke<SaveHotwordListResult>("save_hotword_list", { request }),
   deleteHotwordList: (id: string) => invoke<void>("delete_hotword_list", { id }),
   getSnapshot: () => invoke<RecordingSnapshot>("get_recording_snapshot"),
+  recordingOverlayReady: (sessionId: string) =>
+    invoke<void>("recording_overlay_ready", { sessionId }),
+  resizeRecordingOverlay: (expanded: boolean, hasError: boolean) =>
+    invoke<void>("resize_recording_overlay", { expanded, hasError }),
+  dragRecordingOverlay: () => invoke<void>("drag_recording_overlay"),
+  nudgeRecordingOverlay: (direction: "left" | "right" | "up" | "down") =>
+    invoke<void>("nudge_recording_overlay", { direction }),
+  showRecordingMainWindow: () => invoke<void>("show_recording_main_window"),
   getCapturePrompt: () => invoke<CapturePrompt | null>("get_capture_prompt"),
   respondCapturePrompt: (sessionId: string, stopAndSave: boolean) =>
     invoke<RecordingSnapshot>("respond_capture_prompt", {

@@ -68,6 +68,14 @@ The following state transitions are expected:
   time;
 - settings and Provider mutations plus requests to open the log directory.
 
+The floating recording window logs failures under `recording_overlay` using
+only static event/error codes (`update_failed`, `resize_failed`, and
+`move_failed`). Session-correlated `create_requested`, `created`,
+`frontend_ready`, `main_hidden`, and `closed` events expose the one-time
+readiness and presentation lifecycle for diagnosing stalled startup. It uses
+the existing recording command events for pause/resume/stop. Frame updates,
+scalar levels, elapsed ticks and drag positions are not logged.
+
 Read-only queries, UI navigation, hover state, form input, per-frame audio,
 per-packet audio, and ordinary polling must not be logged. Transition-only
 logging keeps the files useful for `rg` and avoids turning one incident into

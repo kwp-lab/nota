@@ -258,6 +258,63 @@ Server-side automated coverage must include:
 - duration, upload-size, disk-space, and retention limits;
 - exact `verbose_json 1.0` result compatibility.
 
+## Floating Recording Card Regression Matrix
+
+Automated coverage includes:
+
+- card readiness before main-window hiding, non-hiding failure states,
+  keeping a reopened main window visible, and preserving the card through
+  pause, capture interruption and finalization until safe completion;
+- work-area clamping for taskbar insets, negative monitor coordinates,
+  scaling and small displays;
+- event subscriptions before initial reads, ignoring stale read/command
+  responses, duplicate command suppression and listener cleanup;
+- volume-driven waveform bounds, stale-level expiry, silent flattening,
+  paused/finalizing freeze, reduced-motion behavior and animation cleanup;
+- shared logarithmic meter/waveform response for RMS 0.005, 0.01, 0.02 and
+  0.03, quiet microphone-only speech, monotonic strength, overload clamping,
+  silent/sub-floor/invalid inputs and unavailable-source meters;
+- independent per-source maximum-frame-RMS publication, a short speech frame
+  followed by silent frames before publication, and clearing peaks so the
+  next silent window returns zero;
+- pause/resume/stop command reuse, error visibility, opening the main window,
+  keyboard expansion, Escape and directional movement.
+
+Browser acceptance uses mock IPC at 216×56, 216×136 and 216×208 logical
+pixels, including 125% zoom, long errors, keyboard controls, microphone-only
+activity at RMS 0.01, silence and failed saves. Main-window meters must also
+remain readable at minimum and wide window sizes. This verifies presentation, not native
+window integration.
+
+Windows acceptance must additionally cover starting successfully from the
+main UI, tray and shortcut; startup failure leaving main visible; card
+readiness before main hiding; taskbars on different edges, mixed-DPI
+monitors, drag/expand placement; no focus steal on appearance; reopening main
+without re-hiding; native close recovery; pause/stop through both windows;
+and finalization success/failure. Existing silence reminder behavior is
+unchanged.
+
+Native regression testing must initiate creation through an actual
+synchronous WebView IPC command, then invoke pause/resume/stop and start a
+second session. Calling `begin` only from a background test thread misses
+the Windows synchronous-command deadlock. Verify command return, card
+readiness, main-window hiding, finalization and destruction with bounded
+waits.
+
+Run the isolated window test on an interactive Windows desktop after
+`npm run build:web`:
+
+```powershell
+cargo run --offline --release --manifest-path scripts/native-overlay-regression/Cargo.toml --target-dir src-tauri/target
+```
+
+It uses synthetic recording snapshots and a separate WebView profile; it
+does not open storage or capture audio. A 45-second watchdog terminates only
+the test process if the event loop deadlocks.
+The harness is a separate binary because Tauri's Windows build resources
+(including the common-controls manifest) are linked to application binaries,
+not ordinary Rust unit-test executables.
+
 ## Settings Center Regression Matrix
 
 Recording-source visibility coverage includes:
