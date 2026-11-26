@@ -1,3 +1,5 @@
+import { audioLevelToDisplay } from "../audio-level";
+
 interface LevelMeterProps {
   value: number;
   label: string;
@@ -5,7 +7,7 @@ interface LevelMeterProps {
 }
 
 export function LevelMeter({ value, label, healthy }: LevelMeterProps) {
-  const safeValue = Math.max(0, Math.min(1, value));
+  const safeValue = healthy ? audioLevelToDisplay(value) : 0;
   return (
     <div className="level-meter" aria-label={`${label}电平`}>
       <div className="level-label">

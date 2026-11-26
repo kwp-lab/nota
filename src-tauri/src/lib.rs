@@ -8,6 +8,7 @@ mod models;
 mod paths;
 mod pdf_export;
 mod process_icons;
+mod recording_overlay;
 mod state_machine;
 mod storage;
 mod voiceprints;

@@ -200,6 +200,41 @@ card, helper-text and error roles without introducing new visual tokens.
 Copy explains that matching covers all same-name processes and affects only
 the specified-application list, not system-audio capture.
 
+### Audio Level Feedback
+
+Main-window level meters and the floating waveform share the display mapping
+in `src/audio-level.ts`: relative RMS is converted to decibels and mapped
+from -60 to 0 dB onto the 0–1 visual range. For example, RMS 0.01 displays
+at about one-third scale instead of one percent. Do not add a separate
+high-amplitude gate in the waveform or map linear RMS directly to bar width.
+Silence and values at or below the floor stay empty/flat; stronger input
+must produce monotonically stronger feedback. Unavailable sources display
+an empty meter and retain their existing health label.
+
+### Floating Recording Card
+
+The undecorated recording window uses a 216×56 logical-pixel compact surface,
+growing to 136 px for controls or 208 px for errors. Its default appearance
+contains only a drag grip, a continuous fine waveform, and elapsed time.
+It uses existing primary surface, structural border, large radius and
+Caption roles. The `--color-recording-activity` role aliases text-brand for
+the waveform and represents audio activity without the red recording badge
+used by the tray. It must not blink, pulse red, or display a meeting title.
+
+The waveform reacts to actual volume, rises quickly and decays smoothly to
+one horizontal line on silence. Silence never hides the elapsed timer.
+Paused state uses a dashed line and “已暂停”, saving uses “正在保存”, and a
+retained fault exposes concise text and the main-window action. Reduced
+motion freezes the lateral phase and uses less frequent amplitude updates.
+The native snapshot owns elapsed time; UI animation must not invent time.
+
+Clicking the signal or activating it from the keyboard expands pause/resume,
+stop/save, and open-main icon actions. Each has an accessible name and
+`AppTooltip`; Escape collapses normal controls and restores signal focus.
+The visible drag grip supports pointer dragging and arrow-key nudging.
+Expanded fault feedback cannot be dismissed into an apparently healthy
+card. Tooltips use compact wrapping to fit the small window.
+
 ### Settings Center
 
 Settings is a full-height workspace inside the application shell. The global

@@ -78,6 +78,7 @@
   --color-status-recording: #c84f45;
   --color-status-paused: #bd8b35;
   --color-status-warning-accent: #d99a42;
+  --color-recording-activity: var(--color-text-brand);
 
   /* Translucent surfaces and effect colors. */
   --color-surface-app-chrome: rgba(248, 247, 243, 0.92);

@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added a persistent floating recording card with a sound-reactive fine
+  waveform and elapsed time. Successful recording moves the main window to
+  the tray after the card is ready; the card supports pause/resume, stop and
+  save, reopening the main window, and dragging above the taskbar.
 - Added persistent hiding of recording-source applications by executable
   filename, with inline hide actions, undo, and add/restore management in
   Recording and saving settings. Hiding a source never interrupts an active
@@ -16,6 +20,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Made quiet speech visible in recording meters and the floating waveform
+  through a shared logarithmic display range, and retained short audio
+  activity between display updates without changing recorded audio.
 - Allowed transcription of saved meetings while another meeting is recording,
   including resumed jobs and legacy audio chunks. Local queued jobs now show
   their waiting state instead of claiming that upload or server processing

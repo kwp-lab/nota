@@ -1,0 +1,32 @@
+{
+  "productName": "Nota Overlay Regression",
+  "version": "0.0.0",
+  "identifier": "com.local.nota.overlay-regression",
+  "build": {
+    "frontendDist": "../../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nota Overlay Regression",
+        "url": "index.html?view=overlay-regression",
+        "width": 400,
+        "height": 240
+      }
+    ],
+    "security": {
+      "assetProtocol": { "enable": true, "scope": [] },
+      "capabilities": [
+        {
+          "identifier": "overlay-events",
+          "windows": ["recording-overlay"],
+          "permissions": ["core:event:default"]
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "icon": ["../../src-tauri/icons/128x128.png", "../../src-tauri/icons/icon.ico"]
+  }
+}

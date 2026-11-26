@@ -113,6 +113,90 @@ flowchart TD
     I -->|Undo| B
 ```
 
+### Recording Audio Levels
+
+The mixer computes per-source RMS on each 10 ms frame before AEC and mixing.
+For `recording://levels`, the recording worker accumulates each source's
+highest frame RMS since the last approximately 100 ms publication, then
+clears the accumulator. Pause, microphone source-epoch changes and full
+source interruption also clear it. Short speech between publications remains
+visible without retaining a previous window's peak during silence.
+
+`src/audio-level.ts` maps these scalar amplitudes to the shared visual range:
+`20 * log10(rms)`, clamped from -60 dB (empty) to 0 dB (full). Silence,
+sub-floor noise, non-finite and negative values display as zero. Both
+`LevelMeter` and `AudioActivityWaveform` use this mapping. It is a relative
+activity display, not calibrated sound-pressure measurement. The mapping
+does not change recorded samples, AEC, limiting, ASR or silence detection.
+
+```mermaid
+flowchart LR
+    A[System and microphone frames] --> B[Per-source frame RMS]
+    B --> C[Maximum frame RMS per publication window]
+    C --> D[Scalar level event / clear window]
+    D --> E[Shared logarithmic display mapping]
+    E --> F[Main-window meters]
+    E --> G[Smoothed floating waveform]
+    A --> H[Existing audio processing and recording]
+```
+
+### Floating Recording Status
+
+The Rust `RecordingOverlay` owns the secondary window and follows the
+authoritative recording session. It is armed only after successful capture
+startup and runtime installation. The frontend subscribes to snapshots and
+levels before fetching the current snapshot, and acknowledges readiness with
+the session ID. Only then may Rust show the card and hide the main window;
+failed startup, stale readiness, and secondary-window failures must not hide
+the main window. A main window explicitly reopened during recording is not
+hidden again by state updates.
+
+Window creation runs on a blocking background task, with a separate render
+gate serializing lifecycle updates. It must not run inside a synchronous IPC
+handler or a `run_on_main_thread` callback: Windows WebView2 creation can
+deadlock in that context, preventing later recording and exit commands from
+being dispatched. Tauri marshals native window operations to its event loop.
+No recording/session mutex is held while those operations wait.
+
+The card is an undecorated, always-on-top window outside the taskbar. Its
+initial position uses the main window's monitor work area, including taskbar
+exclusion and display scaling. Resizing preserves its bottom-right anchor
+and clamps to the current work area. Position is temporary per recording.
+Native dragging and keyboard nudging do not change capture scope.
+
+`RecordingOverlayWindow` receives only existing typed recording snapshots
+and scalar system/microphone levels, never PCM. Its continuous decorative
+waveform is volume driven, not an oscilloscope trace: healthy system and
+enabled healthy microphone levels contribute, stale events decay to silence,
+and pause/finalization freeze the waveform. Reduced motion keeps a stable
+wave shape and updates activity less frequently. Pause, resume, and stop use
+the existing commands and finalization path; opening the main window only
+reveals it.
+
+Finalization retains the card and disables capture actions until the backend
+confirms completion. Successful completion without a fault destroys the
+card. Capture/save faults retain a visible status and a main-window action.
+Closing the auxiliary window through the OS reveals the main window instead
+of silently removing the recording reminder. Existing silence/interruption
+prompts remain independent.
+
+```mermaid
+stateDiagram-v2
+    [*] --> MainVisible
+    MainVisible --> MainVisible: Recording startup fails
+    MainVisible --> CardLoading: Capture starts and runtime is installed
+    CardLoading --> MainVisible: Card cannot load or show
+    CardLoading --> RecordingCard: Ready / show card, hide main
+    RecordingCard --> PausedCard: Pause
+    PausedCard --> RecordingCard: Resume
+    RecordingCard --> SavingCard: Stop / normal finalization
+    PausedCard --> SavingCard: Stop / normal finalization
+    SavingCard --> [*]: Completed without fault / destroy card
+    SavingCard --> AttentionCard: Save failure or retained fault
+    RecordingCard --> AttentionCard: Capture or storage fault
+    AttentionCard --> MainVisible: Open main window to inspect
+```
+
 ### Recording Detail Presentation
 
 `RecordingsWorkspace` owns selected-record presentation, native audio playback,
