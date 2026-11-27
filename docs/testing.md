@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-27
+- Last updated: 2026-11-27
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
@@ -217,6 +217,12 @@ Automated client coverage must include:
 - DashScope configurable trusted shared/workspace API roots, fixed model,
   `2–100` count, two-hour preflight, HTTPS host validation, sentence/speaker
   normalization, generation snapshot, and completed-checkpoint cleanup;
+- DashScope segmentation for recordings over two hours: protocol selection at
+  the two-hour boundary, even segment counts, pause-aligned cuts with target
+  fallback, the 115-minute bound, lossless page remuxing with pre-roll and
+  pre-skip, checkpoint version 2, merge offsets and per-segment speaker
+  renumbering, out-of-range timestamps, segment progress fields, and the
+  options and progress UI;
 - DashScope UI editable API root, fixed model, no model discovery,
   temporary-cloud disclosure,
   automatic-upload wording, and generation-bound voiceprint degradation;

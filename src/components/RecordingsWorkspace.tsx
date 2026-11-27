@@ -202,6 +202,17 @@ const statusLabels: Record<TranscriptionStatus, string> = {
   cancelled: "已取消",
 };
 
+/** Longest recording DashScope transcribes as one file with diarization. */
+const DASHSCOPE_SINGLE_FILE_MAX_MS = 2 * 60 * 60 * 1_000;
+/** Segment target used by the Rust planner (`DASHSCOPE_SEGMENT_LIMITS`). */
+const DASHSCOPE_SEGMENT_TARGET_MS = 105 * 60 * 1_000;
+
+/** Number of segments DashScope transcription will use, or null for one file. */
+export const dashScopeSegmentCount = (durationMs: number) =>
+  durationMs > DASHSCOPE_SINGLE_FILE_MAX_MS
+    ? Math.ceil(durationMs / DASHSCOPE_SEGMENT_TARGET_MS)
+    : null;
+
 const processingStatuses: TranscriptionStatus[] = ["queued", "preparing", "transcribing"];
 const resumableStatuses: TranscriptionStatus[] = ["failed", "interrupted", "cancelled"];
 
@@ -227,6 +238,20 @@ const transcriptionLabel = (transcription: TranscriptionSummary) => {
 };
 
 const transcriptionProgress = (transcription: TranscriptionSummary) => {
+  const detail = transcriptionProgressDetail(transcription);
+  if (
+    transcription.segmentCount
+    && transcription.segmentIndex !== null
+    && transcription.segmentIndex !== undefined
+    && processingStatuses.includes(transcription.status)
+    && !isLocallyQueued(transcription)
+  ) {
+    return `第 ${transcription.segmentIndex + 1}/${transcription.segmentCount} 段 · ${detail}`;
+  }
+  return detail;
+};
+
+const transcriptionProgressDetail = (transcription: TranscriptionSummary) => {
   if (isLocallyQueued(transcription)) return "任务已加入本地队列，等待开始处理";
   if (transcription.protocol === "legacy_chunks") {
     return transcription.totalChunks
@@ -279,6 +304,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   const [transcriptionOptions, setTranscriptionOptions] = useState<{
     recordingId: string;
     recordingTitle: string;
+    recordingDurationMs: number;
     retranscription: boolean;
     options: TranscriptionOptions;
   } | null>(null);
@@ -542,12 +568,6 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
   };
 
   const requestTranscription = (item: RecordingItem, retranscription: boolean) => {
-    if (props.activeProviderKind === "dashScope" && item.durationMs > 7_200_000) {
-      props.onPlaybackError(
-        "该录音超过 2 小时，无法使用百炼云转写；Nota 不会自动切片或关闭说话人分离。",
-      );
-      return;
-    }
     if (!props.onGetTranscriptionOptions) {
       if (props.activeProviderKind === "openAiCompatible") {
         (props.onStartTranscription as (id: string, count: number | null) => void)(item.id, null);
@@ -557,6 +577,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         setTranscriptionOptions({
           recordingId: item.id,
           recordingTitle: item.title,
+          recordingDurationMs: item.durationMs,
           retranscription,
           options: {
             providerId: "active",
@@ -612,6 +633,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         .then((options) => setTranscriptionOptions({
           recordingId: item.id,
           recordingTitle: item.title,
+          recordingDurationMs: item.durationMs,
           retranscription,
           options,
         }))
@@ -673,6 +695,7 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
       ? {
           kind: "transcriptionProviderUnsupported",
           providerName: props.transcript.providerName,
+          segmented: props.transcript.protocol === "dashscope_filetrans_segmented_v1",
         }
       : props.hasVoiceprintProvider
         ? { kind: "available" }
@@ -1326,6 +1349,9 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
           cloudUpload={transcriptionOptions.options.cloudUpload}
           maxDurationMinutes={transcriptionOptions.options.maxReliableAudioSeconds
             ? transcriptionOptions.options.maxReliableAudioSeconds / 60
+            : null}
+          segmentCount={transcriptionOptions.options.providerKind === "dashScope"
+            ? dashScopeSegmentCount(transcriptionOptions.recordingDurationMs)
             : null}
           hotwordLists={props.hotwordLists}
           hotwordsSupported={transcriptionOptions.options.hotwords.supported}

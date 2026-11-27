@@ -691,6 +691,9 @@ pub enum TranscriptionProtocol {
     LegacyChunks,
     NotaBatchV1,
     DashScopeFileTransV1,
+    /// DashScope for recordings over two hours: sequential segments whose
+    /// speaker labels are renumbered, not aligned, across segments.
+    DashScopeFileTransSegmentedV1,
 }
 
 impl TranscriptionProtocol {
@@ -699,6 +702,7 @@ impl TranscriptionProtocol {
             Self::LegacyChunks => "legacy_chunks",
             Self::NotaBatchV1 => "nota_batch_v1",
             Self::DashScopeFileTransV1 => "dashscope_filetrans_v1",
+            Self::DashScopeFileTransSegmentedV1 => "dashscope_filetrans_segmented_v1",
         }
     }
 
@@ -706,6 +710,7 @@ impl TranscriptionProtocol {
         match value {
             "nota_batch_v1" => Self::NotaBatchV1,
             "dashscope_filetrans_v1" => Self::DashScopeFileTransV1,
+            "dashscope_filetrans_segmented_v1" => Self::DashScopeFileTransSegmentedV1,
             _ => Self::LegacyChunks,
         }
     }
@@ -797,6 +802,10 @@ pub struct TranscriptionSummary {
     pub progress_unit: Option<TranscriptionProgressUnit>,
     pub hotword_list_name: Option<String>,
     pub hotword_count: u32,
+    /// Zero-based segment being processed by a segmented generation.
+    pub segment_index: Option<u32>,
+    /// Number of segments of a segmented generation.
+    pub segment_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

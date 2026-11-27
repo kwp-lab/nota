@@ -10,6 +10,8 @@ interface TranscriptionOptionsModalProps {
   speakerCountMax: number | null;
   cloudUpload: boolean;
   maxDurationMinutes: number | null;
+  /** Segments a long DashScope recording will be split into, or null. */
+  segmentCount?: number | null;
   onCancel: () => void;
   hotwordLists?: {
     id: string;
@@ -164,9 +166,11 @@ export function TranscriptionOptionsModal(props: TranscriptionOptionsModalProps)
             <AlertTriangle size={17} />
             <span>
               {props.cloudUpload
-                ? selectedHotwordList
-                  ? `${selectedHotwordList.entryCount} 个热词及完整录音将发送至${props.providerName}，临时文件约 48 小时后清理；始终开启匿名说话人分离${props.maxDurationMinutes ? `，最长 ${props.maxDurationMinutes} 分钟` : ""}。`
-                  : `将把完整录音上传至${props.providerName}，临时文件约 48 小时后清理；始终开启匿名说话人分离${props.maxDurationMinutes ? `，最长 ${props.maxDurationMinutes} 分钟` : ""}。`
+                ? `${selectedHotwordList
+                  ? `${selectedHotwordList.entryCount} 个热词及完整录音将发送至${props.providerName}`
+                  : `将把完整录音上传至${props.providerName}`}，临时文件约 48 小时后清理；始终开启匿名说话人分离${props.segmentCount
+                  ? `。录音超过 ${props.maxDurationMinutes ?? 120} 分钟，将分成 ${props.segmentCount} 段依次上传转写；各段的说话人编号互相独立，需要在说话人管理中把同一个人设置为相同姓名`
+                  : props.maxDurationMinutes ? `，单个文件最长 ${props.maxDurationMinutes} 分钟` : ""}。`
                 : "准确性优先：人数仅作为安全聚类目标，相似度不足时不会为凑人数强行合并。"}
             </span>
           </div>

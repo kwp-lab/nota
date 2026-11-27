@@ -10,7 +10,7 @@ import type {
 } from "../types";
 import "../styles.css";
 import "../recording-detail.css";
-import { RecordingsWorkspace } from "./RecordingsWorkspace";
+import { RecordingsWorkspace, dashScopeSegmentCount } from "./RecordingsWorkspace";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
@@ -758,6 +758,20 @@ describe("RecordingsWorkspace", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("offers segmented DashScope transcription for recordings over two hours", () => {
+    const long: RecordingItem = { ...completed, durationMs: 4 * 60 * 60 * 1_000 };
+    const actions = renderWorkspace([long], long.id, transcript, "dashScope");
+    fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
+
+    expect(screen.getByRole("dialog", { name: "重新转写" })).toBeInTheDocument();
+    expect(screen.getByText(/将分成 3 段依次上传转写/)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {
+      name: "重新转写",
+    }));
+    expect(actions.onStartTranscription).toHaveBeenCalledWith(long.id, null);
+    expect(actions.onPlaybackError).not.toHaveBeenCalled();
+  });
+
   it("keeps OpenAI-compatible retranscription as a one-click action", () => {
     const actions = renderWorkspace(undefined, undefined, undefined, "openAiCompatible");
     fireEvent.click(screen.getByRole("button", { name: "重新转写" }));
@@ -777,6 +791,34 @@ describe("RecordingsWorkspace", () => {
     };
     renderWorkspace([specified], specified.id, { ...transcript, speakerCount: 3 });
     expect(screen.getByText(/目标 3 人（安全优先）/)).toBeInTheDocument();
+  });
+
+  it("splits only DashScope recordings over two hours into even segments", () => {
+    const minutes = (value: number) => value * 60_000;
+    expect(dashScopeSegmentCount(minutes(120))).toBeNull();
+    expect(dashScopeSegmentCount(minutes(121))).toBe(2);
+    expect(dashScopeSegmentCount(minutes(210))).toBe(2);
+    expect(dashScopeSegmentCount(minutes(211))).toBe(3);
+  });
+
+  it("shows the active segment while a segmented DashScope job uploads", () => {
+    const uploading: RecordingItem = {
+      ...completed,
+      id: "segmented",
+      transcription: {
+        ...completed.transcription!,
+        status: "preparing",
+        protocol: "dashscope_filetrans_segmented_v1",
+        progressPhase: "uploading",
+        progressCurrent: 4 * 1024 * 1024,
+        progressTotal: 8 * 1024 * 1024,
+        progressUnit: "bytes",
+        segmentIndex: 1,
+        segmentCount: 3,
+      },
+    };
+    renderWorkspace([uploading], uploading.id, null);
+    expect(screen.getByText("第 2/3 段 · 已上传 4.0 MB / 8.0 MB")).toBeInTheDocument();
   });
 
   it("shows whole-meeting upload and server processing progress for FunASR", () => {
