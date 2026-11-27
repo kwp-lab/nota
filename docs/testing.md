@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-08-27
+- Last updated: 2026-11-27
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
@@ -395,9 +395,11 @@ Automated coverage for AI documents must include:
   official-OpenAI authentication requirements, and compatible Chat Completions
   response parsing, including rejection of incomplete or
   token-truncated output, without placing prompt content in logs;
-- one document per recording/template and monotonically increasing version
-  numbers, including failed and cancelled attempts;
-- `regenerate` without parent output and `revise` with a validated parent;
+- several independent documents per recording/template, migration of the
+  legacy one-per-template constraint without losing versions, and
+  monotonically increasing version numbers, including failed and cancelled
+  attempts;
+- `regenerate` without parent output, and rejection of new `revise` requests;
 - speaker-template rejection when the transcript has no speaker labels;
 - local input-budget rejection before network access;
 - collision-safe create-new paths, YAML identities, atomic file writes, and no
@@ -413,11 +415,11 @@ Automated coverage for AI documents must include:
   revalidation of the exported file before revealing it in Explorer;
 - document-first and version-second UI selection, with newest successful
   version selected by default;
-- the unified generation entry point defaulting to the current template,
-  submitting `regenerate` for a used template and `create` for an unused one,
-  while the separate regenerate action stays absent;
-- the compact AI document toolbar keeping revision, Markdown copy, generation,
-  and overflow actions visible while generation details remain keyboard
+- separate “新建 AI 文档” (`create`, any applicable template, de-duplicated
+  default title) and “创建新版本” (`regenerate`, selected document's template)
+  entry points, with no AI revision action;
+- the compact AI document toolbar keeping new document, new version, Markdown
+  copy, and overflow actions visible while generation details remain keyboard
   accessible inside overflow;
 - three context lifetimes and per-version prompt/provider/template snapshots;
 - credential-free request JSON matching the submitted body, successful raw
@@ -560,10 +562,10 @@ include the recording or transcript in ordinary logs or committed artifacts.
   focus restoration. Tab/focus changes must not replace audio or reset playback
   and the current record's reading positions. Recording-active warnings and the
   return-to-recorder action remain available.
-- Compare create, regenerate and revise dialogs with the pre-layout baseline:
+- Compare create and regenerate dialogs with the pre-layout baseline:
   all fields, settings/request tabs, Provider/model linkage, token estimates,
   budget errors and submit/cancel states must remain unchanged. Assert complete
-  generation payloads, including the revise source-version ID.
+  generation payloads.
 - Regress generation progress/cancel, missing/externally modified Markdown,
   file relinking, stale responses, and on-demand request/response inspection.
   Retain all existing playback, speaker, export and transcription tests.

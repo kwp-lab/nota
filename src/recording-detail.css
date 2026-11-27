@@ -43,7 +43,7 @@
 .detail-select { min-width: 0; width: 100%; }
 .detail-select select { width: 100%; min-width: 0; height: var(--control-height-compact-text); padding: var(--space-1-5) var(--space-8) var(--space-1-5) var(--space-2-5); font-size: var(--font-size-body); line-height: var(--line-height-body); text-overflow: ellipsis; }
 .ai-markdown-body { overflow-wrap: anywhere; padding: var(--space-5) var(--space-6); }
-.ai-markdown-content { max-width: 80ch; margin-inline: auto; }
+.ai-markdown-content { max-width: var(--layout-reading-width-document); margin-inline: auto; }
 .ai-markdown-body pre { white-space: pre-wrap; }
 .ai-markdown-body table { table-layout: fixed; }
 .ai-pdf-document { display: none; }

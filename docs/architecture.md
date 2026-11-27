@@ -1,7 +1,7 @@
 # Nota Client Architecture
 
 - Status: Accepted
-- Last updated: 2026-09-15
+- Last updated: 2026-11-27
 - Owners: Nota desktop maintainers
 - Related code: `src/`, `src-tauri/src/controller.rs`,
   `src-tauri/src/audio/`, `src-tauri/src/storage.rs`, `src-tauri/src/asr.rs`,
@@ -224,7 +224,7 @@ flowchart LR
     D --> F[Open generation details drawer]
     F --> G[Read persisted details for selected version]
     G --> H[Apply only if request and version are current]
-    D --> I[Existing create / regenerate / revise dialog]
+    D --> I[New document or new version dialog]
     I --> J[Existing preview, validation and explicit generation IPC]
     E --> K[Temporary print-only DOM clone]
     K --> L[Rust validates version and PDF destination]
@@ -523,8 +523,8 @@ Configured ASR providers are external trust boundaries even when they run on
 localhost or the LAN.
 
 Configured LLM providers are a separate external trust boundary. Only an
-explicit generation action sends the current transcript, supplied context, and
-for `revise` the selected Markdown body. Provider connection tests never send
+explicit generation action sends the current transcript and supplied context;
+it never sends the body of an earlier generated version. Provider connection tests never send
 meeting content. OpenAI requests set `store: false`, but the interface must not
 describe that flag as a zero-retention guarantee.
 

@@ -1,7 +1,7 @@
 # Nota Visual Design System
 
 - Status: Accepted
-- Last updated: 2026-08-27
+- Last updated: 2026-11-27
 - Owners: Nota maintainers
 
 This specification is the source of truth for Nota's in-product visual
@@ -316,8 +316,9 @@ transparent track while retaining a visible high-contrast fallback.
 AI documents use shared select styling for document/version selection instead
 of a permanent nested document sidebar. The document selector may grow to a
 bounded readable width; the version selector stays narrower, and both truncate
-before displacing the trailing action group. The unified new-document/new-version
-action leads that group, followed by AI revision and Markdown copying; all stay
+before displacing the trailing action group. The new-document action (Lucide
+`Plus`) leads that group, followed by the new-version action (Lucide
+`CopyPlus`) and Markdown copying; all stay
 directly available as icon-only controls with accessible names and custom
 tooltips. PDF export follows Markdown copying and uses a download-document icon;
 its in-progress state replaces that icon with the shared spinner and disables
@@ -327,9 +328,9 @@ without a second user action. Generation details and low-frequency file actions
 use the keyboard-accessible disclosure; the disclosure remains the final trailing
 control. Generation details open in
 a right-hand native dialog drawer with focus containment and restoration. The
-generation dialog lists both unused templates and templates already used by the
-meeting, clearly distinguishing “new document” from “new version” without
-changing the one-document-per-template model. Generation configuration dialogs
+new-document dialog shows the template selector without outcome suffixes; the
+new-version dialog names the target document in its title and has no template
+selector. Generation configuration dialogs
 retain their original fields and controls. Their rounded outer shell clips overflow;
 only the active form/request panel scrolls, leaving the title, tabs and footer
 visible. Scrollbars stay inside the shell padding, clear of its rounded corners.
@@ -338,6 +339,11 @@ chevron SVG as a semantic-color CSS mask without replacing tree keyboard behavio
 Both generation overlays dismiss on primary clicks that start and end on their
 backdrop. Inside clicks and text-selection drags must not dismiss them; generation
 submission disables close, cancel and backdrop dismissal together.
+
+The AI document preview centers its rendered Markdown within
+`--layout-reading-width-document` (960 px). At the 14 px Body size this holds
+roughly 68 Chinese characters per line and leaves room for meeting tables on
+wide displays; narrower panes use their full width.
 
 AI document printing is a content surface, not a screenshot of application
 chrome. Print output uses A4 portrait pages, the platform UI/display/monospace
