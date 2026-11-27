@@ -1,7 +1,7 @@
 # Testing and Acceptance
 
 - Status: Accepted
-- Last updated: 2026-11-27
+- Last updated: 2026-11-28
 - Owners: Nota maintainers
 - Related configuration: `package.json`, `src-tauri/Cargo.toml`,
   `.github/workflows/ci.yml`, `.github/workflows/frontend.yml`,
@@ -226,6 +226,9 @@ Automated client coverage must include:
 - DashScope UI editable API root, fixed model, no model discovery,
   temporary-cloud disclosure,
   automatic-upload wording, and generation-bound voiceprint degradation;
+- meeting end point validation, read-time filtering with straddling sentences,
+  rebuilt text, hidden counts, restore, persistence across reopen, and the
+  transcript row action and end row;
 - recording-detail switching between FunASR and DashScope transcript versions,
   including generation-specific text, speaker count, manual assignments, and
   voiceprint availability;

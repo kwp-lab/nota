@@ -530,6 +530,7 @@ impl Storage {
         ensure_transcription_history_schema(&connection)?;
         ensure_hotword_schema(&connection)?;
         ensure_transcription_segment_columns(&connection)?;
+        ensure_recording_meeting_end_column(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -1058,6 +1059,22 @@ impl Storage {
             params![title, new_path.to_string_lossy(), id],
         )?;
         self.find_recording(id)
+    }
+
+    /// Sets or clears where the meeting ended inside a recording. Setting the
+    /// stored value again is a no-op.
+    pub fn set_recording_meeting_end(&self, id: &str, end_ms: Option<u64>) -> Result<()> {
+        let duration_ms = self.find_recording(id)?.duration_ms;
+        if let Some(end_ms) = end_ms
+            && (end_ms == 0 || end_ms >= duration_ms)
+        {
+            bail!("会议结束点必须位于录音时长之内");
+        }
+        self.connection.lock().execute(
+            "UPDATE recordings SET meeting_end_ms = ?2 WHERE id = ?1",
+            params![id, end_ms.map(|value| value.min(i64::MAX as u64) as i64)],
+        )?;
+        Ok(())
     }
 
     pub fn remove_recording(&self, id: &str) -> Result<RecordingItem> {
@@ -2530,10 +2547,20 @@ impl Storage {
                         hotword_count: parse_hotword_snapshot(&row.get::<_, String>(15)?)
                             .len()
                             .min(u32::MAX as usize) as u32,
+                        meeting_end_ms: None,
+                        hidden_segment_count: 0,
                     })
                 },
             )
             .context("该录音还没有转写结果")?;
+        let meeting_end_ms = connection
+            .query_row(
+                "SELECT meeting_end_ms FROM recordings WHERE id = ?1",
+                [recording_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )?
+            .map(|value| value.max(0) as u64);
+        apply_meeting_end(&mut document, meeting_end_ms);
         let mut statement = connection.prepare(
             "SELECT a.raw_speaker, p.id, p.display_name
              FROM recording_speaker_assignments a
@@ -3392,6 +3419,48 @@ fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
 
 /// Segment progress for `dashscope_filetrans_segmented_v1`. Added after the
 /// transcription-history rebuild, which copies only the columns it knows.
+/// Optional end of the meeting inside a recording; see `docs/meeting-end-point.md`.
+fn ensure_recording_meeting_end_column(connection: &Connection) -> Result<()> {
+    let exists = {
+        let mut statement = connection.prepare("PRAGMA table_info(recordings)")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.filter_map(std::result::Result::ok)
+            .any(|name| name == "meeting_end_ms")
+    };
+    if !exists {
+        connection.execute(
+            "ALTER TABLE recordings ADD COLUMN meeting_end_ms INTEGER",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+/// Excludes sentences that start at or after `end_ms` and rebuilds the plain
+/// text from the kept sentences. Transcripts without sentences are unchanged.
+fn apply_meeting_end(document: &mut TranscriptDocument, end_ms: Option<u64>) {
+    document.meeting_end_ms = end_ms;
+    document.hidden_segment_count = 0;
+    let Some(end_ms) = end_ms else {
+        return;
+    };
+    if document.segments.is_empty() {
+        return;
+    }
+    let total = document.segments.len();
+    document
+        .segments
+        .retain(|segment| segment.start_ms < end_ms);
+    document.hidden_segment_count = (total - document.segments.len()).min(u32::MAX as usize) as u32;
+    document.text = document
+        .segments
+        .iter()
+        .map(|segment| segment.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+}
+
 fn ensure_transcription_segment_columns(connection: &Connection) -> Result<()> {
     let columns = {
         let mut statement = connection.prepare("PRAGMA table_info(transcriptions)")?;
@@ -6019,6 +6088,101 @@ mod tests {
             assert!(storage.resume_transcription(&recording_id).is_err());
         }
         drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn meeting_end_point_hides_later_sentences_until_cleared() {
+        let (root, storage) = test_storage();
+        let path = storage.paths.default_recordings.join("long.ogg");
+        std::fs::write(&path, b"audio").unwrap();
+        storage
+            .insert_recording(&RecordingItem {
+                id: "long".into(),
+                title: "long".into(),
+                path: path.to_string_lossy().into_owned(),
+                created_at: "2026-11-28T00:00:00Z".into(),
+                duration_ms: 9_000_000,
+                size_bytes: 5,
+                recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Keep))
+            .unwrap();
+        let generation = storage
+            .begin_transcription("long", &provider, None)
+            .unwrap();
+        let sentence = |start_ms: u64, end_ms: u64, text: &str, speaker: &str| TranscriptSegment {
+            start_ms,
+            end_ms,
+            text: text.into(),
+            speaker: Some(speaker.into()),
+        };
+        let segments = vec![
+            sentence(1_000, 2_000, "开始。", "speaker_0"),
+            sentence(3_014_000, 3_018_000, "嗯，好，拜拜。", "speaker_1"),
+            sentence(3_119_000, 3_124_000, "无关内容。", "speaker_3"),
+            sentence(3_200_000, 3_201_000, "更多无关。", "speaker_4"),
+        ];
+        storage
+            .complete_transcription("long", generation, "原始全文", &segments, Some("zh"))
+            .unwrap();
+
+        let full = storage.transcript("long").unwrap();
+        assert_eq!(full.meeting_end_ms, None);
+        assert_eq!(full.hidden_segment_count, 0);
+        assert_eq!(full.text, "原始全文");
+
+        for invalid in [0, 9_000_000, 9_000_001] {
+            assert!(
+                storage
+                    .set_recording_meeting_end("long", Some(invalid))
+                    .is_err()
+            );
+        }
+        // A sentence that straddles the end point is kept whole.
+        storage
+            .set_recording_meeting_end("long", Some(3_016_000))
+            .unwrap();
+        storage
+            .set_recording_meeting_end("long", Some(3_016_000))
+            .unwrap();
+        let trimmed = storage.transcript("long").unwrap();
+        assert_eq!(trimmed.meeting_end_ms, Some(3_016_000));
+        assert_eq!(trimmed.hidden_segment_count, 2);
+        assert_eq!(trimmed.segments, segments[..2].to_vec());
+        assert_eq!(trimmed.text, "开始。\n嗯，好，拜拜。");
+        assert_eq!(
+            storage
+                .transcript_for_generation("long", generation)
+                .unwrap()
+                .segments
+                .len(),
+            2
+        );
+
+        storage.set_recording_meeting_end("long", None).unwrap();
+        let restored = storage.transcript("long").unwrap();
+        assert_eq!(restored.segments, segments);
+        assert_eq!(restored.text, "原始全文");
+        assert_eq!(restored.hidden_segment_count, 0);
+
+        storage
+            .set_recording_meeting_end("long", Some(3_016_000))
+            .unwrap();
+        let paths = storage.paths().clone();
+        drop(storage);
+        let reopened = Storage::open(paths).unwrap();
+        assert_eq!(reopened.transcript("long").unwrap().hidden_segment_count, 2);
+        assert!(reopened.set_recording_meeting_end("missing", None).is_err());
+
+        drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
     }
 

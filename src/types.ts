@@ -418,6 +418,10 @@ export interface TranscriptDocument {
   completedAt: string | null;
   hotwordListName?: string | null;
   hotwordCount?: number;
+  /** The recording's meeting end point; later sentences are excluded. */
+  meetingEndMs?: number | null;
+  /** Sentences excluded by `meetingEndMs`. */
+  hiddenSegmentCount?: number;
 }
 
 export interface RecordingSpeakerAssignment {

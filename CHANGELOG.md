@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added a meeting end point for recordings that kept running after the
+  meeting. Choose "End meeting here" on a transcript sentence to hide every
+  later sentence from the transcript view, copy and export, speaker
+  management, and new AI documents. The audio and stored transcript are not
+  changed, and "Restore all" or the undo toast brings everything back.
+
 - Added transcription of recordings longer than two hours with Alibaba Cloud
   DashScope. Nota splits the recording locally at pauses, without re-encoding,
   into segments of at most 115 minutes, transcribes them one after another,
@@ -26,6 +32,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   recording or changes the scope of system-audio capture.
 
 ### Changed
+
+- Transcript sentences now highlight on hover and keyboard focus, and their
+  timestamps show a play icon and stronger colors on hover, focus, and press.
+  Timestamp buttons are announced as "play from" the given time.
 
 - Widened the AI document reading area from about 600 px to 960 px so
   documents use more of wide and high-resolution displays.

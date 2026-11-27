@@ -1,7 +1,7 @@
 # Nota Visual Design System
 
 - Status: Accepted
-- Last updated: 2026-11-27
+- Last updated: 2026-11-28
 - Owners: Nota maintainers
 
 This specification is the source of truth for Nota's in-product visual
@@ -312,6 +312,20 @@ selection, or active playback, and Space toggles playback for the focused row.
 Its compact trailing slot remains reserved so row content does not shift when
 the action appears. The list scrollbar uses a narrow neutral thumb on a
 transparent track while retaining a visible high-contrast fallback.
+
+Transcript sentences are rows with fixed inline padding and a medium radius, so
+the hover surface never shifts text. Hover and keyboard focus inside a row use
+`--color-surface-subtle`, because the translucent white list hover is not
+visible on the primary reading surface. The timestamp is a brand-tinted
+button: hover and keyboard focus deepen it to `--color-surface-brand-strong`
+with brand text and fade in a compact Lucide `Play` icon whose slot is always
+reserved, focus adds the standard focus ring, and press uses the primary
+control fill. Its accessible name states the action, such as "从 00:00:12
+开始播放", so it needs no tooltip. The trailing "在此处结束会议" icon action
+(Lucide `FlagTriangleRight`) appears with row hover or focus in a reserved
+slot. The meeting-end status row uses a dashed default border, muted Caption
+text, and a compact secondary "恢复全部" button. Reduced motion removes these
+transitions.
 
 AI documents use shared select styling for document/version selection instead
 of a permanent nested document sidebar. The document selector may grow to a

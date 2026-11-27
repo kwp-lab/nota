@@ -1358,6 +1358,30 @@ export default function App() {
               .catch(showError)
           }
           onExportTranscript={(id, title) => void exportTranscript(id, title)}
+          onSetMeetingEnd={(id, endMs) => {
+            const previous = transcript?.recordingId === id ? transcript.meetingEndMs ?? null : null;
+            void api
+              .setRecordingMeetingEnd(id, endMs)
+              .then((document) => {
+                setTranscript(document);
+                showToast(
+                  "success",
+                  endMs === null ? "已恢复完整转写" : `已隐藏会议结束后的 ${document.hiddenSegmentCount ?? 0} 句转写`,
+                  {
+                    action: {
+                      label: "撤销",
+                      onClick: () => {
+                        void api
+                          .setRecordingMeetingEnd(id, previous)
+                          .then(setTranscript)
+                          .catch(showError);
+                      },
+                    },
+                  },
+                );
+              })
+              .catch(showError);
+          }}
           onIdentifySpeakers={(id) =>
             api.identifyRecordingSpeakers(id, settings.voiceprintProviderId)
           }

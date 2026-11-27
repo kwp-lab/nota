@@ -29,6 +29,8 @@ use this index to find the specification that owns the behavior being changed.
    cross-Provider A/B results for real hotword transcription effects.
 7. [`ai-documents.md`](ai-documents.md) — Markdown-first AI generation,
    templates, versions, providers, and relinking.
+   [`meeting-end-point.md`](meeting-end-point.md) — excluding the
+   transcript after the end of a meeting from every transcript consumer.
 8. [`design-system.md`](design-system.md) — product visual language, design
    tokens, typography, color, spacing, and component styling rules.
 9. [`diagnostic-logging.md`](diagnostic-logging.md) — local event format,

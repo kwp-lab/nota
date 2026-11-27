@@ -207,6 +207,8 @@ export const api = {
     invoke<TranscriptDocument>("select_transcription_version", { recordingId, generation }),
   copyTranscript: (recordingId: string) =>
     invoke<void>("copy_transcript", { recordingId }),
+  setRecordingMeetingEnd: (recordingId: string, endMs: number | null) =>
+    invoke<TranscriptDocument>("set_recording_meeting_end", { recordingId, endMs }),
   exportTranscript: (recordingId: string, path: string) =>
     invoke<void>("export_transcript", { recordingId, path }),
   revealTranscriptExport: (path: string) =>
