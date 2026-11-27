@@ -1,4 +1,4 @@
-import { Clipboard, FileDown, FileText, FolderOpen, Info, Link2, LoaderCircle, Plus, RefreshCw, WandSparkles } from "lucide-react";
+import { Clipboard, CopyPlus, FileDown, FileText, FolderOpen, Info, Link2, LoaderCircle, Plus, RefreshCw } from "lucide-react";
 import { AppTooltip } from "./AppTooltip";
 import { DetailActionPopover } from "./DetailActionPopover";
 import { DetailSelect } from "./DetailSelect";
@@ -10,7 +10,7 @@ interface ToolbarModel {
   versionId: string | null;
   canGenerate: boolean;
   generationHint: string;
-  canRevise: boolean;
+  canCreateVersion: boolean;
   canRead: boolean;
   canExport: boolean;
   exporting: boolean;
@@ -20,7 +20,7 @@ interface ToolbarActions {
   selectDocument: (id: string) => void;
   selectVersion: (id: string) => void;
   generate: () => void;
-  revise: () => void;
+  createVersion: () => void;
   details: () => void;
   refresh: () => void;
   copy: () => void;
@@ -68,7 +68,7 @@ export function AiDocumentToolbar({ model, actions }: { model: ToolbarModel; act
         <AppTooltip content={model.generationHint} wrapDisabled={!model.canGenerate}>
           <button
             className="icon-button"
-            aria-label="生成 AI 文档或新版本"
+            aria-label="新建 AI 文档"
             disabled={!model.canGenerate}
             onClick={actions.generate}
           >
@@ -77,9 +77,9 @@ export function AiDocumentToolbar({ model, actions }: { model: ToolbarModel; act
         </AppTooltip>
         {model.documentId && (
           <>
-            <AppTooltip content="AI 修改：基于当前版本创建新版，原版本不会被覆盖" wrapDisabled={!model.canRevise}>
-              <button className="icon-button" aria-label="AI 修改" disabled={!model.canRevise} onClick={actions.revise}>
-                <WandSparkles size={16} />
+            <AppTooltip content="创建新版本：用当前文档的模板重新生成，原版本不会被覆盖" wrapDisabled={!model.canCreateVersion}>
+              <button className="icon-button" aria-label="创建新版本" disabled={!model.canCreateVersion} onClick={actions.createVersion}>
+                <CopyPlus size={16} />
               </button>
             </AppTooltip>
             {model.canRead && (

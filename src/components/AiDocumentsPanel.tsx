@@ -34,7 +34,7 @@ import type {
   AiDocumentVersion,
   AiGenerationDetails,
   AiGenerationDraftRequest,
-  AiGenerationMode,
+  AiGenerationRequestMode,
   AiGenerationRequestPreview,
   AiTemplate,
   AiWorkspace,
@@ -52,9 +52,9 @@ interface AiDocumentsPanelProps {
 }
 
 interface GenerationDialogState {
-  mode: AiGenerationMode;
+  mode: AiGenerationRequestMode;
+  /** Target document for a new version; null when creating a document. */
   document: AiDocument | null;
-  sourceVersion: AiDocumentVersion | null;
   templateId: string;
   title: string;
   meetingContext: string;
@@ -62,6 +62,15 @@ interface GenerationDialogState {
   runRequest: string;
   providerId: string;
   modelId: string;
+}
+
+/** Suggests a title that does not repeat an existing document title in this meeting. */
+export function uniqueDocumentTitle(baseTitle: string, documents: AiDocument[]): string {
+  const taken = new Set(documents.map((document) => document.title.trim()));
+  if (!taken.has(baseTitle)) return baseTitle;
+  let suffix = 2;
+  while (taken.has(`${baseTitle} (${suffix})`)) suffix += 1;
+  return `${baseTitle} (${suffix})`;
 }
 
 const statusLabels: Record<AiDocumentVersion["status"], string> = {
@@ -307,11 +316,10 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     ? selectedVersion.inputTokens + selectedVersion.outputTokens
     : null;
   const speakerLabelsAvailable = hasSpeakerLabels(props.transcript);
-  const generationTemplates = useMemo(() => {
-    if (!workspace) return [];
-    const used = new Set(workspace.documents.map((document) => document.templateId));
-    return workspace.templates.filter((template) => !template.archived || used.has(template.id));
-  }, [workspace]);
+  const generationTemplates = useMemo(
+    () => workspace?.templates.filter((template) => !template.archived) ?? [],
+    [workspace],
+  );
   const eligibleGenerationTemplates = useMemo(
     () => generationTemplates.filter((template) => !isSpeakerTemplate(template) || speakerLabelsAvailable),
     [generationTemplates, speakerLabelsAvailable],
@@ -320,15 +328,18 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     () => props.providers.filter(llmProviderReady),
     [props.providers],
   );
-  const canGenerateDocument = eligibleGenerationTemplates.length > 0 && availableProviders.length > 0;
+  const canGenerateDocument = availableProviders.length > 0 && eligibleGenerationTemplates.length > 0;
   const canReadVersion = Boolean(
     selectedVersion?.status === "completed" && selectedVersion.fileState !== "missing",
   );
-  const canReviseVersion = Boolean(
+  const selectedTemplate = selectedDocument
+    ? workspace?.templates.find((template) => template.id === selectedDocument.templateId) ?? null
+    : null;
+  const canCreateVersion = Boolean(
     availableProviders.length
-    && selectedVersion
-    && selectedVersion.status === "completed"
-    && selectedVersion.fileState !== "missing",
+    && selectedDocument
+    && selectedTemplate
+    && (!isSpeakerTemplate(selectedTemplate) || speakerLabelsAvailable),
   );
   const canExportPdf = Boolean(
     canReadVersion
@@ -352,7 +363,6 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     runRequest: dialog.runRequest,
     providerId: dialog.providerId,
     modelId: dialog.modelId,
-    sourceVersionId: dialog.mode === "revise" ? dialog.sourceVersion?.id ?? null : null,
   }) : null, [dialog, props.recording.id]);
   const requestBodyJson = useMemo(
     () => requestPreview ? JSON.stringify(requestPreview.requestBody, null, 2) : "",
@@ -409,55 +419,60 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
     };
   }, [generationDraft]);
 
-  const openDialog = (
-    mode: AiGenerationMode,
-    document: AiDocument | null,
-    sourceVersion: AiDocumentVersion | null = null,
-  ) => {
+  const openDialog = (mode: AiGenerationRequestMode) => {
+    if (!workspace) return;
+    if (mode === "regenerate" && !selectedDocument) return;
     setDialogTab("settings");
-    const preferredTemplateId = document
-      && eligibleGenerationTemplates.some((template) => template.id === document.templateId)
-      ? document.templateId
-      : null;
-    const templateId = preferredTemplateId
-      ?? eligibleGenerationTemplates[0]?.id
-      ?? generationTemplates[0]?.id
-      ?? "";
-    const resolvedDocument = mode === "revise"
-      ? document
-      : workspace?.documents.find((item) => item.templateId === templateId) ?? null;
-    const resolvedMode = mode === "revise" ? mode : resolvedDocument ? "regenerate" : "create";
     const defaultProvider = availableProviders.find((item) => item.id === props.activeProviderId)
       ?? availableProviders[0]
       ?? null;
-    setDialog({
-      mode: resolvedMode,
-      document: resolvedDocument,
-      sourceVersion,
-      templateId,
-      title: resolvedDocument?.title ?? workspace?.templates.find((item) => item.id === templateId)?.name ?? "",
-      meetingContext: workspace?.profile.meetingContext ?? "",
-      documentRequirements: resolvedDocument?.requirements ?? "",
+    const base = {
+      meetingContext: workspace.profile.meetingContext,
       runRequest: "",
       providerId: defaultProvider?.id ?? "",
       modelId: defaultProvider?.modelId ?? "",
+    };
+    if (mode === "regenerate" && selectedDocument) {
+      setDialog({
+        ...base,
+        mode,
+        document: selectedDocument,
+        templateId: selectedDocument.templateId,
+        title: selectedDocument.title,
+        documentRequirements: selectedDocument.requirements,
+      });
+      return;
+    }
+    const preferredTemplateId = selectedDocument
+      && eligibleGenerationTemplates.some((template) => template.id === selectedDocument.templateId)
+      ? selectedDocument.templateId
+      : null;
+    const templateId = preferredTemplateId ?? eligibleGenerationTemplates[0]?.id ?? "";
+    setDialog({ ...base, ...newDocumentFields(templateId), mode: "create", document: null });
+  };
+
+  /** Fields for starting a new, independent document from a template. */
+  const newDocumentFields = (templateId: string) => ({
+    templateId,
+    title: uniqueDocumentTitle(
+      workspace?.templates.find((item) => item.id === templateId)?.name ?? "",
+      workspace?.documents ?? [],
+    ),
+    documentRequirements: "",
+  });
+
+  const selectGenerationTemplate = (templateId: string) => {
+    if (!dialog || dialog.mode !== "create" || !workspace) return;
+    const previousDefault = newDocumentFields(dialog.templateId).title;
+    const next = newDocumentFields(templateId);
+    setDialog({
+      ...dialog,
+      templateId,
+      // Keep a title the user typed; only follow the template while it is still the default.
+      title: dialog.title === previousDefault ? next.title : dialog.title,
     });
   };
 
-  const selectGenerationTemplate = (templateId: string) => {
-    if (!dialog || dialog.mode === "revise" || !workspace) return;
-    const template = generationTemplates.find((item) => item.id === templateId);
-    const document = workspace.documents.find((item) => item.templateId === templateId) ?? null;
-    setDialog({
-      ...dialog,
-      mode: document ? "regenerate" : "create",
-      document,
-      sourceVersion: null,
-      templateId,
-      title: document?.title ?? template?.name ?? dialog.title,
-      documentRequirements: document?.requirements ?? "",
-    });
-  };
 
   const handleDialogTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -500,10 +515,6 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
       || !dialog.providerId
       || !dialog.templateId
     ) return;
-    if (dialog.mode === "revise" && !dialog.runRequest.trim()) {
-      props.onMessage("error", "请填写希望如何修改这个版本");
-      return;
-    }
     setSubmitting(true);
     try {
       const version = await api.generateAiDocument({
@@ -612,18 +623,18 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
         model={{
           documents: workspace?.documents ?? [], versions: versions.map((version) => ({ id: version.id, label: formatVersionLabel(version) })),
           documentId: selectedDocumentId, versionId: selectedVersionId,
-          canGenerate: canGenerateDocument, canRevise: canReviseVersion,
+          canGenerate: canGenerateDocument, canCreateVersion,
           canRead: canReadVersion, canExport: canExportPdf, exporting: pdfExporting,
           generationHint: !availableProviders.length
             ? "请先配置可用的 LLM Provider"
             : eligibleGenerationTemplates.length
-              ? "生成 AI 文档或新版本"
+              ? "新建 AI 文档"
               : "没有适用于当前转写的场景模板",
         }}
         actions={{
           selectDocument: setSelectedDocumentId, selectVersion: setSelectedVersionId,
-          generate: () => openDialog(selectedDocument ? "regenerate" : "create", selectedDocument),
-          revise: () => { if (selectedDocument) openDialog("revise", selectedDocument, selectedVersion); },
+          generate: () => openDialog("create"),
+          createVersion: () => openDialog("regenerate"),
           details: () => setPreviewTab("details"),
           refresh: () => setContentReloadKey((current) => current + 1),
           copy: () => { if (selectedVersion) void api.copyAiDocumentVersion(selectedVersion.id).then(() => props.onMessage("success", "已复制 Markdown")).catch((error) => props.onMessage("error", String(error))); },
@@ -638,7 +649,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
         {!selectedDocument ? (
           <div className="ai-documents-empty">
             <WandSparkles size={28} /><p>选择模板生成第一份 Markdown 文档。</p>
-            <button className="button primary" disabled={!canGenerateDocument} onClick={() => openDialog("create", null)}><Plus size={15} />生成文档</button>
+            <button className="button primary" disabled={!canGenerateDocument} onClick={() => openDialog("create")}><Plus size={15} />生成文档</button>
           </div>
         ) : (
           <>
@@ -785,7 +796,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
             <header>
               <div>
                 <p className="eyebrow">AI MARKDOWN</p>
-                <h3>{dialog.mode === "revise" ? "基于所选版本创建新版" : "生成 AI 文档"}</h3>
+                <h3>{dialog.mode === "regenerate" ? `为「${dialog.document?.title ?? ""}」创建新版本` : "新建 AI 文档"}</h3>
                 <small className="ai-version-creation-note">
                   每次生成都会创建新的 Markdown 版本，不会覆盖已有版本或文件。
                 </small>
@@ -830,34 +841,20 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                 role="tabpanel"
                 aria-labelledby="ai-generation-settings-tab"
               >
-                {dialog.mode !== "revise" && (
+                {dialog.mode === "create" && (
                   <label>
                     <span>场景模板</span>
                     <select aria-label="场景模板" value={dialog.templateId} onChange={(event) => selectGenerationTemplate(event.target.value)}>
                       {generationTemplates.map((template) => {
-                        const existingDocument = workspace.documents.find((item) => item.templateId === template.id);
                         const unavailable = isSpeakerTemplate(template) && !speakerLabelsAvailable;
                         return (
-                        <option
-                          key={template.id}
-                          value={template.id}
-                          disabled={unavailable}
-                        >
-                          {template.name}
-                          {unavailable
-                            ? "（需要说话人标签）"
-                            : existingDocument
-                              ? `（${template.archived ? "已归档 · " : ""}创建新版本）`
-                              : "（新建文档）"}
-                        </option>
+                          <option key={template.id} value={template.id} disabled={unavailable}>
+                            {template.name}
+                            {unavailable ? "（需要说话人标签）" : ""}
+                          </option>
                         );
                       })}
                     </select>
-                    {dialog.mode === "regenerate" && (
-                      <small className="ai-generation-template-note" aria-live="polite">
-                        该模板已有文档，本次将创建新版本，不会覆盖现有版本。
-                      </small>
-                    )}
                   </label>
                 )}
                 <label><span>文档标题</span><input value={dialog.title} onChange={(event) => setDialog({ ...dialog, title: event.target.value })} /></label>
@@ -870,8 +867,8 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                   <textarea rows={3} value={dialog.documentRequirements} placeholder="受众、用途、语言、语气、篇幅、重点…" onChange={(event) => setDialog({ ...dialog, documentRequirements: event.target.value })} />
                 </label>
                 <label>
-                  <span>{dialog.mode === "revise" ? "修改意见" : "本次附加要求"}</span>
-                  <textarea rows={3} value={dialog.runRequest} placeholder={dialog.mode === "revise" ? "说明需要补充、删除或调整的内容…" : "仅对本次生成生效，可留空"} onChange={(event) => setDialog({ ...dialog, runRequest: event.target.value })} />
+                  <span>本次附加要求</span>
+                  <textarea rows={3} value={dialog.runRequest} placeholder="仅对本次生成生效，可留空" onChange={(event) => setDialog({ ...dialog, runRequest: event.target.value })} />
                 </label>
                 <div className="ai-provider-row">
                   <label><span>Provider</span><select value={dialog.providerId} onChange={(event) => {
@@ -950,7 +947,7 @@ export function AiDocumentsPanel(props: AiDocumentsPanelProps) {
                 onClick={() => void submitGeneration()}
               >
                 {submitting ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
-                {submitting ? "正在加入队列…" : "生成新版本"}
+                {submitting ? "正在加入队列…" : dialog.mode === "create" ? "生成文档" : "生成新版本"}
               </button>
             </footer>
           </section>

@@ -18,6 +18,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Recording and saving settings. Hiding a source never interrupts an active
   recording or changes the scope of system-audio capture.
 
+### Changed
+
+- Widened the AI document reading area from about 600 px to 960 px so
+  documents use more of wide and high-resolution displays.
+- The AI document toolbar now has separate "New AI document" and "Create new
+  version" actions instead of inferring the outcome from the selected
+  template. Reusing a template such as Meeting summary creates a separate
+  document with a de-duplicated title.
+
+### Removed
+
+- Removed the "AI revise" action. To get another version of a document, use
+  "Create new version", which regenerates from the current transcript with
+  updated meeting context and document requirements. Versions created by
+  earlier revisions remain available.
+
 ### Fixed
 
 - Made quiet speech visible in recording meters and the floating waveform

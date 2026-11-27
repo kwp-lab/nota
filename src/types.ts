@@ -506,7 +506,10 @@ export interface AiMeetingProfile {
   updatedAt: string;
 }
 
+/** Stored version modes. `revise` only appears on historical versions. */
 export type AiGenerationMode = "create" | "regenerate" | "revise";
+/** Modes a new generation request may use. */
+export type AiGenerationRequestMode = Exclude<AiGenerationMode, "revise">;
 export type AiGenerationStatus =
   | "queued"
   | "generating"
@@ -560,7 +563,7 @@ export interface AiWorkspace {
 
 export interface AiGenerationDraftRequest {
   recordingId: string;
-  mode: AiGenerationMode;
+  mode: AiGenerationRequestMode;
   documentId: string | null;
   templateId: string | null;
   title: string | null;
@@ -569,7 +572,6 @@ export interface AiGenerationDraftRequest {
   runRequest: string;
   providerId: string | null;
   modelId: string | null;
-  sourceVersionId: string | null;
 }
 
 export interface AiGenerationRequest extends AiGenerationDraftRequest {

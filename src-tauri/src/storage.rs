@@ -477,9 +477,10 @@ impl Storage {
               title TEXT NOT NULL,
               requirements TEXT NOT NULL DEFAULT '',
               created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL,
-              UNIQUE(recording_id, template_id)
+              updated_at TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS ai_documents_recording_created
+              ON ai_documents(recording_id, created_at);
             CREATE TABLE IF NOT EXISTS ai_document_versions (
               id TEXT PRIMARY KEY,
               document_id TEXT NOT NULL REFERENCES ai_documents(id) ON DELETE CASCADE,
@@ -519,6 +520,7 @@ impl Storage {
         ensure_audio_import_schema(&connection)?;
         ensure_ai_template_columns(&connection)?;
         ensure_ai_generation_detail_columns(&connection)?;
+        ensure_ai_documents_allow_repeated_templates(&connection)?;
         seed_ai_templates(&connection)?;
         ensure_transcription_job_columns(&connection)?;
         ensure_transcription_speaker_count_constraint(&connection)?;
@@ -1581,12 +1583,6 @@ impl Storage {
     ) -> Result<AiDocument> {
         self.find_recording(recording_id)?;
         self.find_ai_template(template_id)?;
-        if self
-            .find_ai_document_for_template(recording_id, template_id)?
-            .is_some()
-        {
-            bail!("当前会议已经使用过该模板，请在已有文档中重新生成");
-        }
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.connection.lock().execute(
@@ -1620,23 +1616,6 @@ impl Storage {
             bail!("找不到该 AI 文档");
         }
         self.find_ai_document(id)
-    }
-
-    pub fn find_ai_document_for_template(
-        &self,
-        recording_id: &str,
-        template_id: &str,
-    ) -> Result<Option<AiDocument>> {
-        let id = self
-            .connection
-            .lock()
-            .query_row(
-                "SELECT id FROM ai_documents WHERE recording_id = ?1 AND template_id = ?2",
-                params![recording_id, template_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
-        id.map(|id| self.find_ai_document(&id)).transpose()
     }
 
     pub fn find_ai_document(&self, id: &str) -> Result<AiDocument> {
@@ -3586,6 +3565,64 @@ fn parse_hotword_weight(
     Some(4)
 }
 
+/// Older databases limited each meeting to one AI document per template.
+/// Rebuild the table without that constraint while keeping every version row.
+/// Foreign keys must be off so dropping the old table cannot cascade into
+/// `ai_document_versions`; the rebuild is then verified before commit.
+fn ensure_ai_documents_allow_repeated_templates(connection: &Connection) -> Result<()> {
+    let schema = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ai_documents'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .unwrap_or_default();
+    if !schema
+        .split_whitespace()
+        .collect::<String>()
+        .contains("UNIQUE(recording_id,template_id)")
+    {
+        return Ok(());
+    }
+    connection.pragma_update(None, "foreign_keys", "OFF")?;
+    let rebuilt = (|| -> Result<()> {
+        connection.execute_batch(
+            "BEGIN IMMEDIATE;
+             CREATE TABLE ai_documents_rebuilt (
+               id TEXT PRIMARY KEY,
+               recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+               template_id TEXT NOT NULL REFERENCES ai_templates(id),
+               title TEXT NOT NULL,
+               requirements TEXT NOT NULL DEFAULT '',
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+             );
+             INSERT INTO ai_documents_rebuilt
+               (id, recording_id, template_id, title, requirements, created_at, updated_at)
+             SELECT id, recording_id, template_id, title, requirements, created_at, updated_at
+             FROM ai_documents;
+             DROP TABLE ai_documents;
+             ALTER TABLE ai_documents_rebuilt RENAME TO ai_documents;
+             CREATE INDEX IF NOT EXISTS ai_documents_recording_created
+               ON ai_documents(recording_id, created_at);",
+        )?;
+        let violation = connection
+            .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+            .optional()?;
+        if violation.is_some() {
+            bail!("AI 文档表迁移后外键校验失败");
+        }
+        connection.execute_batch("COMMIT;")?;
+        Ok(())
+    })();
+    if rebuilt.is_err() {
+        let _ = connection.execute_batch("ROLLBACK;");
+    }
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    rebuilt
+}
+
 fn ensure_transcription_speaker_count_constraint(connection: &Connection) -> Result<()> {
     let schema = connection
         .query_row(
@@ -4389,6 +4426,131 @@ mod tests {
     }
 
     #[test]
+    fn migrates_one_document_per_template_constraint_without_losing_versions() {
+        let (root, storage) = test_storage();
+        let recording_path = storage.paths().default_recordings.join("meeting.ogg");
+        std::fs::write(&recording_path, b"audio").unwrap();
+        storage
+            .insert_recording(&RecordingItem {
+                id: "legacy-ai-meeting".into(),
+                title: "Legacy meeting".into(),
+                path: recording_path.to_string_lossy().into_owned(),
+                created_at: "2026-08-09T00:00:00Z".into(),
+                duration_ms: 10_000,
+                size_bytes: 5,
+                recovered: false,
+                origin: RecordingOrigin::Captured,
+                source_file_name: None,
+                source_format: None,
+                imported_at: None,
+                transcription: None,
+            })
+            .unwrap();
+        let provider = storage
+            .save_llm_provider(llm_provider_request(None, AsrApiKeyUpdate::Clear))
+            .unwrap();
+        let template = storage
+            .list_ai_templates()
+            .unwrap()
+            .into_iter()
+            .find(|template| template.builtin_key.as_deref() == Some("meeting_summary"))
+            .unwrap();
+        let document = storage
+            .create_ai_document("legacy-ai-meeting", &template.id, "Summary", "")
+            .unwrap();
+        let version_path = root.join("legacy-v001.md");
+        storage
+            .insert_ai_document_version(NewAiVersion {
+                id: "legacy-v1",
+                document_id: &document.id,
+                version_number: 1,
+                mode: AiGenerationMode::Create,
+                parent_version_id: None,
+                file_path: version_path.to_string_lossy().as_ref(),
+                provider_id: &provider.id,
+                provider: &provider,
+                template: &template,
+                transcription_generation: 1,
+                speaker_names_json: "{}",
+                meeting_context: "",
+                document_requirements: "",
+                run_request: "",
+                estimated_input_tokens: 10,
+                request_body_json: "{}",
+            })
+            .unwrap();
+        {
+            let connection = storage.connection.lock();
+            connection
+                .pragma_update(None, "foreign_keys", "OFF")
+                .unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE ai_documents_legacy (
+                       id TEXT PRIMARY KEY,
+                       recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                       template_id TEXT NOT NULL REFERENCES ai_templates(id),
+                       title TEXT NOT NULL,
+                       requirements TEXT NOT NULL DEFAULT '',
+                       created_at TEXT NOT NULL,
+                       updated_at TEXT NOT NULL,
+                       UNIQUE(recording_id, template_id)
+                     );
+                     INSERT INTO ai_documents_legacy SELECT * FROM ai_documents;
+                     DROP INDEX ai_documents_recording_created;
+                     DROP TABLE ai_documents;
+                     ALTER TABLE ai_documents_legacy RENAME TO ai_documents;",
+                )
+                .unwrap();
+            connection
+                .pragma_update(None, "foreign_keys", "ON")
+                .unwrap();
+        }
+        let paths = storage.paths().clone();
+        drop(storage);
+
+        let storage = Storage::open(paths).unwrap();
+        {
+            let connection = storage.connection.lock();
+            let schema: String = connection
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ai_documents'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(!schema.contains("UNIQUE"));
+            let foreign_keys: i64 = connection
+                .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(foreign_keys, 1);
+            assert!(
+                connection
+                    .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                    .optional()
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        let versions = storage.list_ai_document_versions(&document.id).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].id, "legacy-v1");
+        storage
+            .create_ai_document("legacy-ai-meeting", &template.id, "Second summary", "")
+            .unwrap();
+        assert_eq!(
+            storage
+                .list_ai_documents("legacy-ai-meeting")
+                .unwrap()
+                .len(),
+            2
+        );
+
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn llm_provider_keys_stay_in_rust_and_support_keep_and_clear() {
         let (root, storage) = test_storage();
         let saved = storage
@@ -4534,7 +4696,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_documents_are_one_per_template_with_append_only_file_versions() {
+    fn ai_documents_allow_repeated_templates_with_append_only_file_versions() {
         let (root, storage) = test_storage();
         let recording_path = storage.paths().default_recordings.join("meeting.ogg");
         std::fs::write(&recording_path, b"audio").unwrap();
@@ -4566,11 +4728,13 @@ mod tests {
         let document = storage
             .create_ai_document("ai-meeting", &template.id, "Summary", "For the team")
             .unwrap();
-        assert!(
-            storage
-                .create_ai_document("ai-meeting", &template.id, "Duplicate", "")
-                .is_err()
-        );
+        let sibling = storage
+            .create_ai_document("ai-meeting", &template.id, "Summary for leads", "")
+            .unwrap();
+        assert_ne!(sibling.id, document.id);
+        assert_eq!(sibling.template_id, document.template_id);
+        assert_eq!(storage.next_ai_version_number(&sibling.id).unwrap(), 1);
+        assert_eq!(storage.list_ai_documents("ai-meeting").unwrap().len(), 2);
 
         let first_path = root.join("summary-v001.md");
         let first_markdown = format!(

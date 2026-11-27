@@ -130,6 +130,9 @@
   --icon-size-default: 16px;
   --icon-size-large: 20px;
 
+  /* Reading measures. */
+  --layout-reading-width-document: 960px;
+
   --shadow-color-transparent: rgba(48, 53, 50, 0);
   --shadow-color-xs: rgba(40, 52, 47, 0.05);
   --shadow-color-sm: rgba(46, 51, 48, 0.07);

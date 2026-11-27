@@ -341,7 +341,7 @@ describe("RecordingsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "折叠录音列表" }));
     expect(document.querySelector(".history-pane")).toHaveAttribute("hidden");
     fireEvent.click(screen.getByRole("tab", { name: "AI 文档" }));
-    await screen.findByRole("button", { name: "生成 AI 文档或新版本" });
+    await screen.findByRole("button", { name: "新建 AI 文档" });
     fireEvent.click(screen.getByRole("tab", { name: "文字转写" }));
     expect(document.querySelector("audio")).toBe(audio);
     expect(audio.currentTime).toBe(12);

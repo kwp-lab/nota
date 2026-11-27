@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 - Status: Accepted
-- Last updated: 2026-09-23
+- Last updated: 2026-11-27
 - Owners: Nota maintainers
 
 ADRs record consequential technical choices that future maintainers should not
@@ -28,6 +28,7 @@ rejected alternatives, and consequences.
 | [0014](0014-meeting-local-speaker-names.md) | Accepted | Default to recording/version-local names and explicitly enroll reusable people per speaker |
 | [0015](0015-transcribe-saved-meetings-during-recording.md) | Accepted | Transcribe saved meetings independently of an active recording |
 | [0016](0016-floating-recording-status.md) | Accepted | Keep persistent recording status in a separate local waveform window |
+| [0017](0017-independent-ai-documents-per-template.md) | Accepted | Allow several independent AI documents per template and remove in-app AI revision |
 
 ## Lifecycle
 
