@@ -1,7 +1,7 @@
 # ASR Integration Specification
 
 - Status: Accepted
-- Last updated: 2026-08-22
+- Last updated: 2026-11-27
 - Owners: Nota desktop and Nota ASR Server maintainers
 - Related code: `src-tauri/src/asr.rs`, `src-tauri/src/models.rs`,
   `src-tauri/src/storage.rs`, `src/components/RecordingsWorkspace.tsx`
@@ -30,8 +30,9 @@ DashScope protocol details, recovery semantics, capability values, and the
 third-party Provider extension checklist are canonical in
 [`dashscope-asr-provider.md`](dashscope-asr-provider.md). Its first release
 fixes the China endpoint and `qwen-audio-3.0-asr-flash-filetrans`, always
-enables diarization, accepts automatic or `2–100` speaker count, and rejects
-audio longer than two hours before network access.
+enables diarization, accepts automatic or `2–100` speaker count, and
+splits recordings longer than two hours into sequential segments whose
+speaker labels are renumbered rather than aligned.
 
 Reusable hotword lifecycle and Provider-specific limits are defined in
 [`hotword-library.md`](hotword-library.md). Batch jobs include the selected

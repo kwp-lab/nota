@@ -36,7 +36,7 @@ export type SpeakerAnalysisStatus = "idle" | "loading" | "ready" | "failed";
 export type VoiceprintAvailability =
   | { kind: "available" }
   | { kind: "providerNotConfigured" }
-  | { kind: "transcriptionProviderUnsupported"; providerName: string };
+  | { kind: "transcriptionProviderUnsupported"; providerName: string; segmented?: boolean };
 
 export interface SpeakerPreviewRequest {
   id: string;
@@ -335,6 +335,8 @@ export function SpeakerIdentificationModal(props: SpeakerIdentificationModalProp
               <Info size={16} />
               <span>
                 本次转写由{props.voiceprintAvailability.providerName}生成，支持区分匿名说话人，但不支持 Nota 声纹分析。你仍可试听发言并手动设置姓名。
+                {props.voiceprintAvailability.segmented
+                  && "这场录音超过 2 小时，已分段转写，各段的说话人编号互相独立；把同一个人的编号设置为相同姓名即可合并。"}
               </span>
               <AppTooltip
                 content={`本次转写由${props.voiceprintAvailability.providerName}生成，不支持 Nota 声纹分析`}

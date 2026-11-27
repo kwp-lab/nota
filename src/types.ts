@@ -337,7 +337,8 @@ export type TranscriptionStatus =
 export type TranscriptionProtocol =
   | "legacy_chunks"
   | "nota_batch_v1"
-  | "dashscope_filetrans_v1";
+  | "dashscope_filetrans_v1"
+  | "dashscope_filetrans_segmented_v1";
 
 export type TranscriptionProgressPhase =
   | "preparing"
@@ -367,6 +368,10 @@ export interface TranscriptionSummary {
   progressUnit: TranscriptionProgressUnit | null;
   hotwordListName?: string | null;
   hotwordCount?: number;
+  /** Zero-based segment a segmented DashScope generation is processing. */
+  segmentIndex?: number | null;
+  /** Number of segments of a segmented DashScope generation. */
+  segmentCount?: number | null;
 }
 
 export interface TranscriptionVersionSummary {

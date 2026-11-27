@@ -225,16 +225,23 @@ flowchart LR
 
 ### `transcription_chunks`
 
-This table belongs only to `legacy_chunks`. Each row stores one completed local
-WAV chunk result so an interrupted OpenAI-compatible transcription can skip
-work already committed for the current generation.
+This table belongs to `legacy_chunks` and `dashscope_filetrans_segmented_v1`.
+Each row stores one completed local WAV chunk or DashScope segment result so an
+interrupted transcription can skip work already committed for the current
+generation. Segment rows keep provider-relative timestamps and labels; the
+merge applies offsets and renumbering only to the committed transcript.
+Starting a new generation deletes the recording's earlier rows.
 
 FunASR server windows must not be copied into this table; they remain private
 server checkpoints until the meeting-wide result is finalized.
 
-DashScope never uses `transcription_chunks`. Its checkpoint stores only stage,
-the temporary `oss://` object and expiry, and submit-attempt time. A successful
-local commit clears both checkpoint and task id. A `submitting` checkpoint
+Single-file DashScope (`dashscope_filetrans_v1`) never uses
+`transcription_chunks`. Its checkpoint stores only stage, the temporary
+`oss://` object and expiry, and submit-attempt time. The segmented protocol
+wraps that checkpoint in version 2 together with the segment plan and active
+segment index, and records progress in the nullable `segment_index` and
+`segment_count` columns. A successful local commit clears the checkpoint, the
+task id, and `segment_index`. A `submitting` checkpoint
 without task id is deliberately ambiguous and cannot be automatically retried.
 
 ### `audio_import_jobs`

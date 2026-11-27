@@ -94,6 +94,26 @@ describe("TranscriptionOptionsModal", () => {
     expect(screen.getByText(/最长 120 分钟/)).toBeInTheDocument();
   });
 
+  it("discloses segmented upload for DashScope recordings over two hours", () => {
+    render(
+      <TranscriptionOptionsModal
+        recordingTitle="长会议"
+        retranscription={false}
+        providerName="千问云转写"
+        speakerCountMin={2}
+        speakerCountMax={100}
+        cloudUpload
+        maxDurationMinutes={120}
+        segmentCount={3}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/将分成 3 段依次上传转写/)).toBeInTheDocument();
+    expect(screen.getByText(/各段的说话人编号互相独立/)).toBeInTheDocument();
+    expect(screen.queryByText(/单个文件最长/)).toBeNull();
+  });
+
   it("selects one compatible hotword list and discloses cloud transfer", () => {
     const onConfirm = vi.fn();
     render(

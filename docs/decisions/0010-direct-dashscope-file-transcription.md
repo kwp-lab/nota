@@ -1,8 +1,8 @@
 # ADR 0010: Connect Directly to DashScope From the Nota Client
 
-- Status: Accepted; fixed-endpoint constraint superseded by [ADR 0013](0013-configurable-trusted-dashscope-api-roots.md)
+- Status: Accepted; fixed-endpoint constraint superseded by [ADR 0013](0013-configurable-trusted-dashscope-api-roots.md); two-hour rejection and chunking rejection superseded by [ADR 0018](0018-segment-long-dashscope-recordings.md)
 - Date: 2026-08-22
-- Last updated: 2026-08-22
+- Last updated: 2026-11-27
 - Decision owners: Nota maintainers
 
 ## Context

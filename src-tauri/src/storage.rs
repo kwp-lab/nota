@@ -19,6 +19,9 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
+/// Longest recording DashScope transcribes as one file with diarization.
+pub const DASHSCOPE_SINGLE_FILE_MAX_MS: u64 = 2 * 60 * 60 * 1_000;
+
 #[derive(Debug, Clone)]
 pub struct StoredVoiceprintEmbedding {
     pub participant_id: String,
@@ -526,6 +529,7 @@ impl Storage {
         ensure_transcription_speaker_count_constraint(&connection)?;
         ensure_transcription_history_schema(&connection)?;
         ensure_hotword_schema(&connection)?;
+        ensure_transcription_segment_columns(&connection)?;
         migrate_legacy_recording_paths(&connection, &paths)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -999,7 +1003,7 @@ impl Storage {
                      t.progress_current, t.progress_total, t.progress_unit,
                      t.speaker_count, t.provider_kind, t.hotword_list_name,
                      t.hotword_snapshot_json, r.origin, r.source_file_name,
-                     r.source_format, r.imported_at
+                     r.source_format, r.imported_at, t.segment_index, t.segment_count
              FROM recordings r
              LEFT JOIN transcriptions t ON t.recording_id = r.id
                AND t.generation = (
@@ -1025,7 +1029,7 @@ impl Storage {
                          t.progress_current, t.progress_total, t.progress_unit,
                          t.speaker_count, t.provider_kind, t.hotword_list_name,
                          t.hotword_snapshot_json, r.origin, r.source_file_name,
-                         r.source_format, r.imported_at
+                         r.source_format, r.imported_at, t.segment_index, t.segment_count
                  FROM recordings r
                  LEFT JOIN transcriptions t ON t.recording_id = r.id
                    AND t.generation = (
@@ -1929,7 +1933,14 @@ impl Storage {
         let protocol = match provider.kind {
             AsrProviderKind::FunAsr => TranscriptionProtocol::NotaBatchV1,
             AsrProviderKind::OpenAiCompatible => TranscriptionProtocol::LegacyChunks,
-            AsrProviderKind::DashScope => TranscriptionProtocol::DashScopeFileTransV1,
+            AsrProviderKind::DashScope => {
+                let duration_ms = self.find_recording(recording_id)?.duration_ms;
+                if duration_ms > DASHSCOPE_SINGLE_FILE_MAX_MS {
+                    TranscriptionProtocol::DashScopeFileTransSegmentedV1
+                } else {
+                    TranscriptionProtocol::DashScopeFileTransV1
+                }
+            }
         };
         let progress_phase = TranscriptionProgressPhase::Preparing;
         let idempotency_key = uuid::Uuid::new_v4().to_string();
@@ -1986,6 +1997,7 @@ impl Storage {
                     protocol,
                     TranscriptionProtocol::NotaBatchV1
                         | TranscriptionProtocol::DashScopeFileTransV1
+                        | TranscriptionProtocol::DashScopeFileTransSegmentedV1
                 ) {
                     TranscriptionProgressUnit::Bytes.as_str()
                 } else {
@@ -2144,10 +2156,11 @@ impl Storage {
                     WHEN progress_total > 0 THEN progress_total ELSE 1
                   END,
                   remote_job_id = CASE
-                    WHEN protocol = 'dashscope_filetrans_v1' THEN NULL
+                    WHEN protocol IN ('dashscope_filetrans_v1', 'dashscope_filetrans_segmented_v1')
+                      THEN NULL
                     ELSE remote_job_id
                   END,
-                  provider_state_json = '{}',
+                  provider_state_json = '{}', segment_index = NULL,
                   updated_at = ?6, completed_at = ?6
              WHERE recording_id = ?1 AND generation = ?2",
             params![
@@ -2199,7 +2212,8 @@ impl Storage {
                 "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
                         error_message, text, protocol, progress_phase,
                         progress_current, progress_total, progress_unit, speaker_count,
-                        provider_kind, hotword_list_name, hotword_snapshot_json
+                        provider_kind, hotword_list_name, hotword_snapshot_json,
+                        segment_index, segment_count
                  FROM transcriptions WHERE recording_id = ?1
                  ORDER BY generation DESC LIMIT 1",
                 [recording_id],
@@ -2219,7 +2233,8 @@ impl Storage {
                 "SELECT status, completed_chunks, total_chunks, provider_name, model_id,
                         error_message, text, protocol, progress_phase,
                         progress_current, progress_total, progress_unit, speaker_count,
-                        provider_kind, hotword_list_name, hotword_snapshot_json
+                        provider_kind, hotword_list_name, hotword_snapshot_json,
+                        segment_index, segment_count
                  FROM transcriptions WHERE recording_id = ?1 AND generation = ?2",
                 params![recording_id, generation],
                 transcription_summary_from_row,
@@ -2317,6 +2332,29 @@ impl Storage {
                 recording_id,
                 generation,
                 remote_job_id,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Records which segment a segmented generation is processing.
+    pub fn set_transcription_segment_progress(
+        &self,
+        recording_id: &str,
+        generation: u32,
+        segment_index: u32,
+        segment_count: u32,
+    ) -> Result<()> {
+        self.connection.lock().execute(
+            "UPDATE transcriptions
+             SET segment_index = ?3, segment_count = ?4, updated_at = ?5
+             WHERE recording_id = ?1 AND generation = ?2",
+            params![
+                recording_id,
+                generation,
+                segment_index,
+                segment_count,
                 Utc::now().to_rfc3339()
             ],
         )?;
@@ -2910,6 +2948,8 @@ fn recording_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecordingItem
             )
             .len()
             .min(u32::MAX as usize) as u32,
+            segment_index: row.get(27)?,
+            segment_count: row.get(28)?,
         })
     } else {
         None
@@ -3212,6 +3252,8 @@ fn transcription_summary_from_row(
         hotword_count: parse_hotword_snapshot(&row.get::<_, String>(15)?)
             .len()
             .min(u32::MAX as usize) as u32,
+        segment_index: row.get(16)?,
+        segment_count: row.get(17)?,
     })
 }
 
@@ -3345,6 +3387,32 @@ fn ensure_transcription_job_columns(connection: &Connection) -> Result<()> {
          WHERE provider_kind = '' OR provider_kind = 'open_ai_compatible'",
         [],
     )?;
+    Ok(())
+}
+
+/// Segment progress for `dashscope_filetrans_segmented_v1`. Added after the
+/// transcription-history rebuild, which copies only the columns it knows.
+fn ensure_transcription_segment_columns(connection: &Connection) -> Result<()> {
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(transcriptions)")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.filter_map(std::result::Result::ok)
+            .collect::<std::collections::HashSet<_>>()
+    };
+    for (name, sql) in [
+        (
+            "segment_index",
+            "ALTER TABLE transcriptions ADD COLUMN segment_index INTEGER",
+        ),
+        (
+            "segment_count",
+            "ALTER TABLE transcriptions ADD COLUMN segment_count INTEGER",
+        ),
+    ] {
+        if !columns.contains(name) {
+            connection.execute(sql, [])?;
+        }
+    }
     Ok(())
 }
 
@@ -5950,6 +6018,90 @@ mod tests {
             );
             assert!(storage.resume_transcription(&recording_id).is_err());
         }
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dashscope_selects_segmented_protocol_over_two_hours_and_tracks_segments() {
+        let (root, storage) = test_storage();
+        let mut provider = storage
+            .save_asr_provider(provider_request(None, AsrApiKeyUpdate::Keep))
+            .unwrap();
+        provider.kind = AsrProviderKind::DashScope;
+        provider.capabilities = provider.kind.capabilities();
+        provider.base_url = "https://dashscope.aliyuncs.com/api/v1".into();
+        provider.model_id = "qwen-audio-3.0-asr-flash-filetrans".into();
+        for (id, duration_ms, expected) in [
+            (
+                "two-hours",
+                DASHSCOPE_SINGLE_FILE_MAX_MS,
+                TranscriptionProtocol::DashScopeFileTransV1,
+            ),
+            (
+                "over-two-hours",
+                DASHSCOPE_SINGLE_FILE_MAX_MS + 1,
+                TranscriptionProtocol::DashScopeFileTransSegmentedV1,
+            ),
+        ] {
+            let path = storage.paths.default_recordings.join(format!("{id}.ogg"));
+            std::fs::write(&path, b"audio").unwrap();
+            storage
+                .insert_recording(&RecordingItem {
+                    id: id.into(),
+                    title: id.into(),
+                    path: path.to_string_lossy().into_owned(),
+                    created_at: "2026-11-27T00:00:00Z".into(),
+                    duration_ms,
+                    size_bytes: 5,
+                    recovered: false,
+                    origin: RecordingOrigin::Captured,
+                    source_file_name: None,
+                    source_format: None,
+                    imported_at: None,
+                    transcription: None,
+                })
+                .unwrap();
+            storage.begin_transcription(id, &provider, None).unwrap();
+            assert_eq!(
+                storage.transcription_execution(id).unwrap().protocol,
+                expected
+            );
+        }
+
+        let id = "over-two-hours";
+        let summary = storage.transcription_summary(id).unwrap();
+        assert_eq!(summary.segment_index, None);
+        assert_eq!(summary.segment_count, None);
+        storage
+            .set_transcription_segment_progress(id, 1, 1, 3)
+            .unwrap();
+        storage
+            .set_transcription_provider_checkpoint(id, 1, Some("segment-task"), r#"{"version":2}"#)
+            .unwrap();
+        let summary = storage.transcription_summary(id).unwrap();
+        assert_eq!(summary.segment_index, Some(1));
+        assert_eq!(summary.segment_count, Some(3));
+        let listed = storage
+            .list_recordings()
+            .unwrap()
+            .into_iter()
+            .find(|item| item.id == id)
+            .unwrap()
+            .transcription
+            .unwrap();
+        assert_eq!(listed.segment_count, Some(3));
+
+        storage
+            .complete_transcription(id, 1, "完成", &[], Some("zh"))
+            .unwrap();
+        let execution = storage.transcription_execution(id).unwrap();
+        assert_eq!(execution.remote_job_id, None);
+        assert_eq!(execution.provider_state_json, "{}");
+        let summary = storage.transcription_summary(id).unwrap();
+        assert_eq!(summary.segment_index, None);
+        assert_eq!(summary.segment_count, Some(3));
+
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }

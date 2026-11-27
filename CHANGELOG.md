@@ -9,6 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added transcription of recordings longer than two hours with Alibaba Cloud
+  DashScope. Nota splits the recording locally at pauses, without re-encoding,
+  into segments of at most 115 minutes, transcribes them one after another,
+  and merges the result. Speaker labels are numbered separately per segment;
+  give the same person's labels the same name in speaker management to merge
+  them. Interrupted jobs resume without resubmitting finished segments.
+
 - Added a persistent floating recording card with a sound-reactive fine
   waveform and elapsed time. Successful recording moves the main window to
   the tray after the card is ready; the card supports pause/resume, stop and

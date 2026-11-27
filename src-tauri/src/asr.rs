@@ -28,6 +28,8 @@ use tauri::{AppHandle, Emitter};
 
 #[path = "asr/providers/dashscope.rs"]
 mod dashscope;
+#[path = "asr/dashscope_segmented.rs"]
+mod dashscope_segmented;
 
 const ASR_SAMPLE_RATE: u32 = 16_000;
 const CHUNK_DURATION_MS: u64 = 10 * 60 * 1_000;
@@ -301,9 +303,11 @@ impl AsrManager {
         let execution = self
             .storage
             .transcription_execution_for_generation(recording_id, generation)?;
-        let dashscope_cloud_task = execution.protocol
-            == TranscriptionProtocol::DashScopeFileTransV1
-            && execution.remote_job_id.is_some();
+        let dashscope_cloud_task = matches!(
+            execution.protocol,
+            TranscriptionProtocol::DashScopeFileTransV1
+                | TranscriptionProtocol::DashScopeFileTransSegmentedV1
+        ) && execution.remote_job_id.is_some();
         self.storage.set_transcription_error(
             recording_id,
             generation,
@@ -490,6 +494,15 @@ fn process_job(
             Path::new(&recording.path),
             recording.size_bytes,
             recording.duration_ms,
+        );
+    }
+    if execution.protocol == TranscriptionProtocol::DashScopeFileTransSegmentedV1 {
+        return dashscope_segmented::process_dashscope_segmented_job(
+            job,
+            storage,
+            cancellation,
+            &credentials,
+            Path::new(&recording.path),
         );
     }
     if execution.protocol == TranscriptionProtocol::DashScopeFileTransV1 {
@@ -952,19 +965,91 @@ fn process_dashscope_job(
         storage.transcription_execution_for_generation(&job.recording_id, job.generation)?;
     validate_dashscope_hotwords(&execution.hotwords)?;
     let mut checkpoint = dashscope::Checkpoint::from_json(&execution.provider_state_json)?;
-    if execution.remote_job_id.is_none() && checkpoint.stage == dashscope::Stage::Submitting {
+    let mut task_id = execution.remote_job_id;
+    let mut save = |remote_job_id: Option<&str>, value: &dashscope::Checkpoint| {
+        save_dashscope_checkpoint(storage, job, remote_job_id, value)
+    };
+    loop {
+        let submitted = dashscope_upload_and_submit(
+            job,
+            storage,
+            cancellation,
+            credentials,
+            recording_path,
+            execution.speaker_count,
+            &execution.hotwords,
+            &mut checkpoint,
+            task_id.take(),
+            &mut save,
+        )?;
+        match dashscope_poll_task(
+            job,
+            storage,
+            cancellation,
+            credentials,
+            &submitted,
+            &mut checkpoint,
+            &mut save,
+        )? {
+            DashScopeOutcome::Transcript(transcript) => {
+                storage.complete_transcription(
+                    &job.recording_id,
+                    job.generation,
+                    &transcript.text,
+                    &transcript.segments,
+                    transcript.language.as_deref(),
+                )?;
+                emit_current_status(&job.app, storage, &job.recording_id, job.generation);
+                return Ok(());
+            }
+            DashScopeOutcome::RemoteCancelled => {
+                // The provider dropped the task; upload and submit it again.
+                checkpoint = dashscope::Checkpoint::default();
+                save(None, &checkpoint)?;
+            }
+        }
+    }
+}
+
+/// Persists one DashScope task checkpoint and its task id.
+type DashScopeCheckpointSink<'a> =
+    dyn FnMut(Option<&str>, &dashscope::Checkpoint) -> Result<()> + 'a;
+
+enum DashScopeOutcome {
+    Transcript(ProviderTranscript),
+    RemoteCancelled,
+}
+
+/// Uploads `upload_path` when no valid temporary object exists, then submits a
+/// DashScope task unless `task_id` is already known. Returns the task id.
+#[allow(clippy::too_many_arguments)]
+fn dashscope_upload_and_submit(
+    job: &TranscriptionJob,
+    storage: &Arc<Storage>,
+    cancellation: &Cancellation,
+    credentials: &AsrProviderCredentials,
+    upload_path: &Path,
+    speaker_count: Option<u32>,
+    hotwords: &[HotwordEntry],
+    checkpoint: &mut dashscope::Checkpoint,
+    mut task_id: Option<String>,
+    save: &mut DashScopeCheckpointSink<'_>,
+) -> Result<String> {
+    if task_id.is_none() && checkpoint.stage == dashscope::Stage::Submitting {
         bail!(
             "上次提交 DashScope 任务时响应丢失，结果是否计费无法确定；为避免重复计费，Nota 不会自动重试。请明确确认可能重复计费后重新创建转写任务"
         );
     }
-
-    let mut task_id = execution.remote_job_id;
     if task_id.is_none() {
         if !checkpoint.uploaded_object_is_valid() {
+            let actual_size = std::fs::metadata(upload_path)?.len();
+            if actual_size == 0 {
+                bail!("录音文件为空，无法上传");
+            }
             checkpoint.stage = dashscope::Stage::Uploading;
             checkpoint.oss_url = None;
             checkpoint.oss_expires_at = None;
-            save_dashscope_checkpoint(storage, job, None, &checkpoint)?;
+            save(None, checkpoint)?;
             storage.set_batch_transcription_progress(
                 &job.recording_id,
                 job.generation,
@@ -1012,14 +1097,14 @@ fn process_dashscope_job(
             });
             let uploaded = dashscope::DashScopeAdapter::upload_audio(
                 credentials,
-                recording_path,
+                upload_path,
                 on_progress,
                 Arc::clone(&cancellation.requested),
             )?;
             checkpoint.stage = dashscope::Stage::Uploaded;
             checkpoint.oss_url = Some(uploaded.oss_url);
             checkpoint.oss_expires_at = Some(uploaded.expires_at);
-            save_dashscope_checkpoint(storage, job, None, &checkpoint)?;
+            save(None, checkpoint)?;
         }
 
         ensure_not_cancelled(&cancellation.requested)?;
@@ -1029,7 +1114,7 @@ fn process_dashscope_job(
             .context("DashScope 临时对象地址缺失")?;
         checkpoint.stage = dashscope::Stage::Submitting;
         checkpoint.submit_attempted_at = Some(chrono::Utc::now().to_rfc3339());
-        save_dashscope_checkpoint(storage, job, None, &checkpoint)?;
+        save(None, checkpoint)?;
         storage.set_batch_transcription_progress(
             &job.recording_id,
             job.generation,
@@ -1043,22 +1128,35 @@ fn process_dashscope_job(
         let submitted_id = dashscope::DashScopeAdapter::submit_task(
             credentials,
             oss_url,
-            execution.speaker_count,
-            &execution.hotwords,
+            speaker_count,
+            hotwords,
         )?;
         checkpoint.stage = dashscope::Stage::Submitted;
-        save_dashscope_checkpoint(storage, job, Some(&submitted_id), &checkpoint)?;
+        save(Some(&submitted_id), checkpoint)?;
         task_id = Some(submitted_id);
     }
 
-    let task_id = task_id.context("DashScope 恢复状态缺少 task_id")?;
+    task_id.context("DashScope 恢复状态缺少 task_id")
+}
+
+/// Polls one DashScope task until it produces a normalized transcript or the
+/// provider reports that it was cancelled remotely.
+fn dashscope_poll_task(
+    job: &TranscriptionJob,
+    storage: &Arc<Storage>,
+    cancellation: &Cancellation,
+    credentials: &AsrProviderCredentials,
+    task_id: &str,
+    checkpoint: &mut dashscope::Checkpoint,
+    save: &mut DashScopeCheckpointSink<'_>,
+) -> Result<DashScopeOutcome> {
     let mut last_state = None;
     loop {
-        let remote = dashscope::DashScopeAdapter::get_task(credentials, &task_id)?;
+        let remote = dashscope::DashScopeAdapter::get_task(credentials, task_id)?;
         if cancellation.requested.load(Ordering::Acquire) {
             match remote.state {
                 dashscope::TaskState::Pending => {
-                    dashscope::DashScopeAdapter::cancel_pending_task(credentials, &task_id)?;
+                    dashscope::DashScopeAdapter::cancel_pending_task(credentials, task_id)?;
                     bail!("DashScope 排队任务已取消");
                 }
                 dashscope::TaskState::Running | dashscope::TaskState::Succeeded => {
@@ -1085,7 +1183,7 @@ fn process_dashscope_job(
         match remote.state {
             dashscope::TaskState::Pending => {
                 checkpoint.stage = dashscope::Stage::Pending;
-                save_dashscope_checkpoint(storage, job, Some(&task_id), &checkpoint)?;
+                save(Some(task_id), checkpoint)?;
                 storage.set_batch_transcription_progress(
                     &job.recording_id,
                     job.generation,
@@ -1098,7 +1196,7 @@ fn process_dashscope_job(
             }
             dashscope::TaskState::Running => {
                 checkpoint.stage = dashscope::Stage::Running;
-                save_dashscope_checkpoint(storage, job, Some(&task_id), &checkpoint)?;
+                save(Some(task_id), checkpoint)?;
                 storage.set_batch_transcription_progress(
                     &job.recording_id,
                     job.generation,
@@ -1111,7 +1209,7 @@ fn process_dashscope_job(
             }
             dashscope::TaskState::Succeeded => {
                 checkpoint.stage = dashscope::Stage::Downloading;
-                save_dashscope_checkpoint(storage, job, Some(&task_id), &checkpoint)?;
+                save(Some(task_id), checkpoint)?;
                 storage.set_batch_transcription_progress(
                     &job.recording_id,
                     job.generation,
@@ -1127,16 +1225,8 @@ fn process_dashscope_job(
                 )?;
                 let transcript = dashscope::DashScopeAdapter::download_result(&result_url)?;
                 checkpoint.stage = dashscope::Stage::Normalizing;
-                save_dashscope_checkpoint(storage, job, Some(&task_id), &checkpoint)?;
-                storage.complete_transcription(
-                    &job.recording_id,
-                    job.generation,
-                    &transcript.text,
-                    &transcript.segments,
-                    transcript.language.as_deref(),
-                )?;
-                emit_current_status(&job.app, storage, &job.recording_id, job.generation);
-                return Ok(());
+                save(Some(task_id), checkpoint)?;
+                return Ok(DashScopeOutcome::Transcript(transcript));
             }
             dashscope::TaskState::Failed => {
                 let suffix = remote
@@ -1147,16 +1237,7 @@ fn process_dashscope_job(
                 bail!("DashScope 转写任务失败{suffix}");
             }
             dashscope::TaskState::Cancelled => {
-                save_dashscope_checkpoint(storage, job, None, &dashscope::Checkpoint::default())?;
-                return process_dashscope_job(
-                    job,
-                    storage,
-                    cancellation,
-                    credentials,
-                    recording_path,
-                    recorded_size,
-                    recorded_duration_ms,
-                );
+                return Ok(DashScopeOutcome::RemoteCancelled);
             }
             dashscope::TaskState::Unknown => {
                 bail!(
@@ -2400,6 +2481,14 @@ fn redact_secret(message: &str, secret: &str) -> String {
     }
 }
 
+/// Legacy WAV chunks and DashScope Ogg segments are both disposable copies.
+fn is_temporary_audio(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("wav" | "ogg")
+    )
+}
+
 pub fn remove_temporary_chunks(recovery_directory: &Path, recording_id: &str) -> Result<()> {
     let directory = recovery_directory.join("TranscriptionTemp");
     let Ok(entries) = std::fs::read_dir(&directory) else {
@@ -2410,7 +2499,7 @@ pub fn remove_temporary_chunks(recovery_directory: &Path, recording_id: &str) ->
         let entry = entry?;
         let path = entry.path();
         let is_target = path.is_file()
-            && path.extension().and_then(|value| value.to_str()) == Some("wav")
+            && is_temporary_audio(&path)
             && path
                 .file_name()
                 .and_then(|value| value.to_str())
@@ -2429,7 +2518,7 @@ pub fn clean_stale_temporary_chunks(recovery_directory: &Path) -> Result<()> {
     };
     for entry in entries {
         let path = entry?.path();
-        if path.is_file() && path.extension().and_then(|value| value.to_str()) == Some("wav") {
+        if path.is_file() && is_temporary_audio(&path) {
             std::fs::remove_file(path)?;
         }
     }

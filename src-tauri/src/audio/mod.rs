@@ -1,6 +1,7 @@
 mod dsp;
 mod encoder;
 mod recovery;
+pub mod segments;
 mod silence;
 mod wasapi;
 
