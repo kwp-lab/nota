@@ -28,6 +28,7 @@ rejected alternatives, and consequences.
 | [0014](0014-meeting-local-speaker-names.md) | Accepted | Default to recording/version-local names and explicitly enroll reusable people per speaker |
 | [0015](0015-transcribe-saved-meetings-during-recording.md) | Accepted | Transcribe saved meetings independently of an active recording |
 | [0016](0016-floating-recording-status.md) | Accepted | Keep persistent recording status in a separate local waveform window |
+| [0017](0017-independent-ai-documents-per-template.md) | Accepted | Allow several independent AI documents per template and remove in-app AI revision |
 | [0018](0018-segment-long-dashscope-recordings.md) | Accepted | Split DashScope recordings longer than two hours into sequential segments with independent speaker labels |
 
 ## Lifecycle

@@ -112,8 +112,15 @@ the previous task and output requirements.
 ### `ai_meeting_profiles`, `ai_documents`, and `ai_document_versions`
 
 `ai_meeting_profiles` stores the meeting folder and reusable meeting context.
-`ai_documents` owns one template scenario within one recording; a unique
-constraint permits at most one row for each `(recording_id, template_id)`.
+`ai_documents` owns one independent document within one recording and
+records the template it was created from. Several rows may share the same
+`(recording_id, template_id)`; `ai_documents_recording_created` indexes
+documents by recording. Databases created before this rule carried a
+`UNIQUE(recording_id, template_id)` constraint. At startup Nota rebuilds that
+table without the constraint inside one transaction, with foreign keys
+temporarily disabled so dropping the old table cannot cascade into
+`ai_document_versions`; it runs `foreign_key_check` before committing and
+rolls back on any failure. Document and version identities are preserved.
 
 `ai_document_versions` is append-only generation history. It stores mode,
 optional parent version, status, path and hash, provider/template/transcript

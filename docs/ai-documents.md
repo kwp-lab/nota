@@ -1,14 +1,15 @@
 # AI Meeting Documents
 
 - Status: Accepted
-- Last updated: 2026-09-15
+- Last updated: 2026-11-27
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/ai.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/pdf_export.rs`, `src/components/AiDocumentsPanel.tsx`,
   `src/components/AiDocumentReader.tsx`, `src/components/AiSettingsSection.tsx`
 - Related decision:
   [`0005-markdown-first-ai-meeting-documents.md`](decisions/0005-markdown-first-ai-meeting-documents.md),
-  [`0011-versioned-transcription-generations.md`](decisions/0011-versioned-transcription-generations.md)
+  [`0011-versioned-transcription-generations.md`](decisions/0011-versioned-transcription-generations.md),
+  [`0017-independent-ai-documents-per-template.md`](decisions/0017-independent-ai-documents-per-template.md)
 
 ## Scope
 
@@ -31,23 +32,44 @@ existing Markdown document or its historical speaker-name snapshot.
 
 ## Document and Version Model
 
-An AI document is the stable combination of one recording and one template.
-There may be at most one document for that pair. Users who need two variants of
-the same scenario clone the template first, which gives the variant its own
-document and version selector.
+An AI document is one independent output of a recording, created from one
+template. A recording may hold any number of documents, including several from
+the same template; each has its own title, document requirements, and version
+selector. The template only describes how a document is generated. It does not
+identify the document.
 
 Every generation attempt appends a version ledger row. Every successful
 attempt creates a new `.md` file with a monotonically increasing version number;
 Nota must never overwrite a previous generated file. The UI opens the newest
 completed version by default and lets the user select any earlier version.
-The toolbar uses one generation entry point for both new documents and new
-versions. Its dialog lists every applicable template: selecting an unused
-template creates a document, while selecting a template already used by the
-meeting regenerates that document as a new version. The current document's
-template is selected by default. The dialog explicitly describes which outcome
-will occur and repeats that existing versions and files are never overwritten.
-Revision remains a separate action because it includes the selected version's
-content and a required revision request.
+The toolbar has two generation entry points, one per outcome:
+
+- **New AI document** (`create`): pick any non-archived template, including
+  one the meeting already used. The title defaults to the template name,
+  suffixed with `(2)`, `(3)`, ... when that title is already taken in this
+  meeting. Document requirements start empty. Available when a provider is
+  ready and at least one template applies to the transcript.
+- **Create new version** (`regenerate`): appends a version to the selected
+  document. The template is fixed to the document's template (archived
+  templates remain usable here); the title, meeting context, and document
+  requirements start from current values and may be edited before generating.
+  Available when a document is selected, a provider is ready, and the
+  document's template applies to the transcript.
+
+A new version is generated from scratch from the current transcript and
+context; it never includes the text of an earlier version. Nota does not offer
+an in-app AI revision of an existing version. Users who want to keep manual
+edits edit the Markdown file directly.
+
+```mermaid
+flowchart TD
+    Toolbar[AI document toolbar] --> NewDoc[New AI document]
+    Toolbar --> NewVersion[Create new version]
+    NewDoc --> C[create: choose template, title, requirements]
+    NewVersion --> G[regenerate: selected document's template]
+    C --> Row[New ai_documents row, version v001]
+    G --> Next[Next version number of the selected document]
+```
 
 Generation modes have distinct semantics:
 
@@ -55,11 +77,13 @@ Generation modes have distinct semantics:
 |---|---|---|
 | `create` | Current transcript and context | None |
 | `regenerate` | Current transcript and context; no previous AI output | None |
-| `revise` | Current transcript, current on-disk body of the selected version, and revision request | Selected version |
+| `revise` | Historical only; new requests are rejected | Recorded parent, if any |
 
-If a selected Markdown file was edited outside Nota, preview and `revise` use
-the current on-disk content. A hash mismatch is displayed as `modified`; it is
-not treated as corruption and the file is never rewritten.
+Versions created by the removed AI revision action keep `mode = revise` and
+their `parent_version_id`, and remain readable. If a Markdown file was edited
+outside Nota, preview uses the current on-disk content. A hash mismatch is
+displayed as `modified`; it is not treated as corruption and the file is never
+rewritten.
 
 ## PDF Export
 
@@ -127,7 +151,7 @@ The generation dialog separates context by lifetime:
 |---|---|---|
 | Meeting background | Shared by AI documents for this meeting | Project background, acronyms, roles, meeting goal |
 | Document requirements | Shared by all versions of this document | Audience, tone, language, length, focus |
-| This-run request | Only this version | A one-off emphasis or revision instruction |
+| This-run request | Only this version | A one-off emphasis for this generation |
 
 The fixed Nota safety policy remains owned by the application. Custom templates
 may edit task instructions and output structure, but cannot replace that policy.

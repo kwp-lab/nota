@@ -1008,6 +1008,8 @@ pub struct AiMeetingProfile {
 pub enum AiGenerationMode {
     Create,
     Regenerate,
+    /// Historical only: versions created by the removed AI revision action.
+    /// New generation requests with this mode are rejected.
     Revise,
 }
 
@@ -1134,7 +1136,6 @@ pub struct AiGenerationRequest {
     pub run_request: String,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
-    pub source_version_id: Option<String>,
     #[serde(default)]
     pub estimated_input_tokens: Option<u32>,
 }

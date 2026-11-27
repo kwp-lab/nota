@@ -184,7 +184,7 @@ an **AI documents** tab with built-in meeting-summary, action-item, speaker-
 summary, and speaker stand-up templates. Each successful generation creates a
 new Markdown file under `Documents\Nota\AI Documents`; regeneration never
 overwrites an earlier version, and intentional edits made in an external editor
-remain the document content Nota previews and revises.
+remain the document content Nota previews.
 
 Open **Manage speakers** on a completed recording to type recording/version-local
 names without configuring a service or creating global people. You may explicitly

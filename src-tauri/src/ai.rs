@@ -1,9 +1,9 @@
 use crate::logging::{self, Field, FieldKey};
 use crate::models::{
-    AiDocument, AiDocumentContent, AiDocumentVersion, AiFileState, AiGenerationEvent,
-    AiGenerationMode, AiGenerationRequest, AiGenerationRequestPreview, AiGenerationStatus,
-    AiTemplate, LlmConnectionTest, LlmModel, LlmProviderCredentials, LlmProviderKind,
-    RecordingItem, TranscriptDocument,
+    AiDocument, AiDocumentContent, AiDocumentVersion, AiGenerationEvent, AiGenerationMode,
+    AiGenerationRequest, AiGenerationRequestPreview, AiGenerationStatus, AiTemplate,
+    LlmConnectionTest, LlmModel, LlmProviderCredentials, LlmProviderKind, RecordingItem,
+    TranscriptDocument,
 };
 use crate::storage::{NewAiVersion, Storage, sanitize_path_component};
 use anyhow::{Context, Result, anyhow, bail};
@@ -174,17 +174,12 @@ impl AiManager {
                 &version_id,
             );
             let speaker_names_json = serde_json::to_string(&transcript.speaker_names)?;
-            let parent_version_id = if request.mode == AiGenerationMode::Revise {
-                request.source_version_id.as_deref()
-            } else {
-                None
-            };
             let version = self.storage.insert_ai_document_version(NewAiVersion {
                 id: &version_id,
                 document_id: &document.id,
                 version_number,
                 mode: request.mode,
-                parent_version_id,
+                parent_version_id: None,
                 file_path: target_path.to_string_lossy().as_ref(),
                 provider_id: &provider_id,
                 provider: &provider.provider,
@@ -539,6 +534,9 @@ fn prepare_generation(
     storage: &Storage,
     request: &AiGenerationRequest,
 ) -> Result<PreparedGeneration> {
+    if request.mode == AiGenerationMode::Revise {
+        bail!("AI 修改已移除，请使用“创建新版本”");
+    }
     let recording = storage.find_recording(&request.recording_id)?;
     let transcript = storage.transcript(&request.recording_id)?;
     if transcript.status != crate::models::TranscriptionStatus::Completed
@@ -553,15 +551,9 @@ fn prepare_generation(
             if template.archived {
                 bail!("该 AI 模板已经归档");
             }
-            if storage
-                .find_ai_document_for_template(&request.recording_id, template_id)?
-                .is_some()
-            {
-                bail!("当前会议已经使用过该模板，请打开已有文档重新生成");
-            }
             (None, template)
         }
-        AiGenerationMode::Regenerate | AiGenerationMode::Revise => {
+        AiGenerationMode::Regenerate => {
             let document_id = request.document_id.as_deref().context("缺少 AI 文档 ID")?;
             let document = storage.find_ai_document(document_id)?;
             if document.recording_id != request.recording_id {
@@ -570,33 +562,9 @@ fn prepare_generation(
             let template = storage.find_ai_template(&document.template_id)?;
             (Some(document), template)
         }
+        AiGenerationMode::Revise => unreachable!("revise requests are rejected above"),
     };
     ensure_speaker_template_supported(&template, &transcript)?;
-    let source_markdown = if request.mode == AiGenerationMode::Revise {
-        let source_id = request
-            .source_version_id
-            .as_deref()
-            .context("请选择要修改的文档版本")?;
-        let source = storage.find_ai_document_version(source_id)?;
-        let document = existing_document.as_ref().context("缺少 AI 文档")?;
-        if source.document_id != document.id
-            || source.status != AiGenerationStatus::Completed
-            || !matches!(
-                source.file_state,
-                AiFileState::Ready | AiFileState::Modified
-            )
-        {
-            bail!("所选版本不可读取，请先重新关联 Markdown 文件");
-        }
-        Some(read_markdown_body(
-            source
-                .file_path
-                .as_deref()
-                .context("所选版本没有文件路径")?,
-        )?)
-    } else {
-        None
-    };
     let title = request
         .title
         .as_deref()
@@ -620,8 +588,6 @@ fn prepare_generation(
         &request.document_requirements,
         &request.run_request,
         &transcript,
-        source_markdown.as_deref(),
-        request.mode,
     );
     Ok(PreparedGeneration {
         recording,
@@ -971,8 +937,6 @@ fn build_prompts(
     document_requirements: &str,
     run_request: &str,
     transcript: &TranscriptDocument,
-    source_markdown: Option<&str>,
-    mode: AiGenerationMode,
 ) -> (String, String) {
     let transcript_text = format_transcript(transcript);
     let mut input = format!(
@@ -986,12 +950,6 @@ fn build_prompts(
         empty_as_not_provided(document_requirements),
         empty_as_not_provided(run_request),
     );
-    if mode == AiGenerationMode::Revise {
-        input.push_str(&format!(
-            "\n# Existing Markdown to revise (source data)\n<existing_markdown>\n{}\n</existing_markdown>\n",
-            source_markdown.unwrap_or_default()
-        ));
-    }
     input.push_str(&format!(
         "\n# Current transcript (source data)\n<transcript>\n{transcript_text}\n</transcript>\n"
     ));
@@ -1337,6 +1295,43 @@ fn bounded_message(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revise_requests_are_rejected_before_any_lookup() {
+        let root = std::env::temp_dir().join(format!("nota-ai-test-{}", uuid::Uuid::new_v4()));
+        let nota = root.join("Nota");
+        std::fs::create_dir_all(nota.join("Recordings")).unwrap();
+        std::fs::create_dir_all(nota.join("Recovery")).unwrap();
+        let storage = Storage::open(crate::paths::AppPaths {
+            recovery: nota.join("Recovery"),
+            logs: nota.join("Logs"),
+            default_recordings: nota.join("Recordings"),
+            default_ai_documents: nota.join("AI Documents"),
+            legacy_default_recordings: root.join("Meeting Note").join("Recordings"),
+            database: nota.join("nota.db"),
+        })
+        .unwrap();
+        let request: AiGenerationRequest = serde_json::from_value(serde_json::json!({
+            "recordingId": "missing-recording",
+            "mode": "revise",
+            "documentId": "document",
+            "templateId": null,
+            "title": null,
+            "meetingContext": "",
+            "documentRequirements": "",
+            "runRequest": "",
+            "providerId": null,
+            "modelId": null,
+            "sourceVersionId": "legacy-field-is-ignored"
+        }))
+        .unwrap();
+        let error = prepare_generation(&storage, &request)
+            .err()
+            .expect("revise must be rejected");
+        assert!(error.to_string().contains("AI 修改已移除"));
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn compatible_endpoint_accepts_api_root_or_full_endpoint() {
