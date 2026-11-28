@@ -881,6 +881,13 @@ pub struct TranscriptDocument {
     pub completed_at: Option<String>,
     pub hotword_list_name: Option<String>,
     pub hotword_count: u32,
+    /// The recording's meeting end point; sentences starting at or after it
+    /// are excluded from `segments` and `text`.
+    #[serde(default)]
+    pub meeting_end_ms: Option<u64>,
+    /// Sentences excluded by `meeting_end_ms`.
+    #[serde(default)]
+    pub hidden_segment_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

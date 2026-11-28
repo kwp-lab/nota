@@ -5,6 +5,7 @@ import {
   Download,
   FileAudio,
   FileUp,
+  FlagTriangleRight,
   FolderOpen,
   LoaderCircle,
   MoreHorizontal,
@@ -83,6 +84,8 @@ interface RecordingsWorkspaceProps {
   onSelectTranscriptionVersion: (id: string, generation: number) => Promise<void>;
   onCopyTranscript: (id: string) => void;
   onExportTranscript: (id: string, title: string) => void;
+  /** Sets or clears where the meeting ended; null restores the full transcript. */
+  onSetMeetingEnd?: (id: string, endMs: number | null) => void;
   onIdentifySpeakers: (id: string) => Promise<SpeakerIdentificationSession>;
   onSaveSpeakerIdentification: (
     sessionId: string,
@@ -701,6 +704,30 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
         ? { kind: "available" }
         : { kind: "providerNotConfigured" };
   const isProcessing = !!transcription && processingStatuses.includes(transcription.status);
+  const meetingEndMs = props.transcript?.recordingId === selected?.id
+    ? props.transcript?.meetingEndMs ?? null
+    : null;
+  const hiddenSegmentCount = props.transcript?.hiddenSegmentCount ?? 0;
+  const meetingEndNotice = meetingEndMs !== null && selected ? (
+    <div className="transcript-meeting-end" role="status">
+      <FlagTriangleRight aria-hidden="true" />
+      <span>
+        {props.transcript?.segments.length
+          ? `会议在 ${formatTranscriptTimestamp(meetingEndMs)} 结束${hiddenSegmentCount
+            ? `，之后 ${hiddenSegmentCount} 句已隐藏`
+            : ""}`
+          : `已设置会议结束点 ${formatTranscriptTimestamp(meetingEndMs)}，但此转写版本没有逐句时间戳，无法隐藏之后的内容`}
+      </span>
+      {props.onSetMeetingEnd && (
+        <button
+          className="button secondary compact"
+          onClick={() => props.onSetMeetingEnd?.(selected.id, null)}
+        >
+          恢复全部
+        </button>
+      )}
+    </div>
+  ) : null;
   const importActive = props.audioImport?.status === "running";
   const failedImportItem = props.audioImport?.items.find((item) => item.status === "failed");
   const currentImportItem = !importActive && failedImportItem
@@ -1159,12 +1186,18 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
               {props.transcriptLoading ? (
                 <div className="transcript-loading"><LoaderCircle className="spin" />读取转写结果…</div>
               ) : props.transcript?.segments.length ? (
-                props.transcript.segments.map((segment, index) => (
+                <>
+                {props.transcript.segments.map((segment, index, segments) => (
                   <div className="transcript-segment" key={`${segment.startMs}-${index}`}>
-                    <button onClick={() => seekTo(segment.startMs)}>
-                      {formatTranscriptTimestamp(segment.startMs)}
+                    <button
+                      className="transcript-timestamp"
+                      aria-label={`从 ${formatTranscriptTimestamp(segment.startMs)} 开始播放`}
+                      onClick={() => seekTo(segment.startMs)}
+                    >
+                      <Play aria-hidden="true" />
+                      <span>{formatTranscriptTimestamp(segment.startMs)}</span>
                     </button>
-                    <div>
+                    <div className="transcript-segment-content">
                       {segment.speaker && (
                         <AppTooltip content={`管理 ${segment.speaker} 的姓名`} side="right">
                           <button
@@ -1177,10 +1210,28 @@ export function RecordingsWorkspace(props: RecordingsWorkspaceProps) {
                       )}
                       <p>{segment.text}</p>
                     </div>
+                    {props.onSetMeetingEnd && index < segments.length - 1 ? (
+                      <AppTooltip content="在此处结束会议，隐藏之后的转写">
+                        <button
+                          className="icon-button compact transcript-segment-action"
+                          aria-label={`在 ${formatTranscriptTimestamp(segment.endMs)} 结束会议`}
+                          onClick={() => props.onSetMeetingEnd?.(selected.id, segment.endMs)}
+                        >
+                          <FlagTriangleRight />
+                        </button>
+                      </AppTooltip>
+                    ) : (
+                      <span className="transcript-segment-action-slot" aria-hidden="true" />
+                    )}
                   </div>
-                ))
+                ))}
+                {meetingEndNotice}
+                </>
               ) : props.transcript?.text ? (
-                <div className="plain-transcript">{props.transcript.text}</div>
+                <>
+                  <div className="plain-transcript">{props.transcript.text}</div>
+                  {meetingEndNotice}
+                </>
               ) : (
                 <div className="transcript-placeholder">
                   <Sparkles size={24} />

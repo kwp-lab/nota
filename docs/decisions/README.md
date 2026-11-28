@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 - Status: Accepted
-- Last updated: 2026-11-27
+- Last updated: 2026-11-28
 - Owners: Nota maintainers
 
 ADRs record consequential technical choices that future maintainers should not
@@ -30,6 +30,7 @@ rejected alternatives, and consequences.
 | [0016](0016-floating-recording-status.md) | Accepted | Keep persistent recording status in a separate local waveform window |
 | [0017](0017-independent-ai-documents-per-template.md) | Accepted | Allow several independent AI documents per template and remove in-app AI revision |
 | [0018](0018-segment-long-dashscope-recordings.md) | Accepted | Split DashScope recordings longer than two hours into sequential segments with independent speaker labels |
+| [0019](0019-recording-meeting-end-point.md) | Accepted | Apply a recording-level meeting end point when reading transcripts |
 
 ## Lifecycle
 

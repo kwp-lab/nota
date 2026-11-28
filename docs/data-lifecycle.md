@@ -1,7 +1,7 @@
 # Recording, Transcription, and AI Document Data Lifecycle
 
 - Status: Accepted
-- Last updated: 2026-11-27
+- Last updated: 2026-11-28
 - Owners: Nota desktop maintainers
 - Related code: `src-tauri/src/paths.rs`, `src-tauri/src/storage.rs`,
   `src-tauri/src/asr.rs`, `src-tauri/src/ai.rs`, `src-tauri/src/importer.rs`,
@@ -71,7 +71,10 @@ indexed byte size, and recovery marker. `origin` distinguishes `captured` and
 format, exact-source SHA-256, and import time. The hash remains Rust/SQLite
 metadata and is not exposed to React. `current_transcription_generation`
 points to the completed transcript version selected for display, export,
-speaker management, and new AI document generation.
+speaker management, and new AI document generation. The nullable
+`meeting_end_ms` marks where the meeting ended; transcript reads exclude
+sentences that start at or after it without rewriting stored transcripts, as
+specified in [`meeting-end-point.md`](meeting-end-point.md).
 
 An imported row points to Nota's normalized Ogg copy, never to the external
 source path. Deleting or recycling an imported recording affects only that

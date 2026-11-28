@@ -2646,6 +2646,33 @@ fn update_recording_speaker_assignments(
 }
 
 #[tauri::command]
+fn set_recording_meeting_end(
+    state: State<AppState>,
+    recording_id: String,
+    end_ms: Option<u64>,
+) -> std::result::Result<TranscriptDocument, String> {
+    command_result((|| {
+        state
+            .storage
+            .set_recording_meeting_end(&recording_id, end_ms)?;
+        let transcript = state.storage.transcript(&recording_id)?;
+        logging::info(
+            "transcript",
+            if end_ms.is_some() {
+                "meeting_end_set"
+            } else {
+                "meeting_end_cleared"
+            },
+            &[
+                Field::text(FieldKey::RecordingId, recording_id.as_str()),
+                Field::number(FieldKey::Count, u64::from(transcript.hidden_segment_count)),
+            ],
+        );
+        Ok(transcript)
+    })())
+}
+
+#[tauri::command]
 fn discard_speaker_identification(state: State<AppState>, session_id: String) {
     state.voiceprints.discard(&session_id);
 }
@@ -3294,6 +3321,7 @@ pub fn run_app() {
             select_transcription_version,
             copy_transcript,
             export_transcript,
+            set_recording_meeting_end,
             reveal_transcript_export,
             identify_recording_speakers,
             save_speaker_identification,
@@ -3466,6 +3494,8 @@ mod transcript_export_tests {
             completed_at: Some("2026-08-02T00:00:00Z".into()),
             hotword_list_name: None,
             hotword_count: 0,
+            meeting_end_ms: None,
+            hidden_segment_count: 0,
         }
     }
 

@@ -164,6 +164,7 @@ const renderWorkspace = (
     onSelectTranscriptionVersion: vi.fn(async () => undefined),
     onCopyTranscript: vi.fn(),
     onExportTranscript: vi.fn(),
+    onSetMeetingEnd: vi.fn(),
     onIdentifySpeakers: vi.fn<() => Promise<SpeakerIdentificationSession>>(),
     onSaveSpeakerIdentification: vi.fn(async () => undefined),
     onUpdateSpeakerAssignments: vi.fn(async () => undefined),
@@ -461,7 +462,7 @@ describe("RecordingsWorkspace", () => {
   it("shows provider speaker labels and timestamp controls without inventing roles", () => {
     renderWorkspace();
     expect(screen.getByText("speaker_1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "00:00:12" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "从 00:00:12 开始播放" })).toHaveTextContent("00:00:12");
     expect(screen.queryByText("我")).not.toBeInTheDocument();
     expect(screen.queryByText("参会者")).not.toBeInTheDocument();
   });
@@ -476,9 +477,49 @@ describe("RecordingsWorkspace", () => {
       ],
     });
 
-    expect(screen.getByRole("button", { name: "00:00:00" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "00:01:02" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "01:02:03" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "从 00:00:00 开始播放" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "从 00:01:02 开始播放" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "从 01:02:03 开始播放" })).toBeInTheDocument();
+  });
+
+  it("offers a meeting end point on every sentence except the last", () => {
+    const actions = renderWorkspace(undefined, undefined, {
+      ...transcript,
+      segments: [
+        { startMs: 0, endMs: 1_000, text: "first", speaker: "speaker_0" },
+        { startMs: 2_000, endMs: 3_015_000, text: "bye", speaker: "speaker_0" },
+        { startMs: 3_100_000, endMs: 3_101_000, text: "unrelated", speaker: "speaker_1" },
+      ],
+    });
+    const actionButtons = screen.getAllByRole("button", { name: /结束会议$/ });
+    expect(actionButtons).toHaveLength(2);
+    expect(actionButtons[0].closest(".transcript-segment")).toHaveTextContent("first");
+    fireEvent.click(screen.getByRole("button", { name: "在 00:50:15 结束会议" }));
+    expect(actions.onSetMeetingEnd).toHaveBeenCalledWith(completed.id, 3_015_000);
+    expect(screen.queryByText(/会议在/)).toBeNull();
+  });
+
+  it("shows the hidden tail and restores the full transcript", () => {
+    const actions = renderWorkspace(undefined, undefined, {
+      ...transcript,
+      meetingEndMs: 3_018_000,
+      hiddenSegmentCount: 115,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("会议在 00:50:18 结束，之后 115 句已隐藏");
+    fireEvent.click(screen.getByRole("button", { name: "恢复全部" }));
+    expect(actions.onSetMeetingEnd).toHaveBeenCalledWith(completed.id, null);
+  });
+
+  it("explains that a transcript without sentences cannot be trimmed", () => {
+    renderWorkspace(undefined, undefined, {
+      ...transcript,
+      segments: [],
+      meetingEndMs: 3_018_000,
+      hiddenSegmentCount: 0,
+    });
+    expect(screen.getByText("先确认本周目标。")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("此转写版本没有逐句时间戳");
+    expect(screen.queryByRole("button", { name: /结束会议$/ })).toBeNull();
   });
 
   it("keeps the player below the independently scrolling reading region", async () => {
